@@ -38,7 +38,10 @@ let lastStats      = null
 
 // ─── Config ───────────────────────────────────────────────────────────────
 function defaultConfig() {
-  return { serverUrl: '', token: '', autoStart: false, startMinimized: false }
+  return {
+    serverUrl: '', token: '', autoStart: false, startMinimized: false,
+    ssh: { host: '', port: 22, username: '', authType: 'password', password: '', keyPath: '' }
+  }
 }
 
 function loadConfig() {
@@ -379,11 +382,11 @@ function createWindow() {
         autoStart:      config.autoStart,
         startMinimized: config.startMinimized
       },
+      ssh:       config.ssh || defaultConfig().ssh,
       logs:      logEntries,
       state:     agentState,
       deviceId,
       serverUrl: config.serverUrl,
-      // Device info for the UI
       hostname:  info.hostname,
       ipLocal:   info.ipLocal,
       platform:  info.osVersion,
@@ -419,6 +422,26 @@ ipcMain.on('close-app',    () => { quitting = true; app.quit() })
 ipcMain.on('save-config', (_, cfg) => {
   saveConfig(cfg)
   addLog('info', '💾 تم حفظ الإعدادات')
+})
+
+ipcMain.on('save-ssh-config', (_, ssh) => {
+  saveConfig({ ssh: { ...defaultConfig().ssh, ...ssh } })
+  addLog('info', '💾 تم حفظ إعدادات SSH')
+})
+
+ipcMain.handle('test-ssh-port', (_, { host, port }) => {
+  return new Promise(resolve => {
+    const net = require('net')
+    const sock = new net.Socket()
+    const timeout = 4000
+    sock.setTimeout(timeout)
+    sock.connect(port || 22, host, () => {
+      sock.destroy()
+      resolve({ ok: true })
+    })
+    sock.on('error', err => { sock.destroy(); resolve({ ok: false, error: err.message }) })
+    sock.on('timeout',   () => { sock.destroy(); resolve({ ok: false, error: 'timeout' }) })
+  })
 })
 
 ipcMain.handle('get-state', () => ({

@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<!-- ── Titlebar ─────────────────────────────────────────── -->
+<!-- ── Titlebar ──────────────────────────────────────────────────── -->
 <div id="titlebar">
   <div class="brand">
     <div class="logo">
@@ -25,20 +25,19 @@
   </div>
 
   <div class="title-actions">
-    <!-- Language Toggle -->
-    <button class="icon-btn" id="btn-lang" title="Switch Language / تبديل اللغة">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+    <button class="icon-btn" id="btn-lang" title="Switch Language">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="2" y1="12" x2="22" y2="12"/>
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
       </svg>
       <span id="lang-lbl">EN</span>
     </button>
-    <!-- Theme Toggle -->
-    <button class="icon-btn" id="btn-theme" title="Toggle Theme / تبديل المظهر">
-      <svg id="icon-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button class="icon-btn" id="btn-theme" title="Toggle Theme">
+      <svg id="icon-moon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
       </svg>
-      <svg id="icon-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+      <svg id="icon-sun" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
         <circle cx="12" cy="12" r="5"/>
         <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
         <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
@@ -49,17 +48,17 @@
   </div>
 
   <div class="win-btns">
-    <button class="win-btn" id="btn-min" title="Minimize">─</button>
-    <button class="win-btn" id="btn-tray" title="Hide to Tray">⬇</button>
-    <button class="win-btn close" id="btn-close" title="Close">✕</button>
+    <button class="win-btn" id="btn-min">─</button>
+    <button class="win-btn" id="btn-tray">⬇</button>
+    <button class="win-btn close" id="btn-close">✕</button>
   </div>
 </div>
 
-<!-- ── Main ─────────────────────────────────────────────── -->
+<!-- ── App ────────────────────────────────────────────────────────── -->
 <div id="app">
   <div id="scroll">
 
-    <!-- ── Status Card ─────────────────────────────────── -->
+    <!-- Status Card -->
     <div id="status-card" class="stopped">
       <div class="status-dot-wrap stopped" id="dot-wrap">
         <div class="status-ring"></div>
@@ -70,63 +69,71 @@
         <div class="status-sub" id="status-sub" data-i18n="notConnected">الـ Agent غير متصل بأي خادم</div>
       </div>
       <button id="toggle-btn" class="stopped">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
         <span data-i18n="start">تشغيل</span>
       </button>
     </div>
 
-    <!-- ── Quick Info Strip ─────────────────────────────── -->
-    <div id="info-strip">
-      <div class="strip-item">
-        <div class="strip-lbl" data-i18n="device">الجهاز</div>
-        <div class="strip-val" id="inf-host">—</div>
+    <!-- Info Grid -->
+    <div id="info-grid">
+      <div class="info-cell">
+        <div class="info-lbl" data-i18n="device">الجهاز</div>
+        <div class="info-val" id="inf-host">—</div>
       </div>
-      <div class="strip-sep"></div>
-      <div class="strip-item">
-        <div class="strip-lbl" data-i18n="localIp">IP المحلي</div>
-        <div class="strip-val mono" id="inf-ip">—</div>
+      <div class="info-cell">
+        <div class="info-lbl" data-i18n="localIp">IP المحلي</div>
+        <div class="info-val mono" id="inf-ip">—</div>
       </div>
-      <div class="strip-sep"></div>
-      <div class="strip-item">
-        <div class="strip-lbl" data-i18n="server">الخادم</div>
-        <div class="strip-val mono" id="inf-server">—</div>
+      <div class="info-cell">
+        <div class="info-lbl" data-i18n="server">الخادم</div>
+        <div class="info-val mono" id="inf-server">—</div>
       </div>
-      <div class="strip-sep"></div>
-      <div class="strip-item">
-        <div class="strip-lbl">Device ID</div>
-        <div class="strip-val mono" id="inf-devid">—</div>
+      <div class="info-cell">
+        <div class="info-lbl">Device ID</div>
+        <div class="info-val mono" id="inf-devid">—</div>
       </div>
     </div>
 
-    <!-- ── Connection Settings ──────────────────────────── -->
-    <div class="card">
-      <button class="collapse-toggle open" id="cfg-toggle">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
-        </svg>
-        <span data-i18n="connSettings">إعدادات الاتصال</span>
-        <span class="arrow">▲</span>
-      </button>
-      <div class="collapse-body" id="cfg-body">
+    <!-- Tab Bar -->
+    <div class="card" id="settings-card">
+      <div id="tab-bar">
+        <button class="tab-btn active" id="tab-conn" data-tab="conn">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+          </svg>
+          <span data-i18n="tabConn">الاتصال</span>
+        </button>
+        <button class="tab-btn" id="tab-ssh" data-tab="ssh">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <polyline points="8,21 12,17 16,21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          <span>SSH</span>
+        </button>
+      </div>
+
+      <!-- ── Panel: Connection ──────────────────────────── -->
+      <div class="tab-panel active" id="panel-conn">
 
         <div class="field">
           <label data-i18n="serverUrl">عنوان الخادم (WebSocket)</label>
-          <div class="input-hint" data-i18n="serverHint">مثال: wss://myserver.replit.app/ws</div>
+          <div class="field-hint" data-i18n="serverHint">مثال: wss://myserver.replit.app/ws</div>
           <input id="inp-server" type="text"
             placeholder="wss://your-server.replit.app/ws"
             dir="ltr" autocomplete="off" spellcheck="false" />
         </div>
 
-        <div class="field" style="margin-top:12px;">
+        <div class="field">
           <label data-i18n="deviceToken">Device Token</label>
-          <div class="input-hint" data-i18n="tokenHint">Dashboard → Devices → Add Device</div>
+          <div class="field-hint" data-i18n="tokenHint">Dashboard → Devices → نسخ Token</div>
           <div class="input-wrap">
-            <input id="inp-token" type="password" class="has-btn"
+            <input id="inp-token" type="password" class="has-eye"
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               dir="ltr" autocomplete="off" spellcheck="false" />
-            <button class="toggle-visibility" id="btn-show-token" title="Show/Hide Token">
-              <svg id="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button class="eye-btn" id="btn-show-token">
+              <svg id="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
@@ -134,7 +141,7 @@
           </div>
         </div>
 
-        <div class="options-row">
+        <div class="checks-group">
           <label class="check-row">
             <input type="checkbox" id="chk-autostart" />
             <span data-i18n="autoStart">تشغيل تلقائي عند فتح البرنامج</span>
@@ -147,28 +154,118 @@
 
         <div class="btn-row">
           <button id="save-btn">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
               <polyline points="17 21 17 13 7 13 7 21"/>
               <polyline points="7 3 7 8 15 8"/>
             </svg>
             <span data-i18n="saveSettings">حفظ الإعدادات</span>
           </button>
-          <button id="reconnect-btn" class="btn-secondary" title="Reconnect">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <button id="reconnect-btn" class="btn-ghost">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polyline points="23 4 23 10 17 10"/>
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
             </svg>
             <span data-i18n="reconnect">إعادة الاتصال</span>
           </button>
         </div>
+
+      </div>
+
+      <!-- ── Panel: SSH ─────────────────────────────────── -->
+      <div class="tab-panel" id="panel-ssh">
+
+        <div class="ssh-status-bar" id="ssh-status-bar">
+          <span class="ssh-dot" id="ssh-dot"></span>
+          <span id="ssh-status-lbl" data-i18n="sshNotConn">SSH غير متصل</span>
+          <span id="ssh-session-info" class="ssh-session-info"></span>
+        </div>
+
+        <div class="fields-row">
+          <div class="field f-grow">
+            <label data-i18n="sshHost">SSH Host</label>
+            <input id="inp-ssh-host" type="text" dir="ltr"
+              placeholder="192.168.1.x" autocomplete="off" spellcheck="false"/>
+          </div>
+          <div class="field f-fixed">
+            <label data-i18n="sshPort">Port</label>
+            <input id="inp-ssh-port" type="number" dir="ltr"
+              placeholder="22" min="1" max="65535" value="22"/>
+          </div>
+        </div>
+
+        <div class="field">
+          <label data-i18n="sshUser">اسم المستخدم</label>
+          <input id="inp-ssh-user" type="text" dir="ltr"
+            placeholder="administrator" autocomplete="off" spellcheck="false"/>
+        </div>
+
+        <div class="field">
+          <label data-i18n="sshAuth">طريقة المصادقة</label>
+          <div class="radio-group">
+            <label class="radio-row">
+              <input type="radio" name="ssh-auth" id="rad-pass" value="password" checked/>
+              <span data-i18n="sshPassword">كلمة المرور</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="ssh-auth" id="rad-key" value="key"/>
+              <span data-i18n="sshKey">مفتاح خاص (Private Key)</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="ssh-pass-group" class="field">
+          <label data-i18n="sshPassword">كلمة المرور</label>
+          <div class="input-wrap">
+            <input id="inp-ssh-pass" type="password" class="has-eye" dir="ltr"
+              placeholder="••••••••" autocomplete="off"/>
+            <button class="eye-btn" id="btn-show-ssh-pass">
+              <svg id="ssh-eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="ssh-key-group" class="field" style="display:none">
+          <label data-i18n="sshKeyPath">مسار ملف المفتاح</label>
+          <div class="input-wrap">
+            <input id="inp-ssh-key" type="text" class="has-eye" dir="ltr"
+              placeholder="C:\Users\user\.ssh\id_rsa" autocomplete="off"/>
+            <button class="eye-btn" id="btn-browse-key" title="Browse">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button id="save-ssh-btn">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+            </svg>
+            <span data-i18n="saveSsh">حفظ إعدادات SSH</span>
+          </button>
+          <button id="test-ssh-btn" class="btn-ghost">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+            <span data-i18n="testSsh">اختبار الاتصال</span>
+          </button>
+        </div>
+
+        <div id="ssh-log-box" class="ssh-log"></div>
+
       </div>
     </div>
 
-    <!-- ── Resource Monitor ─────────────────────────────── -->
+    <!-- Resource Monitor -->
     <div class="card" id="stats-card">
       <div class="card-header">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
         </svg>
         <span data-i18n="resources">موارد الجهاز</span>
@@ -194,10 +291,10 @@
       </div>
     </div>
 
-    <!-- ── Event Log ────────────────────────────────────── -->
+    <!-- Event Log -->
     <div class="card">
       <div class="card-header">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
           <line x1="16" y1="13" x2="8" y2="13"/>
@@ -206,17 +303,17 @@
         <span data-i18n="eventLog">سجل الأحداث</span>
         <button id="clear-log" class="btn-text" data-i18n="clear">مسح</button>
       </div>
-      <div class="card-body log-body">
+      <div class="log-wrap">
         <div id="log-box">
           <div class="log-empty" data-i18n="noEvents">لا توجد أحداث بعد...</div>
         </div>
       </div>
     </div>
 
-    <!-- ── Footer ───────────────────────────────────────── -->
+    <!-- Footer -->
     <div id="footer">
       <span>AiRemote Agent v1.0.0</span>
-      <span class="footer-dot">·</span>
+      <span class="sep">·</span>
       <span id="footer-os">Windows</span>
     </div>
 
