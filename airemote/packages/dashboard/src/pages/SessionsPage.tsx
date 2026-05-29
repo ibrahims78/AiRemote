@@ -1,180 +1,170 @@
 import { useState, useEffect } from 'react'
-import { History, Terminal, Monitor, FolderOpen, Bot, RefreshCw } from 'lucide-react'
+import { History, Terminal, Monitor, FolderOpen, Bot, RefreshCw, Circle } from 'lucide-react'
 import { api } from '../lib/api'
+import { useT } from '../lib/i18n'
 import { clsx } from 'clsx'
 
 interface SessionWithDevice {
-  id: string
-  deviceId: string
-  deviceName: string
-  userId: string
-  type: string
-  startedAt: string
-  endedAt?: string
-  durationSec?: number
-  ipAddress?: string
+  id: string; deviceId: string; deviceName: string; userId: string
+  type: string; startedAt: string; endedAt?: string; durationSec?: number; ipAddress?: string
 }
 
 const typeConfig: Record<string, { label: string; icon: React.ElementType; color: string; bg: string }> = {
-  ssh:  { label: 'SSH Terminal', icon: Terminal,   color: 'text-brand-blue',   bg: 'bg-brand-blue/10'  },
-  sftp: { label: 'نقل ملفات',    icon: FolderOpen,  color: 'text-brand-teal',   bg: 'bg-brand-teal/10'  },
-  ai:   { label: 'AI Chat',      icon: Bot,          color: 'text-yellow-400',   bg: 'bg-yellow-400/10'  },
-  vnc:  { label: 'VNC',          icon: Monitor,      color: 'text-purple-400',   bg: 'bg-purple-400/10'  },
-  rdp:  { label: 'RDP',          icon: Monitor,      color: 'text-orange-400',   bg: 'bg-orange-400/10'  },
+  ssh:  { label: 'SSH Terminal', icon: Terminal,  color: 'text-brand-blue',  bg: 'bg-brand-blue/10'  },
+  sftp: { label: 'SFTP',        icon: FolderOpen, color: 'text-brand-teal',  bg: 'bg-brand-teal/10'  },
+  ai:   { label: 'AI Chat',     icon: Bot,         color: 'text-yellow-400',  bg: 'bg-yellow-400/10'  },
+  vnc:  { label: 'VNC',         icon: Monitor,     color: 'text-purple-400',  bg: 'bg-purple-400/10'  },
+  rdp:  { label: 'RDP',         icon: Monitor,     color: 'text-orange-400',  bg: 'bg-orange-400/10'  },
 }
 
 function formatDuration(sec?: number): string {
   if (!sec) return '—'
-  if (sec < 60) return `${sec}ث`
-  if (sec < 3600) return `${Math.floor(sec / 60)}د ${sec % 60}ث`
-  return `${Math.floor(sec / 3600)}س ${Math.floor((sec % 3600) / 60)}د`
+  if (sec < 60) return `${sec}s`
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`
+  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
 }
 
 export function SessionsPage() {
   const [sessions, setSessions] = useState<SessionWithDevice[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('all')
+  const T = useT()
 
   async function load() {
     setLoading(true)
-    try {
-      const res = await api.get('/api/sessions')
-      setSessions(res.data)
-    } finally {
-      setLoading(false)
-    }
+    try { const res = await api.get('/api/sessions'); setSessions(res.data) }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
 
-  const filtered = filter === 'all' ? sessions : sessions.filter(s => s.type === filter)
+  const active = sessions.filter(s => !s.endedAt).length
   const types = [...new Set(sessions.map(s => s.type))]
 
-  const active = sessions.filter(s => !s.endedAt).length
-  const total = sessions.length
+  const filtered =
+    filter === 'all'    ? sessions :
+    filter === 'active' ? sessions.filter(s => !s.endedAt) :
+    filter === 'ended'  ? sessions.filter(s => s.endedAt) :
+    sessions.filter(s => s.type === filter)
+
+  const FILTERS = [
+    { key: 'all',    label: T('all_sessions'),    count: sessions.length },
+    { key: 'active', label: T('active_sessions'), count: active },
+    { key: 'ended',  label: T('ended_sessions'),  count: sessions.length - active },
+    ...types.map(t => ({ key: t, label: typeConfig[t]?.label || t.toUpperCase(), count: sessions.filter(s => s.type === t).length }))
+  ]
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white">سجل الجلسات</h2>
-          <p className="text-slate-400 text-sm mt-1">كل جلسات الوصول والتحكم</p>
+          <h2 className="text-xl font-bold text-white">{T('sessions_title')}</h2>
+          <p className="text-slate-400 text-sm mt-1">{T('sessions_subtitle')}</p>
         </div>
         <button
-          onClick={load}
-          className="flex items-center gap-2 text-slate-400 hover:text-white text-sm px-3 py-2 rounded-lg hover:bg-slate-700/50 transition-colors"
+          onClick={load} disabled={loading}
+          className="flex items-center gap-2 text-sm text-slate-400 hover:text-white bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600/30 px-3 py-2 rounded-lg transition-all disabled:opacity-50"
         >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          تحديث
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          {T('refresh')}
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="glass rounded-xl p-4">
-          <p className="text-xs text-slate-500 mb-1">إجمالي الجلسات</p>
-          <p className="text-2xl font-bold text-white">{total}</p>
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="glass rounded-xl p-4 text-center">
+          <div className="text-2xl font-bold text-white">{sessions.length}</div>
+          <div className="text-xs text-slate-500 mt-1">{T('all_sessions')}</div>
         </div>
-        <div className="glass rounded-xl p-4">
-          <p className="text-xs text-slate-500 mb-1">جلسات نشطة</p>
-          <p className={clsx('text-2xl font-bold', active > 0 ? 'text-emerald-400' : 'text-slate-400')}>{active}</p>
+        <div className="glass rounded-xl p-4 text-center">
+          <div className={clsx('text-2xl font-bold', active > 0 ? 'text-emerald-400' : 'text-slate-400')}>{active}</div>
+          <div className="text-xs text-slate-500 mt-1">{T('active_sessions')}</div>
         </div>
-        <div className="glass rounded-xl p-4">
-          <p className="text-xs text-slate-500 mb-1">منتهية</p>
-          <p className="text-2xl font-bold text-slate-400">{total - active}</p>
+        <div className="glass rounded-xl p-4 text-center">
+          <div className="text-2xl font-bold text-slate-400">{sessions.length - active}</div>
+          <div className="text-xs text-slate-500 mt-1">{T('ended_sessions')}</div>
         </div>
       </div>
 
-      {types.length > 0 && (
-        <div className="flex gap-2 mb-4 flex-wrap">
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {FILTERS.map(f => (
           <button
-            onClick={() => setFilter('all')}
-            className={clsx('text-xs px-3 py-1.5 rounded-lg border transition-colors', filter === 'all' ? 'bg-brand-blue/15 border-brand-blue/40 text-brand-blue' : 'border-slate-700/50 text-slate-400 hover:border-slate-500')}
+            key={f.key} onClick={() => setFilter(f.key)}
+            className={clsx(
+              'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all border',
+              filter === f.key
+                ? 'bg-brand-blue/15 text-brand-blue border-brand-blue/30'
+                : 'bg-slate-700/30 text-slate-400 hover:text-slate-200 border-transparent hover:border-slate-600/30'
+            )}
           >
-            الكل
+            {f.label}
+            <span className={clsx('text-[10px] px-1.5 py-0.5 rounded-full', filter === f.key ? 'bg-brand-blue/20' : 'bg-slate-700/60')}>{f.count}</span>
           </button>
-          {types.map(t => {
-            const cfg = typeConfig[t] || typeConfig.ssh
-            const Icon = cfg.icon
-            return (
-              <button
-                key={t}
-                onClick={() => setFilter(t)}
-                className={clsx('flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors',
-                  filter === t ? `${cfg.bg} border-current ${cfg.color}` : 'border-slate-700/50 text-slate-400 hover:border-slate-500'
-                )}
-              >
-                <Icon size={11} />
-                {cfg.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
+        ))}
+      </div>
 
       {loading ? (
-        <div className="text-center text-slate-500 py-12">
+        <div className="text-center py-12 text-slate-500">
           <div className="w-5 h-5 border-2 border-brand-blue border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          جاري التحميل...
+          {T('loading')}
         </div>
       ) : (
         <div className="glass rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-700/50">
-                <th className="text-right text-xs text-slate-500 font-medium px-4 py-3">النوع</th>
-                <th className="text-right text-xs text-slate-500 font-medium px-4 py-3">الجهاز</th>
-                <th className="text-right text-xs text-slate-500 font-medium px-4 py-3">بدأت</th>
-                <th className="text-right text-xs text-slate-500 font-medium px-4 py-3">المدة</th>
-                <th className="text-right text-xs text-slate-500 font-medium px-4 py-3">العنوان</th>
-                <th className="text-right text-xs text-slate-500 font-medium px-4 py-3">الحالة</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-12">
-                    <History size={28} className="mx-auto mb-2 text-slate-600" />
-                    لا توجد جلسات مسجلة
-                  </td>
-                </tr>
-              )}
-              {filtered.map(s => {
-                const cfg = typeConfig[s.type] || typeConfig.ssh
-                const Icon = cfg.icon
-                return (
-                  <tr key={s.id} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className={clsx('w-6 h-6 rounded-md flex items-center justify-center', cfg.bg)}>
-                          <Icon size={11} className={cfg.color} />
-                        </div>
-                        <span className="text-slate-300 text-xs">{cfg.label}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <div className="text-xs font-medium text-slate-200">{s.deviceName}</div>
-                        <div className="text-[10px] text-slate-600 font-mono">{s.deviceId.slice(0, 8)}...</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">{new Date(s.startedAt).toLocaleString('ar')}</td>
-                    <td className="px-4 py-3 text-xs text-slate-400 font-mono">{formatDuration(s.durationSec)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 font-mono">{s.ipAddress || '—'}</td>
-                    <td className="px-4 py-3">
-                      {s.endedAt ? (
-                        <span className="text-xs text-slate-500 bg-slate-700/40 px-2 py-0.5 rounded-full">منتهية</span>
-                      ) : (
-                        <span className="text-xs text-emerald-400 flex items-center gap-1 w-fit">
-                          <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                          نشطة
-                        </span>
-                      )}
-                    </td>
+          {filtered.length === 0 && (
+            <div className="text-center py-12">
+              <History size={32} className="mx-auto mb-3 text-slate-700" />
+              <p className="text-slate-500 text-sm">{T('no_sessions_yet')}</p>
+            </div>
+          )}
+          {filtered.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[550px]">
+                <thead>
+                  <tr className="border-b border-slate-700/50">
+                    {[T('session_type'), T('session_device'), T('session_start'), T('session_duration'), 'IP', ''].map((h, i) => (
+                      <th key={i} className="text-xs text-slate-500 font-medium px-4 py-3 text-right">{h}</th>
+                    ))}
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {filtered.map((s, i) => {
+                    const tc = typeConfig[s.type] || { label: s.type.toUpperCase(), icon: Monitor, color: 'text-slate-400', bg: 'bg-slate-700/40' }
+                    const Icon = tc.icon
+                    const isActive = !s.endedAt
+                    return (
+                      <tr key={s.id} className={clsx('border-b border-slate-700/30 hover:bg-slate-700/15 transition-colors', i === filtered.length - 1 && 'border-b-0')}>
+                        <td className="px-4 py-3">
+                          <div className={clsx('inline-flex items-center gap-2 px-2.5 py-1 rounded-lg text-xs font-medium', tc.bg, tc.color)}>
+                            <Icon size={11} /> {tc.label}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 font-medium text-xs">{s.deviceName}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap" dir="ltr">
+                          {new Date(s.startedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isActive ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                              <Circle size={6} className="fill-current animate-pulse" /> {T('session_active')}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-500 font-mono">{formatDuration(s.durationSec)}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-600 font-mono" dir="ltr">{s.ipAddress || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={clsx('text-[10px] px-2 py-0.5 rounded-full', isActive ? 'bg-emerald-400/10 text-emerald-400' : 'bg-slate-700/40 text-slate-500')}>
+                            {isActive ? '●' : '○'}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

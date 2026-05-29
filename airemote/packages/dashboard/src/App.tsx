@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
+import { useUIStore } from './store/uiStore'
 import { SetupPage } from './pages/SetupPage'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardLayout } from './layouts/DashboardLayout'
@@ -12,6 +13,7 @@ import { UsersPage } from './pages/UsersPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { useEffect, useState } from 'react'
 import { api } from './lib/api'
+import { applyTheme, applyLang } from './store/uiStore'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore()
@@ -21,6 +23,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
+  const { theme, lang } = useUIStore()
+
+  // Sync theme/lang to DOM whenever they change
+  useEffect(() => { applyTheme(theme) }, [theme])
+  useEffect(() => { applyLang(lang) }, [lang])
 
   useEffect(() => {
     api.get('/api/auth/setup-status')
@@ -31,9 +38,16 @@ export default function App() {
   if (setupRequired === null) {
     return (
       <div className="min-h-screen bg-navy-900 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-slate-400">
-          <div className="w-6 h-6 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
-          <span>Loading AiRemote...</span>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-blue to-brand-teal flex items-center justify-center shadow-lg shadow-brand-blue/20">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </div>
+          <div className="flex items-center gap-2.5 text-slate-400 text-sm">
+            <div className="w-4 h-4 border-2 border-brand-blue border-t-transparent rounded-full animate-spin" />
+            <span>Loading AiRemote...</span>
+          </div>
         </div>
       </div>
     )

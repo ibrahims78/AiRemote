@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Settings, Server, Bot, Bell, Save, Check, Eye, EyeOff, RefreshCw, Info } from 'lucide-react'
+import {
+  Settings, Server, Bot, Bell, Save, Check, Eye, EyeOff,
+  RefreshCw, Info, Sun, Moon, Globe, Copy
+} from 'lucide-react'
 import { api } from '../lib/api'
+import { useUIStore } from '../store/uiStore'
+import { useT } from '../lib/i18n'
+import { toast } from '../store/toastStore'
 import { clsx } from 'clsx'
 
 interface AISettings {
@@ -23,7 +29,10 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [telegramToken, setTelegramToken] = useState('')
-  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const { theme, toggleTheme, lang, toggleLang } = useUIStore()
+  const T = useT()
+  const isAr = lang === 'ar'
 
   useEffect(() => {
     api.get('/api/settings').then(res => {
@@ -40,114 +49,176 @@ export function SettingsPage() {
 
   async function handleSave() {
     setSaving(true)
-    setError('')
     try {
       await api.put('/api/settings', { ...ai, telegramToken })
       setSaved(true)
+      toast.success(T('toast_settings_saved'))
       setTimeout(() => setSaved(false), 2500)
     } catch {
-      setError('فشل الحفظ. يرجى المحاولة مجدداً.')
+      toast.error(T('save_failed'))
     } finally {
       setSaving(false)
     }
   }
 
+  function copyServerUrl() {
+    navigator.clipboard.writeText(window.location.origin)
+    setCopied(true)
+    toast.success(T('toast_copy_done'), window.location.origin)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   const availableModels = MODELS[ai.aiProvider] || []
+
+  const Section = ({ icon: Icon, color, title, children }: { icon: React.ElementType; color: string; title: string; children: React.ReactNode }) => (
+    <div className="glass rounded-xl overflow-hidden">
+      <div className={clsx('flex items-center gap-2.5 px-5 py-3.5 border-b border-slate-700/40', color)}>
+        <Icon size={15} />
+        <h3 className="font-semibold text-sm text-slate-200">{title}</h3>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  )
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white">الإعدادات</h2>
-          <p className="text-slate-400 text-sm mt-1">إعدادات النظام والتكاملات</p>
+          <h2 className="text-xl font-bold text-white">{T('settings_title')}</h2>
+          <p className="text-slate-400 text-sm mt-1">{T('settings_subtitle')}</p>
         </div>
         <button
           onClick={handleSave}
           disabled={saving}
           className={clsx(
-            'flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-all',
+            'flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-all flex-shrink-0',
             saved ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
-            'bg-brand-blue hover:bg-blue-500 disabled:opacity-50 text-white'
+            'bg-brand-blue hover:bg-blue-500 disabled:opacity-50 text-white shadow-lg shadow-brand-blue/15'
           )}
         >
           {saving ? <RefreshCw size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
-          {saving ? 'جاري الحفظ...' : saved ? 'تم الحفظ!' : 'حفظ الإعدادات'}
+          {saving ? T('saving') : saved ? T('saved') : T('save_settings')}
         </button>
       </div>
-
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-400 mb-4">
-          {error}
-        </div>
-      )}
 
       {loading ? (
         <div className="text-center py-12 text-slate-500">
           <div className="w-5 h-5 border-2 border-brand-blue border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          جاري التحميل...
+          {T('loading')}
         </div>
       ) : (
         <div className="grid gap-4 max-w-2xl">
-          {/* Server Info */}
-          <div className="glass rounded-xl p-5">
-            <div className="flex items-center gap-2.5 mb-4">
-              <Server size={16} className="text-brand-blue" />
-              <h3 className="font-medium text-slate-200">معلومات الخادم</h3>
+
+          {/* Appearance & Language */}
+          <Section icon={Globe} color="text-brand-teal" title={T('appearance')}>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Theme */}
+              <div>
+                <label className="block text-xs text-slate-500 mb-2">{isAr ? 'الثيم' : 'Theme'}</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => theme !== 'dark' && toggleTheme()}
+                    className={clsx(
+                      'flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium border transition-all',
+                      theme === 'dark'
+                        ? 'bg-slate-700/50 border-brand-blue/40 text-brand-blue'
+                        : 'border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-300'
+                    )}
+                  >
+                    <Moon size={13} /> {T('theme_dark')}
+                  </button>
+                  <button
+                    onClick={() => theme !== 'light' && toggleTheme()}
+                    className={clsx(
+                      'flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium border transition-all',
+                      theme === 'light'
+                        ? 'bg-amber-400/10 border-amber-400/40 text-amber-400'
+                        : 'border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-300'
+                    )}
+                  >
+                    <Sun size={13} /> {T('theme_light')}
+                  </button>
+                </div>
+              </div>
+              {/* Language */}
+              <div>
+                <label className="block text-xs text-slate-500 mb-2">{isAr ? 'اللغة' : 'Language'}</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => lang !== 'ar' && toggleLang()}
+                    className={clsx(
+                      'flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium border transition-all',
+                      lang === 'ar'
+                        ? 'bg-brand-blue/10 border-brand-blue/40 text-brand-blue'
+                        : 'border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-300'
+                    )}
+                  >
+                    {T('lang_ar')}
+                  </button>
+                  <button
+                    onClick={() => lang !== 'en' && toggleLang()}
+                    className={clsx(
+                      'flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium border transition-all',
+                      lang === 'en'
+                        ? 'bg-brand-blue/10 border-brand-blue/40 text-brand-blue'
+                        : 'border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-300'
+                    )}
+                  >
+                    {T('lang_en')}
+                  </button>
+                </div>
+              </div>
             </div>
+          </Section>
+
+          {/* Server Info */}
+          <Section icon={Server} color="text-brand-blue" title={T('server_info')}>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-500 mb-1.5">عنوان الخادم</label>
+                <label className="block text-xs text-slate-500 mb-1.5">{T('server_address')}</label>
                 <div className="flex items-center gap-2">
                   <input
-                    disabled
-                    value={window.location.origin}
+                    readOnly value={window.location.origin}
                     className="flex-1 bg-navy-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-400 font-mono"
                     dir="ltr"
-                    readOnly
                   />
                   <button
-                    onClick={() => navigator.clipboard.writeText(window.location.origin)}
-                    className="p-2 text-slate-500 hover:text-white bg-navy-900 border border-slate-700 rounded-lg transition-colors"
-                    title="نسخ"
+                    onClick={copyServerUrl}
+                    className={clsx(
+                      'p-2 border rounded-lg transition-colors flex-shrink-0',
+                      copied ? 'text-emerald-400 border-emerald-500/30 bg-emerald-400/10' : 'text-slate-500 hover:text-white bg-navy-900 border-slate-700'
+                    )}
                   >
-                    <Settings size={13} />
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
                   </button>
                 </div>
               </div>
               <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-700/20 rounded-lg p-3">
                 <Info size={13} className="text-brand-blue flex-shrink-0 mt-0.5" />
-                <span>استخدم هذا العنوان في إعدادات الـ Agent على الأجهزة البعيدة.</span>
+                <span>{T('server_address_hint')}</span>
               </div>
             </div>
-          </div>
+          </Section>
 
           {/* AI Settings */}
-          <div className="glass rounded-xl p-5">
-            <div className="flex items-center gap-2.5 mb-4">
-              <Bot size={16} className="text-brand-teal" />
-              <h3 className="font-medium text-slate-200">إعدادات الذكاء الاصطناعي</h3>
-            </div>
+          <Section icon={Bot} color="text-brand-teal" title={T('ai_settings')}>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1.5">المزود</label>
+                  <label className="block text-xs text-slate-500 mb-1.5">{T('ai_provider')}</label>
                   <select
                     value={ai.aiProvider}
-                    onChange={e => setAi(p => ({
-                      ...p,
-                      aiProvider: e.target.value as AISettings['aiProvider'],
-                      aiModel: MODELS[e.target.value]?.[0] || ''
-                    }))}
+                    onChange={e => setAi(p => ({ ...p, aiProvider: e.target.value as AISettings['aiProvider'], aiModel: MODELS[e.target.value]?.[0] || '' }))}
                     className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-teal"
                     dir="ltr"
                   >
                     <option value="openai">OpenAI</option>
                     <option value="gemini">Google Gemini</option>
-                    <option value="ollama">Ollama (محلي)</option>
+                    <option value="ollama">{isAr ? 'Ollama (محلي)' : 'Ollama (Local)'}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1.5">النموذج</label>
+                  <label className="block text-xs text-slate-500 mb-1.5">{T('ai_model')}</label>
                   <select
                     value={ai.aiModel}
                     onChange={e => setAi(p => ({ ...p, aiModel: e.target.value }))}
@@ -173,11 +244,7 @@ export function SettingsPage() {
                       className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-teal font-mono pr-10"
                       dir="ltr"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowKey(s => !s)}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                    >
+                    <button type="button" onClick={() => setShowKey(s => !s)} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
                       {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
@@ -196,17 +263,13 @@ export function SettingsPage() {
                 </div>
               )}
             </div>
-          </div>
+          </Section>
 
           {/* Notifications */}
-          <div className="glass rounded-xl p-5">
-            <div className="flex items-center gap-2.5 mb-4">
-              <Bell size={16} className="text-yellow-400" />
-              <h3 className="font-medium text-slate-200">إشعارات Telegram</h3>
-            </div>
+          <Section icon={Bell} color="text-yellow-400" title={T('notifications')}>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-500 mb-1.5">Telegram Bot Token</label>
+                <label className="block text-xs text-slate-500 mb-1.5">{T('telegram_token')}</label>
                 <input
                   type="password"
                   value={telegramToken}
@@ -218,9 +281,14 @@ export function SettingsPage() {
               </div>
               <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-700/20 rounded-lg p-3">
                 <Info size={13} className="text-yellow-400 flex-shrink-0 mt-0.5" />
-                <span>احصل على token من @BotFather على Telegram لتلقي إشعارات عند اتصال/انقطاع الأجهزة.</span>
+                <span>{T('telegram_hint')}</span>
               </div>
             </div>
+          </Section>
+
+          {/* Version info */}
+          <div className="text-center text-xs text-slate-700 py-2">
+            AiRemote v1.0.0 — Open Source | <span className="text-slate-600">MIT License</span>
           </div>
         </div>
       )}

@@ -3,8 +3,10 @@ import { useDeviceStore } from '../store/deviceStore'
 import { AiChatPanel } from '../components/AiChatPanel'
 import { Bot, Cpu, MemoryStick, Monitor, Wifi, Circle } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useT } from '../lib/i18n'
 
 export function AiPage() {
+  const t = useT()
   const { devices, statsMap } = useDeviceStore()
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>(undefined)
 
@@ -21,21 +23,21 @@ export function AiPage() {
               <Bot size={18} className="text-white" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">AI Assistant</h2>
+              <h2 className="text-base font-bold text-white">{t('ai_title')}</h2>
               <p className="text-xs text-slate-400">
                 {selectedDevice ? (
-                  <span className="text-brand-teal">سياق: <span className="font-medium">{selectedDevice.name}</span></span>
+                  <span className="text-brand-teal">{t('ai_context')}: <span className="font-medium">{selectedDevice.name}</span></span>
                 ) : (
-                  'مساعد إدارة الأنظمة — اختر جهازاً لتنفيذ أوامر مباشرة'
+                  t('ai_global_desc')
                 )}
               </p>
             </div>
             {selectedDeviceId && (
               <button
                 onClick={() => setSelectedDeviceId(undefined)}
-                className="mr-auto text-xs text-slate-500 hover:text-slate-300 bg-slate-700/40 hover:bg-slate-700/60 px-3 py-1.5 rounded-lg transition-colors"
+                className="ms-auto text-xs text-slate-500 hover:text-slate-300 bg-slate-700/40 hover:bg-slate-700/60 px-3 py-1.5 rounded-lg transition-colors"
               >
-                إلغاء تحديد الجهاز
+                {t('ai_cancel_device')}
               </button>
             )}
           </div>
@@ -46,11 +48,11 @@ export function AiPage() {
       </div>
 
       {/* Devices sidebar */}
-      <div className="w-64 flex-shrink-0 border-r border-slate-700/50 bg-navy-800/50 flex flex-col">
+      <div className="w-64 flex-shrink-0 border-s border-slate-700/50 bg-navy-800/50 flex flex-col">
         <div className="px-4 py-3 border-b border-slate-700/50 flex-shrink-0">
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">الأجهزة المتصلة</h3>
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('ai_connected_devices')}</h3>
           {onlineDevices.length > 0 && (
-            <p className="text-[10px] text-slate-600 mt-0.5">اختر جهازاً لتنفيذ الأوامر</p>
+            <p className="text-[10px] text-slate-600 mt-0.5">{t('ai_select_device_hint')}</p>
           )}
         </div>
 
@@ -59,7 +61,7 @@ export function AiPage() {
           <button
             onClick={() => setSelectedDeviceId(undefined)}
             className={clsx(
-              'w-full text-right p-2.5 rounded-lg border transition-all',
+              'w-full text-start p-2.5 rounded-lg border transition-all',
               !selectedDeviceId
                 ? 'bg-brand-blue/10 border-brand-blue/30 text-brand-blue'
                 : 'border-transparent hover:border-slate-700/50 hover:bg-slate-700/20 text-slate-400'
@@ -67,14 +69,14 @@ export function AiPage() {
           >
             <div className="flex items-center gap-2">
               <Bot size={12} className={!selectedDeviceId ? 'text-brand-blue' : 'text-slate-500'} />
-              <span className="text-xs font-medium">عام (بدون جهاز)</span>
+              <span className="text-xs font-medium">{t('ai_global')}</span>
             </div>
           </button>
 
           {onlineDevices.length === 0 && (
             <div className="text-center py-6">
               <Monitor size={24} className="text-slate-700 mx-auto mb-2" />
-              <p className="text-xs text-slate-600">لا توجد أجهزة متصلة</p>
+              <p className="text-xs text-slate-600">{t('no_devices_yet')}</p>
             </div>
           )}
 
@@ -86,7 +88,7 @@ export function AiPage() {
                 key={d.id}
                 onClick={() => setSelectedDeviceId(d.id)}
                 className={clsx(
-                  'w-full text-right p-3 rounded-lg border transition-all',
+                  'w-full text-start p-3 rounded-lg border transition-all',
                   isSelected
                     ? 'bg-brand-teal/10 border-brand-teal/30'
                     : 'border-transparent hover:border-slate-700/50 hover:bg-slate-700/20'
@@ -100,9 +102,9 @@ export function AiPage() {
                     <p className={clsx('text-xs font-medium truncate', isSelected ? 'text-brand-teal' : 'text-slate-200')}>{d.name}</p>
                     <div className="flex items-center gap-1">
                       <Circle size={5} className="text-emerald-400 fill-current" />
-                      <span className="text-[10px] text-emerald-400">متصل</span>
+                      <span className="text-[10px] text-emerald-400">{t('online')}</span>
                       {isSelected && (
-                        <span className="text-[10px] text-brand-teal mr-1">✓ محدد</span>
+                        <span className="text-[10px] text-brand-teal ms-1">✓</span>
                       )}
                     </div>
                   </div>
@@ -133,7 +135,7 @@ export function AiPage() {
                 {!stats && (
                   <div className="flex items-center gap-1 text-[10px] text-slate-600">
                     <Wifi size={9} />
-                    في انتظار البيانات...
+                    {t('connecting')}
                   </div>
                 )}
               </button>

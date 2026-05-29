@@ -13,6 +13,7 @@ import { FileManager } from '../components/FileManager'
 import { AiChatPanel } from '../components/AiChatPanel'
 import { CommandRunner } from '../components/CommandRunner'
 import type { Device } from '@airemote/shared'
+import { useT } from '../lib/i18n'
 
 type Tab = 'overview' | 'terminal' | 'monitor' | 'files' | 'ai' | 'commands'
 
@@ -41,6 +42,7 @@ function ConnectionForm({ device, onConnect }: {
   device: Device
   onConnect: (cfg: SSHConfig) => void
 }) {
+  const t = useT()
   const [host, setHost] = useState(device.info?.ipLocal || device.info?.ipPublic || '')
   const [port, setPort] = useState(22)
   const [username, setUsername] = useState('root')
@@ -63,12 +65,12 @@ function ConnectionForm({ device, onConnect }: {
     <form onSubmit={handleSubmit} className="glass rounded-xl p-5 max-w-md">
       <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
         <Server size={14} className="text-brand-blue" />
-        إعدادات اتصال SSH
+        {t('ssh_config_title')}
       </h3>
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-2">
           <div className="col-span-2">
-            <label className="text-xs text-slate-400 block mb-1">عنوان IP / الاسم</label>
+            <label className="text-xs text-slate-400 block mb-1">{t('ip_local')} / {t('hostname')}</label>
             <input
               type="text" value={host} onChange={e => setHost(e.target.value)}
               placeholder="192.168.1.100" required
@@ -77,7 +79,7 @@ function ConnectionForm({ device, onConnect }: {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-400 block mb-1">المنفذ</label>
+            <label className="text-xs text-slate-400 block mb-1">Port</label>
             <input
               type="number" value={port} onChange={e => setPort(Number(e.target.value))}
               min={1} max={65535}
@@ -86,7 +88,7 @@ function ConnectionForm({ device, onConnect }: {
           </div>
         </div>
         <div>
-          <label className="text-xs text-slate-400 block mb-1">اسم المستخدم</label>
+          <label className="text-xs text-slate-400 block mb-1">Username</label>
           <input
             type="text" value={username} onChange={e => setUsername(e.target.value)} required
             className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-brand-blue"
@@ -94,7 +96,7 @@ function ConnectionForm({ device, onConnect }: {
           />
         </div>
         <div>
-          <label className="text-xs text-slate-400 block mb-1">طريقة المصادقة</label>
+          <label className="text-xs text-slate-400 block mb-1">Auth</label>
           <div className="flex gap-2">
             {(['password', 'key'] as const).map(m => (
               <button
@@ -103,14 +105,14 @@ function ConnectionForm({ device, onConnect }: {
                   authMethod === m ? 'bg-brand-blue/15 border-brand-blue/40 text-brand-blue' : 'bg-navy-900 border-slate-600 text-slate-400 hover:border-slate-500'
                 )}
               >
-                {m === 'password' ? 'كلمة مرور' : 'مفتاح خاص'}
+                {m === 'password' ? t('password') : 'Private Key'}
               </button>
             ))}
           </div>
         </div>
         {authMethod === 'password' ? (
           <div>
-            <label className="text-xs text-slate-400 block mb-1">كلمة المرور</label>
+            <label className="text-xs text-slate-400 block mb-1">{t('password')}</label>
             <input
               type="password" value={password} onChange={e => setPassword(e.target.value)}
               className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-brand-blue"
@@ -118,7 +120,7 @@ function ConnectionForm({ device, onConnect }: {
           </div>
         ) : (
           <div>
-            <label className="text-xs text-slate-400 block mb-1">المفتاح الخاص (PEM)</label>
+            <label className="text-xs text-slate-400 block mb-1">Private Key (PEM)</label>
             <textarea
               value={privateKey} onChange={e => setPrivateKey(e.target.value)} rows={4}
               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----..."
@@ -127,7 +129,7 @@ function ConnectionForm({ device, onConnect }: {
           </div>
         )}
         <button type="submit" className="w-full bg-brand-blue hover:bg-blue-500 text-white text-sm font-medium py-2.5 rounded-lg transition-colors">
-          اتصال
+          {t('connect')}
         </button>
       </div>
     </form>
@@ -135,28 +137,29 @@ function ConnectionForm({ device, onConnect }: {
 }
 
 function DeviceInfoPanel({ device }: { device: Device }) {
+  const t = useT()
   const { statsMap } = useDeviceStore()
   const stats = statsMap[device.id]
 
   const uptime = stats?.uptime
-    ? `${Math.floor(stats.uptime / 3600)}س ${Math.floor((stats.uptime % 3600) / 60)}د`
+    ? `${Math.floor(stats.uptime / 3600)}h ${Math.floor((stats.uptime % 3600) / 60)}m`
     : '—'
 
   const infoRows = [
-    { label: 'Hostname', value: device.info?.hostname || '—', icon: Server },
-    { label: 'النظام', value: device.info ? `${device.info.platform} ${device.info.osVersion}` : '—', icon: Monitor },
-    { label: 'المعمارية', value: device.info?.arch || '—', icon: Cpu },
-    { label: 'IP المحلي', value: device.info?.ipLocal || '—', icon: Globe },
-    { label: 'IP العام', value: device.info?.ipPublic || '—', icon: Globe },
-    { label: 'طريقة الاتصال', value: device.tunnelLayer || '—', icon: Wifi },
-    { label: 'وقت التشغيل', value: uptime, icon: Clock },
+    { label: t('hostname'),  value: device.info?.hostname || '—', icon: Server },
+    { label: t('platform'),  value: device.info ? `${device.info.platform} ${device.info.osVersion}` : '—', icon: Monitor },
+    { label: 'Arch',         value: device.info?.arch || '—', icon: Cpu },
+    { label: t('ip_local'),  value: device.info?.ipLocal || '—', icon: Globe },
+    { label: t('ip_public'), value: device.info?.ipPublic || '—', icon: Globe },
+    { label: 'Tunnel',       value: device.tunnelLayer || '—', icon: Wifi },
+    { label: t('uptime'),    value: uptime, icon: Clock },
   ]
 
   return (
     <div className="space-y-4">
       <div className="glass rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-700/50">
-          <h3 className="text-sm font-medium text-slate-200">معلومات الجهاز</h3>
+          <h3 className="text-sm font-medium text-slate-200">{t('device_info')}</h3>
         </div>
         <div className="divide-y divide-slate-700/30">
           {infoRows.map(({ label, value, icon: Icon }) => (
@@ -174,7 +177,7 @@ function DeviceInfoPanel({ device }: { device: Device }) {
       {stats && (
         <div className="glass rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-700/50">
-            <h3 className="text-sm font-medium text-slate-200">الموارد الحالية</h3>
+            <h3 className="text-sm font-medium text-slate-200">{t('tab_monitor')}</h3>
           </div>
           <div className="p-4 grid grid-cols-3 gap-4">
             {[
@@ -208,6 +211,7 @@ function DeviceInfoPanel({ device }: { device: Device }) {
 }
 
 export function DeviceWorkspacePage() {
+  const t = useT()
   const { deviceId } = useParams<{ deviceId: string }>()
   const { devices, statsMap } = useDeviceStore()
   const [tab, setTab] = useState<Tab>('overview')
@@ -225,9 +229,9 @@ export function DeviceWorkspacePage() {
     return (
       <div className="p-6 text-center">
         <Monitor size={32} className="text-slate-600 mx-auto mb-3" />
-        <p className="text-slate-400">الجهاز غير موجود</p>
+        <p className="text-slate-400">{t('no_devices_yet')}</p>
         <Link to="/devices" className="text-brand-blue text-sm hover:underline mt-2 inline-block">
-          العودة للأجهزة
+          {t('back_to_devices')}
         </Link>
       </div>
     )
@@ -235,13 +239,13 @@ export function DeviceWorkspacePage() {
 
   const isOnline = device.status === 'online'
 
-  const tabs: { id: Tab; label: string; icon: React.ElementType; disabled?: boolean; badge?: string }[] = [
-    { id: 'overview', label: 'نظرة عامة', icon: Server },
-    { id: 'commands', label: 'أوامر', icon: Command, disabled: !isOnline },
-    { id: 'terminal', label: 'SSH Terminal', icon: Terminal, disabled: !isOnline },
-    { id: 'monitor', label: 'المراقبة', icon: Activity },
-    { id: 'files', label: 'الملفات', icon: FolderOpen, disabled: !isOnline },
-    { id: 'ai', label: 'AI', icon: Bot },
+  const tabs: { id: Tab; label: string; icon: React.ElementType; disabled?: boolean }[] = [
+    { id: 'overview',  label: t('tab_overview'),  icon: Server },
+    { id: 'commands',  label: t('tab_commands'),  icon: Command,    disabled: !isOnline },
+    { id: 'terminal',  label: t('tab_terminal'),  icon: Terminal,   disabled: !isOnline },
+    { id: 'monitor',   label: t('tab_monitor'),   icon: Activity },
+    { id: 'files',     label: t('tab_files'),     icon: FolderOpen, disabled: !isOnline },
+    { id: 'ai',        label: t('tab_ai'),        icon: Bot },
   ]
 
   function handleConnect(cfg: SSHConfig) {
@@ -265,14 +269,14 @@ export function DeviceWorkspacePage() {
             <p className="text-xs text-slate-500 mt-0.5">{device.info?.hostname || device.id.slice(0, 12)}</p>
           </div>
           <span className={clsx(
-            'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ml-auto',
+            'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ms-auto',
             isOnline ? 'bg-emerald-400/10 text-emerald-400' : 'bg-slate-700/50 text-slate-400'
           )}>
             {isOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
-            {isOnline ? 'متصل' : 'غير متصل'}
+            {isOnline ? t('device_online') : t('device_offline')}
           </span>
           {stats && (
-            <div className="hidden lg:flex items-center gap-3 text-xs text-slate-400 border-r border-slate-700/50 pr-4 mr-2">
+            <div className="hidden lg:flex items-center gap-3 text-xs text-slate-400 border-s border-slate-700/50 ps-4 ms-2">
               <span className="flex items-center gap-1"><Cpu size={10} className="text-brand-blue" /><span className="font-mono text-slate-200">{stats.cpuPercent}%</span></span>
               <span className="flex items-center gap-1"><MemoryStick size={10} className="text-brand-teal" /><span className="font-mono text-slate-200">{stats.ramPercent}%</span></span>
               <span className="flex items-center gap-1"><HardDrive size={10} className="text-purple-400" /><span className="font-mono text-slate-200">{stats.diskPercent}%</span></span>
@@ -281,21 +285,21 @@ export function DeviceWorkspacePage() {
         </div>
 
         <div className="flex gap-1">
-          {tabs.map(t => (
+          {tabs.map(tb => (
             <button
-              key={t.id}
-              onClick={() => !t.disabled && setTab(t.id)}
-              disabled={t.disabled}
+              key={tb.id}
+              onClick={() => !tb.disabled && setTab(tb.id)}
+              disabled={tb.disabled}
               className={clsx(
                 'flex items-center gap-2 px-4 py-2.5 text-sm border-b-2 transition-all',
-                tab === t.id ? 'border-brand-blue text-brand-blue font-medium' :
-                t.disabled ? 'border-transparent text-slate-600 cursor-not-allowed' :
+                tab === tb.id ? 'border-brand-blue text-brand-blue font-medium' :
+                tb.disabled ? 'border-transparent text-slate-600 cursor-not-allowed' :
                 'border-transparent text-slate-400 hover:text-slate-200'
               )}
             >
-              <t.icon size={14} />
-              {t.label}
-              {t.disabled && !isOnline && <span className="text-[10px] bg-slate-700/50 text-slate-500 px-1.5 py-0.5 rounded">offline</span>}
+              <tb.icon size={14} />
+              {tb.label}
+              {tb.disabled && !isOnline && <span className="text-[10px] bg-slate-700/50 text-slate-500 px-1.5 py-0.5 rounded">{t('offline')}</span>}
             </button>
           ))}
         </div>
@@ -313,7 +317,7 @@ export function DeviceWorkspacePage() {
               <div className="glass rounded-xl p-5">
                 <h3 className="text-sm font-medium text-slate-200 mb-4 flex items-center gap-2">
                   <Activity size={14} className="text-brand-blue" />
-                  المراقبة الفورية
+                  {t('tab_monitor')}
                 </h3>
                 <MonitoringCharts deviceId={device.id} stats={stats} />
               </div>
@@ -342,7 +346,7 @@ export function DeviceWorkspacePage() {
                     onClick={() => { setSshConfig(null); setShowConnForm(true) }}
                     className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
                   >
-                    تغيير الاتصال
+                    {t('disconnect')}
                   </button>
                 </div>
                 <div className="flex-1 min-h-0">
@@ -356,7 +360,7 @@ export function DeviceWorkspacePage() {
         {tab === 'monitor' && (
           <div className="space-y-5 p-5">
             <div className="glass rounded-xl p-5">
-              <h3 className="text-sm font-medium text-slate-200 mb-4">مراقبة الموارد — {device.name}</h3>
+              <h3 className="text-sm font-medium text-slate-200 mb-4">{t('tab_monitor')} — {device.name}</h3>
               <MonitoringCharts deviceId={device.id} stats={stats} />
             </div>
           </div>
@@ -370,13 +374,13 @@ export function DeviceWorkspacePage() {
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
                   <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
                     <FolderOpen size={14} className="text-brand-teal" />
-                    مدير الملفات SFTP — {sshConfig.username}@{sshConfig.host}
+                    SFTP — {sshConfig.username}@{sshConfig.host}
                   </h3>
                   <button
                     onClick={() => { setSshConfig(null); setShowConnForm(true) }}
                     className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
                   >
-                    تغيير الاتصال
+                    {t('disconnect')}
                   </button>
                 </div>
                 <div style={{ height: 'calc(100% - 49px)' }}>

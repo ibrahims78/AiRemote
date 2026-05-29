@@ -4,3 +4,4 @@
 - [AiRemote Fastify Multipart Version](airemote-multipart.md) — @fastify/multipart@8 required for Fastify 4.x; v9+ causes FST_ERR_PLUGIN_VERSION_MISMATCH
 - [AiRemote Phase 1 Complete](airemote-phase1.md) — All 14 bugs/gaps fixed; server rebuilt; both workflows running; BUILD_REPORT at airemote/.local/BUILD_REPORT.md
 - [AiRemote Phase 2 Complete](airemote-phase2.md) — AI command execution, CommandRunner, device context in AI, agent install modal; exec endpoint at POST /api/devices/:id/exec
+- [AiRemote UI System](airemote-ui-system.md) — Dark/light theme via html.light class; AR/EN i18n via useT() hook (reactive Zustand); all 9 pages updated
