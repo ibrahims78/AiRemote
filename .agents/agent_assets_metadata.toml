@@ -11,4 +11,16 @@ title = "AiRemote Agent — Windows 10 x64"
 id = "NjWWnM3KcE6DmGMt1ghJs"
 uri = "file://AiRemote-Agent-Windows-x64.tar.gz"
 type = "unspecified"
-title = "AiRemote Agent — Windows x64 (Portable)"
+title = "① Electron GUI — تطبيق كامل مع واجهة (67MB)"
+
+[[outputs]]
+id = "BdE9qGKtPaeGG-0tEeWah"
+uri = "file://AiRemote-Agent-Headless-pkg.tar.gz"
+type = "unspecified"
+title = "② Headless pkg — بدون واجهة، مستقل (14MB مضغوط / 37MB)"
+
+[[outputs]]
+id = "WjBiB3s-BsgtzWYj_b0Cm"
+uri = "file://AiRemote-Agent-Script.tar.gz"
+type = "unspecified"
+title = "③ Script — أصغر حجم، يحتاج Node.js (4KB)"
