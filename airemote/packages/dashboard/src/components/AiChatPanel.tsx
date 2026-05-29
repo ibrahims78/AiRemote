@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Bot, Send, Trash2, User, Loader, ChevronDown, Key, Zap, Copy, Play, Check, Terminal, AlertCircle } from 'lucide-react'
+import { Bot, Send, Trash2, User, Loader, ChevronDown, Key, Zap, Copy, Play, Check, Terminal, AlertCircle, Wifi, WifiOff } from 'lucide-react'
 import { clsx } from 'clsx'
 import { api } from '../lib/api'
 
@@ -19,9 +19,9 @@ interface AIConfig {
 }
 
 const PROVIDERS = [
-  { value: 'openai', label: 'OpenAI GPT-4o', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'] },
-  { value: 'gemini', label: 'Google Gemini', models: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'] },
-  { value: 'ollama', label: 'Ollama (محلي)', models: ['llama3', 'llama3.1', 'mistral', 'codellama', 'phi3', 'qwen2'] }
+  { value: 'openai',  label: 'OpenAI GPT-4o',   models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'] },
+  { value: 'gemini',  label: 'Google Gemini',    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
+  { value: 'ollama',  label: 'Ollama (محلي)',    models: ['llama3', 'llama3.1', 'mistral', 'codellama', 'phi3', 'qwen2'] }
 ]
 
 const CONFIG_KEY = 'airemote-ai-config'
@@ -42,7 +42,6 @@ const QUICK_PROMPTS = [
   'تحقق من مساحة القرص المتاحة',
 ]
 
-// Parse message content into text and code blocks
 interface ContentPart {
   type: 'text' | 'code'
   content: string
@@ -157,8 +156,35 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
   const [showConfig, setShowConfig] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [config, setConfig] = useState<AIConfig>(loadSavedConfig)
+  const [validating, setValidating] = useState(false)
+  const [validateOk, setValidateOk] = useState<boolean | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load config from server settings on mount and merge with localStorage
+  useEffect(() => {
+    api.get('/api/settings').then(res => {
+      const d = res.data
+      const local = loadSavedConfig()
+      // If localStorage has a saved provider, keep it — otherwise use server settings
+      const hasLocal = !!localStorage.getItem(CONFIG_KEY)
+      if (!hasLocal && (d.aiProvider || d.aiApiKey)) {
+        const serverCfg: AIConfig = {
+          provider: d.aiProvider || 'openai',
+          model: d.aiModel || (d.aiProvider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o'),
+          apiKey: d.aiApiKey || '',
+          baseUrl: d.ollamaUrl || '',
+        }
+        setConfig(serverCfg)
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(serverCfg))
+      } else if (hasLocal && d.aiApiKey && !local.apiKey) {
+        // Have local provider/model but missing key — fill from server
+        const merged: AIConfig = { ...local, apiKey: d.aiApiKey, baseUrl: d.ollamaUrl || local.baseUrl }
+        setConfig(merged)
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(merged))
+      }
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -191,7 +217,35 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
   const saveConfig = useCallback((cfg: AIConfig) => {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg))
     setConfig(cfg)
+    setValidateOk(null)
+    // Also sync to server settings
+    api.put('/api/settings', {
+      aiProvider: cfg.provider,
+      aiModel: cfg.model,
+      aiApiKey: cfg.apiKey || '',
+      ollamaUrl: cfg.baseUrl || '',
+    }).catch(() => {})
   }, [])
+
+  async function handleValidate() {
+    setValidating(true)
+    setValidateOk(null)
+    try {
+      await api.post('/api/ai/validate', {
+        config: {
+          provider: config.provider,
+          model: config.model,
+          apiKey: config.apiKey || undefined,
+          baseUrl: config.baseUrl || undefined,
+        }
+      })
+      setValidateOk(true)
+    } catch {
+      setValidateOk(false)
+    } finally {
+      setValidating(false)
+    }
+  }
 
   async function handleSend(text?: string) {
     const msg = (text || input).trim()
@@ -268,7 +322,7 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
           </div>
           <div>
             <h3 className="text-sm font-medium text-slate-200">AI Assistant</h3>
-            <p className="text-xs text-slate-500">{selectedProvider.label} · {config.model}</p>
+            <p className="text-xs text-slate-500">{selectedProvider?.label} · {config.model}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -319,7 +373,7 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
                 className="w-full bg-navy-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-teal"
                 dir="ltr"
               >
-                {selectedProvider.models.map(m => <option key={m} value={m}>{m}</option>)}
+                {selectedProvider?.models.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
           </div>
@@ -336,12 +390,37 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
               dir="ltr"
             />
           </div>
-          <button
-            onClick={() => setShowConfig(false)}
-            className="w-full flex items-center justify-center gap-1.5 bg-brand-teal/15 hover:bg-brand-teal/25 text-brand-teal text-xs py-1.5 rounded-lg transition-colors"
-          >
-            <ChevronDown size={12} /> حفظ وإغلاق
-          </button>
+
+          {/* Validate + Save buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleValidate}
+              disabled={validating || (config.provider !== 'ollama' && !config.apiKey?.trim())}
+              className={clsx(
+                'flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-all disabled:opacity-40',
+                validateOk === true
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : validateOk === false
+                    ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                    : 'border-slate-600 text-slate-400 hover:border-brand-teal hover:text-brand-teal'
+              )}
+            >
+              {validating
+                ? <><Loader size={10} className="animate-spin" /> جاري...</>
+                : validateOk === true
+                  ? <><Wifi size={10} /> ناجح</>
+                  : validateOk === false
+                    ? <><WifiOff size={10} /> فشل</>
+                    : <><Wifi size={10} /> اختبار</>
+              }
+            </button>
+            <button
+              onClick={() => setShowConfig(false)}
+              className="flex-1 flex items-center justify-center gap-1.5 bg-brand-teal/15 hover:bg-brand-teal/25 text-brand-teal text-xs py-1.5 rounded-lg transition-colors"
+            >
+              <ChevronDown size={12} /> حفظ وإغلاق
+            </button>
+          </div>
         </div>
       )}
 

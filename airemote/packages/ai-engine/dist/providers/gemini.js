@@ -1,25 +1,27 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GeminiProvider = void 0;
-const generative_ai_1 = require("@google/generative-ai");
+const genai_1 = require("@google/genai");
 class GeminiProvider {
     constructor(config) {
         this.config = config;
-        this.client = new generative_ai_1.GoogleGenerativeAI(config.apiKey || '');
+        this.client = new genai_1.GoogleGenAI({ apiKey: config.apiKey || '' });
     }
     async chat(messages, systemPrompt) {
-        const model = this.client.getGenerativeModel({
-            model: this.config.model || 'gemini-1.5-pro',
-            systemInstruction: systemPrompt
-        });
-        const history = messages.slice(0, -1).map(m => ({
+        const contents = messages.map(m => ({
             role: m.role === 'user' ? 'user' : 'model',
             parts: [{ text: m.content }]
         }));
-        const chat = model.startChat({ history });
-        const lastMessage = messages[messages.length - 1];
-        const result = await chat.sendMessage(lastMessage?.content || '');
-        return result.response.text();
+        const response = await this.client.models.generateContent({
+            model: this.config.model || 'gemini-2.5-flash',
+            contents,
+            config: {
+                ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+                temperature: this.config.temperature ?? 0.3,
+                maxOutputTokens: this.config.maxTokens ?? 2000,
+            }
+        });
+        return response.text ?? '';
     }
 }
 exports.GeminiProvider = GeminiProvider;

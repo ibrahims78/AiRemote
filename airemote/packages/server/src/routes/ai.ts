@@ -106,4 +106,24 @@ export async function aiRoutes(fastify: FastifyInstance) {
     } catch {}
     return { ok: true }
   })
+
+  // Validate AI API key
+  fastify.post<{ Body: { config: AIConfig } }>('/validate', async (request, reply) => {
+    const { config } = request.body
+    if (!config?.provider) return reply.code(400).send({ error: 'Config required' })
+
+    if (config.provider !== 'ollama' && !config.apiKey?.trim()) {
+      return reply.code(400).send({ error: 'API key is required' })
+    }
+
+    try {
+      const provider = createAIProvider(config)
+      const testMessages: AIMessage[] = [{ role: 'user', content: 'Say "OK" in one word only.', timestamp: new Date() }]
+      const response = await provider.chat(testMessages)
+      return { ok: true, response: response.slice(0, 100) }
+    } catch (err: unknown) {
+      const error = err as Error
+      return reply.code(400).send({ ok: false, error: error.message })
+    }
+  })
 }

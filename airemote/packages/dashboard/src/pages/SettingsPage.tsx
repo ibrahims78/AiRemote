@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   Settings, Server, Bot, Bell, Save, Check, Eye, EyeOff,
-  RefreshCw, Info, Sun, Moon, Globe, Copy
+  RefreshCw, Info, Sun, Moon, Globe, Copy, Wifi, WifiOff, Loader
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useUIStore } from '../store/uiStore'
@@ -18,9 +18,11 @@ interface AISettings {
 
 const MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  gemini: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro'],
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
   ollama: ['llama3', 'llama3.1', 'mistral', 'codellama', 'phi3', 'qwen2']
 }
+
+type ValidateState = 'idle' | 'loading' | 'ok' | 'error'
 
 export function SettingsPage() {
   const [ai, setAi] = useState<AISettings>({ aiProvider: 'openai', aiModel: 'gpt-4o', aiApiKey: '', ollamaUrl: '' })
@@ -30,6 +32,8 @@ export function SettingsPage() {
   const [showKey, setShowKey] = useState(false)
   const [telegramToken, setTelegramToken] = useState('')
   const [copied, setCopied] = useState(false)
+  const [validateState, setValidateState] = useState<ValidateState>('idle')
+  const [validateMsg, setValidateMsg] = useState('')
   const { theme, toggleTheme, lang, toggleLang } = useUIStore()
   const T = useT()
   const isAr = lang === 'ar'
@@ -52,12 +56,35 @@ export function SettingsPage() {
     try {
       await api.put('/api/settings', { ...ai, telegramToken })
       setSaved(true)
+      setValidateState('idle')
       toast.success(T('toast_settings_saved'))
       setTimeout(() => setSaved(false), 2500)
     } catch {
       toast.error(T('save_failed'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleValidate() {
+    setValidateState('loading')
+    setValidateMsg('')
+    try {
+      const config = {
+        provider: ai.aiProvider,
+        model: ai.aiModel,
+        apiKey: ai.aiApiKey || undefined,
+        baseUrl: ai.ollamaUrl || undefined,
+      }
+      const res = await api.post('/api/ai/validate', { config })
+      setValidateState('ok')
+      setValidateMsg(isAr ? `الاتصال ناجح ✓` : `Connection successful ✓`)
+      toast.success(isAr ? 'مفتاح API يعمل بشكل صحيح' : 'API key is valid and working')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } } }
+      const msg = err.response?.data?.error || 'Connection failed'
+      setValidateState('error')
+      setValidateMsg(msg)
     }
   }
 
@@ -208,7 +235,11 @@ export function SettingsPage() {
                   <label className="block text-xs text-slate-500 mb-1.5">{T('ai_provider')}</label>
                   <select
                     value={ai.aiProvider}
-                    onChange={e => setAi(p => ({ ...p, aiProvider: e.target.value as AISettings['aiProvider'], aiModel: MODELS[e.target.value]?.[0] || '' }))}
+                    onChange={e => {
+                      const prov = e.target.value as AISettings['aiProvider']
+                      setAi(p => ({ ...p, aiProvider: prov, aiModel: MODELS[prov]?.[0] || '' }))
+                      setValidateState('idle')
+                    }}
                     className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-teal"
                     dir="ltr"
                   >
@@ -221,7 +252,7 @@ export function SettingsPage() {
                   <label className="block text-xs text-slate-500 mb-1.5">{T('ai_model')}</label>
                   <select
                     value={ai.aiModel}
-                    onChange={e => setAi(p => ({ ...p, aiModel: e.target.value }))}
+                    onChange={e => { setAi(p => ({ ...p, aiModel: e.target.value })); setValidateState('idle') }}
                     className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-teal"
                     dir="ltr"
                   >
@@ -239,7 +270,7 @@ export function SettingsPage() {
                     <input
                       type={showKey ? 'text' : 'password'}
                       value={ai.aiApiKey}
-                      onChange={e => setAi(p => ({ ...p, aiApiKey: e.target.value }))}
+                      onChange={e => { setAi(p => ({ ...p, aiApiKey: e.target.value })); setValidateState('idle') }}
                       placeholder={ai.aiProvider === 'openai' ? 'sk-...' : 'AI...'}
                       className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-teal font-mono pr-10"
                       dir="ltr"
@@ -255,13 +286,44 @@ export function SettingsPage() {
                   <input
                     type="text"
                     value={ai.ollamaUrl}
-                    onChange={e => setAi(p => ({ ...p, ollamaUrl: e.target.value }))}
+                    onChange={e => { setAi(p => ({ ...p, ollamaUrl: e.target.value })); setValidateState('idle') }}
                     placeholder="http://localhost:11434"
                     className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-teal font-mono"
                     dir="ltr"
                   />
                 </div>
               )}
+
+              {/* Validate button */}
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={handleValidate}
+                  disabled={validateState === 'loading' || (ai.aiProvider !== 'ollama' && !ai.aiApiKey.trim())}
+                  className={clsx(
+                    'flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg border transition-all disabled:opacity-40 disabled:cursor-not-allowed',
+                    validateState === 'ok'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                      : validateState === 'error'
+                        ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                        : 'bg-slate-700/30 border-slate-600 text-slate-300 hover:border-brand-teal hover:text-brand-teal'
+                  )}
+                >
+                  {validateState === 'loading' ? (
+                    <><Loader size={12} className="animate-spin" /> {isAr ? 'جاري الاختبار...' : 'Testing...'}</>
+                  ) : validateState === 'ok' ? (
+                    <><Wifi size={12} /> {isAr ? 'الاتصال ناجح' : 'Connected'}</>
+                  ) : validateState === 'error' ? (
+                    <><WifiOff size={12} /> {isAr ? 'فشل الاتصال' : 'Failed'}</>
+                  ) : (
+                    <><Wifi size={12} /> {isAr ? 'اختبار الاتصال' : 'Test Connection'}</>
+                  )}
+                </button>
+                {validateMsg && validateState !== 'loading' && (
+                  <p className={clsx('text-xs', validateState === 'ok' ? 'text-emerald-400' : 'text-red-400')}>
+                    {validateMsg}
+                  </p>
+                )}
+              </div>
             </div>
           </Section>
 

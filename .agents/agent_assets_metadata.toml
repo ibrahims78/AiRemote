@@ -6,3 +6,9 @@ id = "LU1j_ywDImneduOI55pBu"
 uri = "file://airemote/packages/agent-desktop/dist/AiRemote-Agent-Win10-Portable.tar.gz"
 type = "unspecified"
 title = "AiRemote Agent — Windows 10 x64"
+
+[[outputs]]
+id = "NjWWnM3KcE6DmGMt1ghJs"
+uri = "file://AiRemote-Agent-Windows-x64.tar.gz"
+type = "unspecified"
+title = "AiRemote Agent — Windows x64 (Portable)"

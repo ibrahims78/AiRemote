@@ -2,3 +2,4 @@ airemote/packages/agent-desktop/dist/win-unpacked/AiRemote[[:space:]]Agent.exe f
 airemote/packages/agent-desktop/dist/AiRemote[[:space:]]Agent[[:space:]]1.0.0.exe filter=lfs diff=lfs merge=lfs -text
 airemote/packages/agent-desktop/dist/AiRemote-Agent-Win10-Portable.tar.gz filter=lfs diff=lfs merge=lfs -text
 airemote/packages/agent-desktop/dist/AiRemote-Agent-Win10-x64.tar.gz filter=lfs diff=lfs merge=lfs -text
+AiRemote-Agent-Windows-x64.tar.gz filter=lfs diff=lfs merge=lfs -text
