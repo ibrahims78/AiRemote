@@ -1,0 +1,35 @@
+directories:
+  output: dist
+  buildResources: build
+appId: io.airemote.agent
+productName: AiRemote Agent
+copyright: AiRemote
+files:
+  - filter:
+      - main.js
+      - preload.js
+      - renderer/**/*
+      - build/icon.ico
+      - node_modules/**/*
+extraResources: []
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AiRemote Agent
+  runAfterFinish: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  displayLanguageSelector: false
+  language: '1025'
+publish: null
+electronVersion: 28.3.3
