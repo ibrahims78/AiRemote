@@ -88,11 +88,21 @@ export function SettingsPage() {
     }
   }
 
+  const wsUrl = window.location.origin.replace(/^https?:\/\//, m => m === 'https://' ? 'wss://' : 'ws://') + '/ws'
+
   function copyServerUrl() {
     navigator.clipboard.writeText(window.location.origin)
     setCopied(true)
     toast.success(T('toast_copy_done'), window.location.origin)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const [copiedWs, setCopiedWs] = useState(false)
+  function copyWsUrl() {
+    navigator.clipboard.writeText(wsUrl)
+    setCopiedWs(true)
+    toast.success(isAr ? 'تم نسخ عنوان الـ WebSocket' : 'WebSocket URL copied', wsUrl)
+    setTimeout(() => setCopiedWs(false), 2000)
   }
 
   const availableModels = MODELS[ai.aiProvider] || []
@@ -201,6 +211,7 @@ export function SettingsPage() {
           {/* Server Info */}
           <Section icon={Server} color="text-brand-blue" title={T('server_info')}>
             <div className="space-y-3">
+              {/* HTTP URL */}
               <div>
                 <label className="block text-xs text-slate-500 mb-1.5">{T('server_address')}</label>
                 <div className="flex items-center gap-2">
@@ -220,6 +231,36 @@ export function SettingsPage() {
                   </button>
                 </div>
               </div>
+
+              {/* WebSocket URL — for Desktop Agent */}
+              <div>
+                <label className="block text-xs text-slate-500 mb-1.5">
+                  {isAr ? 'عنوان WebSocket — للـ Agent على Windows' : 'WebSocket URL — for Windows Agent'}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly value={wsUrl}
+                    className="flex-1 bg-navy-900 border border-brand-teal/40 rounded-lg px-3 py-2 text-sm text-brand-teal font-mono"
+                    dir="ltr"
+                  />
+                  <button
+                    onClick={copyWsUrl}
+                    className={clsx(
+                      'p-2 border rounded-lg transition-colors flex-shrink-0',
+                      copiedWs ? 'text-emerald-400 border-emerald-500/30 bg-emerald-400/10' : 'text-brand-teal border-brand-teal/30 hover:bg-brand-teal/10 bg-navy-900'
+                    )}
+                  >
+                    {copiedWs ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+                <p className="text-xs text-brand-teal/60 mt-1.5 flex items-center gap-1.5">
+                  <Info size={11} />
+                  {isAr
+                    ? 'انسخ هذا العنوان وضعه في حقل "Server URL" في تطبيق AiRemote Agent على Windows'
+                    : 'Copy this URL and paste it into the "Server URL" field in the Windows AiRemote Agent app'}
+                </p>
+              </div>
+
               <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-700/20 rounded-lg p-3">
                 <Info size={13} className="text-brand-blue flex-shrink-0 mt-0.5" />
                 <span>{T('server_address_hint')}</span>

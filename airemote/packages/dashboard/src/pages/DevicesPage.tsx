@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Monitor, Plus, Copy, Trash2, Check, X, ExternalLink, Terminal, BookOpen } from 'lucide-react'
+import { Monitor, Plus, Copy, Trash2, Check, X, ExternalLink, Terminal, BookOpen, Laptop } from 'lucide-react'
 import { useDeviceStore } from '../store/deviceStore'
 import { clsx } from 'clsx'
 import { Link } from 'react-router-dom'
@@ -10,6 +10,7 @@ function AgentInstallModal({ device, onClose }: { device: Device; onClose: () =>
   const t = useT()
   const [copied, setCopied] = useState<string | null>(null)
   const serverUrl = window.location.origin
+  const wsUrl = serverUrl.replace(/^https?:\/\//, m => m === 'https://' ? 'wss://' : 'ws://') + '/ws'
 
   const scripts = {
     linux: `# Install AiRemote Agent on Linux/macOS
@@ -62,23 +63,43 @@ AIREMOTE_LOG_LEVEL=info`
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Token */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-5 h-5 rounded-full bg-brand-blue text-white text-xs flex items-center justify-center font-bold">1</div>
-              <span className="text-sm font-medium text-slate-200">Token</span>
+          {/* Windows Agent — highlighted box */}
+          <div className="bg-brand-teal/5 border border-brand-teal/25 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Laptop size={15} className="text-brand-teal" />
+              <span className="text-sm font-semibold text-brand-teal">Windows Agent (Desktop App)</span>
             </div>
-            <div className="flex items-center gap-2 bg-navy-900 rounded-lg p-3 border border-slate-700/50">
-              <code className="text-xs font-mono text-brand-teal flex-1 break-all">{device.token}</code>
-              <button
-                onClick={() => copy('token', device.token)}
-                className="text-slate-400 hover:text-white p-1.5 transition-colors flex-shrink-0"
-              >
-                {copied === 'token' ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-              </button>
+
+            {/* WS URL */}
+            <div>
+              <label className="block text-xs text-slate-500 mb-1.5">① Server URL</label>
+              <div className="flex items-center gap-2 bg-navy-900 rounded-lg p-2.5 border border-brand-teal/30">
+                <code className="text-xs font-mono text-brand-teal flex-1 break-all" dir="ltr">{wsUrl}</code>
+                <button
+                  onClick={() => copy('wsurl', wsUrl)}
+                  className="text-slate-400 hover:text-brand-teal p-1.5 transition-colors flex-shrink-0"
+                >
+                  {copied === 'wsurl' ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                </button>
+              </div>
             </div>
-            <p className="text-xs text-orange-400/80 mt-1.5 flex items-center gap-1">
-              ⚠️ {t('device_name')} Token — {t('last_seen')}
+
+            {/* Token */}
+            <div>
+              <label className="block text-xs text-slate-500 mb-1.5">② Device Token</label>
+              <div className="flex items-center gap-2 bg-navy-900 rounded-lg p-2.5 border border-slate-700/50">
+                <code className="text-xs font-mono text-slate-300 flex-1 break-all" dir="ltr">{device.token}</code>
+                <button
+                  onClick={() => copy('token', device.token)}
+                  className="text-slate-400 hover:text-white p-1.5 transition-colors flex-shrink-0"
+                >
+                  {copied === 'token' ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              انسخ القيمتين أعلاه والصقهما في تطبيق AiRemote Agent على Windows ثم اضغط تشغيل.
             </p>
           </div>
 
