@@ -1,1 +1,9 @@
 airemote/packages/server/data/airemote.db
+
+# Agent build output — large binaries
+releases/**/*.exe
+releases/**/*.zip
+releases/**/*.7z
+releases/**/win-unpacked/
+releases/**/builder-debug.yml
+releases/**/builder-effective-config.yaml
