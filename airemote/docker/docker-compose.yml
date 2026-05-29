@@ -1,0 +1,40 @@
+version: '3.9'
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - airemote_data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - HOST=0.0.0.0
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret}
+      - DB_PATH=/app/data/airemote.db
+      - DASHBOARD_URL=${DASHBOARD_URL:-http://localhost:5173}
+    networks:
+      - airemote_net
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - airemote_net
+
+volumes:
+  airemote_data:
+
+networks:
+  airemote_net:
+    driver: bridge

@@ -1,0 +1,115 @@
+import type { WebSocket } from 'ws'
+import type { DeviceStats } from '@airemote/shared'
+
+interface ConnectedDevice {
+  deviceId: string
+  socket: WebSocket
+  stats?: DeviceStats
+  connectedAt: Date
+}
+
+interface ConnectedClient {
+  userId: string
+  socket: WebSocket
+  subscribedDevices: Set<string>
+}
+
+class DeviceRegistry {
+  private devices = new Map<string, ConnectedDevice>()
+  private clients = new Map<WebSocket, ConnectedClient>()
+
+  registerDevice(deviceId: string, socket: WebSocket, stats?: DeviceStats): void {
+    this.devices.set(deviceId, { deviceId, socket, stats, connectedAt: new Date() })
+  }
+
+  disconnectDevice(deviceId: string): void {
+    this.devices.delete(deviceId)
+    this.broadcastDeviceStatus(deviceId, 'offline')
+  }
+
+  getDevice(deviceId: string): ConnectedDevice | undefined {
+    return this.devices.get(deviceId)
+  }
+
+  isDeviceOnline(deviceId: string): boolean {
+    return this.devices.has(deviceId)
+  }
+
+  getOnlineDeviceIds(): string[] {
+    return Array.from(this.devices.keys())
+  }
+
+  updateDeviceStats(deviceId: string, stats: DeviceStats): void {
+    const device = this.devices.get(deviceId)
+    if (device) {
+      device.stats = stats
+      // Broadcast to ALL connected clients (fix: not just subscribed ones, since clients subscribe to all)
+      this.broadcastStatsUpdate(deviceId, stats)
+    }
+  }
+
+  addClient(userId: string, socket: WebSocket): void {
+    this.clients.set(socket, { userId, socket, subscribedDevices: new Set() })
+  }
+
+  removeClient(userId: string, socket: WebSocket): void {
+    this.clients.delete(socket)
+  }
+
+  subscribeClientToDevice(socket: WebSocket, deviceId: string): void {
+    const client = this.clients.get(socket)
+    if (client) client.subscribedDevices.add(deviceId)
+  }
+
+  subscribeClientToAll(socket: WebSocket): void {
+    const client = this.clients.get(socket)
+    if (client) {
+      for (const deviceId of this.devices.keys()) {
+        client.subscribedDevices.add(deviceId)
+      }
+    }
+  }
+
+  sendToDevice(deviceId: string, message: object): boolean {
+    const device = this.devices.get(deviceId)
+    if (!device || device.socket.readyState !== 1) return false
+    device.socket.send(JSON.stringify(message))
+    return true
+  }
+
+  broadcastDeviceStatus(deviceId: string, status: string, tunnelLayer?: string): void {
+    const msg = JSON.stringify({
+      type: 'broadcast:device_update',
+      payload: { deviceId, status, tunnelLayer },
+      timestamp: Date.now()
+    })
+    for (const [, client] of this.clients) {
+      if (client.socket.readyState === 1) {
+        client.socket.send(msg)
+      }
+    }
+  }
+
+  broadcastStatsUpdate(deviceId: string, stats: DeviceStats): void {
+    const msg = JSON.stringify({
+      type: 'broadcast:stats_update',
+      payload: { deviceId, stats },
+      timestamp: Date.now()
+    })
+    // Broadcast to ALL clients — every dashboard user needs live stats
+    for (const [, client] of this.clients) {
+      if (client.socket.readyState === 1) {
+        client.socket.send(msg)
+      }
+    }
+  }
+
+  getStats() {
+    return {
+      onlineDevices: this.devices.size,
+      connectedClients: this.clients.size
+    }
+  }
+}
+
+export const deviceRegistry = new DeviceRegistry()

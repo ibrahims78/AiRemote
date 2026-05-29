@@ -1,0 +1,6 @@
+- [AiRemote Stack Constraints](airemote-stack.md) — better-sqlite3 fails in Nix sandbox; use @libsql/client; all DB calls must be async
+- [AiRemote Workflow Setup](airemote-workflows.md) — Server port 3001 (console), Dashboard port 5000 (webview); SSH proxy on /ssh in vite config
+- [AiRemote Package Structure](airemote-packages.md) — 5 workspace packages; ai-engine must be built before server; add as workspace:* dep when needed
+- [AiRemote Fastify Multipart Version](airemote-multipart.md) — @fastify/multipart@8 required for Fastify 4.x; v9+ causes FST_ERR_PLUGIN_VERSION_MISMATCH
+- [AiRemote Phase 1 Complete](airemote-phase1.md) — All 14 bugs/gaps fixed; server rebuilt; both workflows running; BUILD_REPORT at airemote/.local/BUILD_REPORT.md
+- [AiRemote Phase 2 Complete](airemote-phase2.md) — AI command execution, CommandRunner, device context in AI, agent install modal; exec endpoint at POST /api/devices/:id/exec
