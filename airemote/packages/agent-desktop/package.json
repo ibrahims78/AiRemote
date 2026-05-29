@@ -21,8 +21,9 @@
     "appId": "io.airemote.agent",
     "productName": "AiRemote Agent",
     "copyright": "Copyright © 2025 AiRemote",
+    "artifactName": "AiRemote-Agent-v${version}-Windows-x64.exe",
     "directories": {
-      "output": "dist"
+      "output": "../../../releases/agent-windows"
     },
     "files": [
       "main.js",

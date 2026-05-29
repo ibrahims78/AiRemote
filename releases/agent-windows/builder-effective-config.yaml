@@ -1,0 +1,26 @@
+directories:
+  output: ../../../releases/agent-windows
+  buildResources: build
+appId: io.airemote.agent
+productName: AiRemote Agent
+copyright: Copyright © 2025 AiRemote
+artifactName: AiRemote-Agent-v${version}-Windows-x64.exe
+files:
+  - filter:
+      - main.js
+      - preload.js
+      - renderer/**/*
+      - build/icon.ico
+      - node_modules/**/*
+extraResources: []
+win:
+  target: portable
+  icon: build/icon.ico
+  requestedExecutionLevel: asInvoker
+  signAndEditExecutable: false
+  signingHashAlgorithms: null
+portable:
+  requestExecutionLevel: user
+  unpackDirName: airemote-agent
+publish: null
+electronVersion: 28.3.3
