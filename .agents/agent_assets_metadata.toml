@@ -30,3 +30,9 @@ id = "ka9C4_gtcBqqGm6G_P1dW"
 uri = "file://airemote/packages/agent-desktop/dist/AiRemote-Agent-v1.0.0-Updated.tar.gz"
 type = "unspecified"
 title = "AiRemote Agent — Windows (محدَّث)"
+
+[[outputs]]
+id = "AcKt8jcwwMiqp4ElJNsp9"
+uri = "file://releases/agent-windows/AiRemote-Agent-v1.0.0-Windows-x64.zip"
+type = "unspecified"
+title = "AiRemote Agent v1.0.0 — Windows x64"
