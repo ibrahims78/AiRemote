@@ -18,9 +18,13 @@
     </div>
     <span>AiRemote Agent</span>
   </div>
+  <div class="title-status" id="title-status">
+    <span class="title-dot" id="title-dot"></span>
+    <span id="title-state-lbl">متوقف</span>
+  </div>
   <div class="win-btns">
-    <button class="win-btn" id="btn-min" title="تصغير">─</button>
-    <button class="win-btn" id="btn-tray" title="تصغير للشريط">⬇</button>
+    <button class="win-btn" id="btn-min" title="تصغير الشاشة">─</button>
+    <button class="win-btn" id="btn-tray" title="تصغير إلى الإشعارات">⬇</button>
     <button class="win-btn close" id="btn-close" title="إغلاق">✕</button>
   </div>
 </div>
@@ -29,43 +33,73 @@
 <div id="app">
   <div id="scroll">
 
-    <!-- Status Card -->
+    <!-- ── Status Card ─────────────────────────────────── -->
     <div id="status-card" class="stopped">
       <div class="status-dot-wrap stopped" id="dot-wrap">
         <div class="status-ring"></div>
         <div class="status-dot"></div>
       </div>
-      <div style="flex:1; min-width:0;">
+      <div class="status-info">
         <div class="status-label" id="status-label">متوقف</div>
-        <div class="status-sub" id="status-sub">—</div>
+        <div class="status-sub" id="status-sub">الـ Agent غير متصل بأي خادم</div>
       </div>
       <button id="toggle-btn" class="stopped">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
         تشغيل
       </button>
     </div>
 
-    <!-- Connection Settings -->
+    <!-- ── Quick Info Strip ─────────────────────────────── -->
+    <div id="info-strip">
+      <div class="strip-item">
+        <div class="strip-lbl">الجهاز</div>
+        <div class="strip-val" id="inf-host">—</div>
+      </div>
+      <div class="strip-sep"></div>
+      <div class="strip-item">
+        <div class="strip-lbl">IP المحلي</div>
+        <div class="strip-val mono" id="inf-ip">—</div>
+      </div>
+      <div class="strip-sep"></div>
+      <div class="strip-item">
+        <div class="strip-lbl">الخادم</div>
+        <div class="strip-val mono" id="inf-server">—</div>
+      </div>
+      <div class="strip-sep"></div>
+      <div class="strip-item">
+        <div class="strip-lbl">Device ID</div>
+        <div class="strip-val mono" id="inf-devid">—</div>
+      </div>
+    </div>
+
+    <!-- ── Connection Settings ──────────────────────────── -->
     <div class="card">
       <button class="collapse-toggle open" id="cfg-toggle">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+        </svg>
         إعدادات الاتصال
         <span class="arrow">▲</span>
       </button>
       <div class="collapse-body" id="cfg-body">
+
         <div class="field">
-          <label>عنوان خادم AiRemote</label>
+          <label>عنوان خادم AiRemote (WebSocket)</label>
+          <div class="input-hint">مثال: ws://192.168.1.100:3001/ws &nbsp;|&nbsp; wss://myserver.replit.app/ws</div>
           <input id="inp-server" type="text"
             placeholder="ws://192.168.1.100:3001/ws"
             dir="ltr" autocomplete="off" spellcheck="false" />
         </div>
-        <div class="field" style="margin-top:10px;">
+
+        <div class="field" style="margin-top:12px;">
           <label>Device Token</label>
+          <div class="input-hint">انسخه من لوحة تحكم AiRemote ← إدارة الأجهزة</div>
           <div class="input-wrap">
             <input id="inp-token" type="password" class="has-btn"
-              placeholder="الـ Token من لوحة التحكم"
+              placeholder="أدخل الـ Token الخاص بهذا الجهاز"
               dir="ltr" autocomplete="off" spellcheck="false" />
-            <button class="toggle-visibility" id="btn-show-token" title="إظهار/إخفاء">
+            <button class="toggle-visibility" id="btn-show-token" title="إظهار/إخفاء التوكن">
               <svg id="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                 <circle cx="12" cy="12" r="3"/>
@@ -74,57 +108,45 @@
           </div>
         </div>
 
-        <div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;">
+        <div class="options-row">
           <label class="check-row">
             <input type="checkbox" id="chk-autostart" />
-            <span>تشغيل Agent تلقائياً عند فتح البرنامج</span>
+            <span>تشغيل تلقائي عند فتح البرنامج</span>
           </label>
           <label class="check-row">
             <input type="checkbox" id="chk-minimized" />
-            <span>بدء مصغراً في شريط المهام</span>
+            <span>بدء مصغراً في شريط الإشعارات</span>
           </label>
         </div>
 
-        <button id="save-btn">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-          حفظ الإعدادات
-        </button>
-      </div>
-    </div>
-
-    <!-- Connection Info -->
-    <div class="card" id="info-card">
-      <div class="card-header">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-        معلومات الجهاز والاتصال
-      </div>
-      <div class="card-body">
-        <div class="info-grid">
-          <div class="info-item">
-            <div class="lbl">الحالة</div>
-            <div class="val" id="inf-state">—</div>
-          </div>
-          <div class="info-item">
-            <div class="lbl">Device ID</div>
-            <div class="val mono-sm" id="inf-devid">—</div>
-          </div>
-          <div class="info-item">
-            <div class="lbl">الخادم</div>
-            <div class="val mono-sm" id="inf-server">—</div>
-          </div>
-          <div class="info-item">
-            <div class="lbl">الجهاز (Hostname)</div>
-            <div class="val" id="inf-host">—</div>
-          </div>
+        <div class="btn-row">
+          <button id="save-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+            حفظ الإعدادات
+          </button>
+          <button id="reconnect-btn" class="btn-secondary" title="قطع الاتصال وإعادته">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            إعادة الاتصال
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- Resource Monitor -->
+    <!-- ── Resource Monitor ─────────────────────────────── -->
     <div class="card" id="stats-card">
       <div class="card-header">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        موارد الجهاز المحلي
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        موارد الجهاز
+        <span id="stats-uptime" style="margin-right:auto; font-size:10px; font-weight:400; font-family:'Courier New',monospace; color:var(--muted);"></span>
       </div>
       <div class="card-body">
         <div class="stat-row">
@@ -138,25 +160,38 @@
           <span class="stat-pct" id="pct-ram">—%</span>
         </div>
         <div class="stat-row">
-          <span class="stat-lbl">Disk</span>
+          <span class="stat-lbl">Disk C:</span>
           <div class="stat-bar"><div class="stat-fill" id="bar-disk" style="width:0%;background:#c084fc"></div></div>
           <span class="stat-pct" id="pct-disk">—%</span>
         </div>
+        <div class="stat-detail" id="stat-detail">—</div>
       </div>
     </div>
 
-    <!-- Log -->
+    <!-- ── Event Log ────────────────────────────────────── -->
     <div class="card">
       <div class="card-header">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
         سجل الأحداث
-        <button id="clear-log" style="margin-right:auto; background:none; border:none; cursor:pointer; color:var(--muted); font-size:10px; font-family:'Inter',sans-serif;">مسح</button>
+        <button id="clear-log" class="btn-text">مسح</button>
       </div>
       <div class="card-body" style="padding:8px;">
         <div id="log-box">
           <div class="log-empty">لا توجد أحداث بعد...</div>
         </div>
       </div>
+    </div>
+
+    <!-- ── Footer ───────────────────────────────────────── -->
+    <div id="footer">
+      <span>AiRemote Agent v1.0.0</span>
+      <span>·</span>
+      <span id="footer-os">Windows</span>
     </div>
 
   </div><!-- /scroll -->

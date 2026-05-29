@@ -15,25 +15,26 @@ app.on('second-instance', () => {
 })
 
 // ─── Constants ────────────────────────────────────────────────────────────
-const HEARTBEAT_MS    = 10_000
-const RECONNECT_BASE  = 2_000
-const RECONNECT_MAX   = 30_000
-const CONFIG_FILE     = path.join(app.getPath('userData'), 'airemote-config.json')
-const LOG_MAX         = 150
+const HEARTBEAT_MS   = 10_000
+const RECONNECT_BASE = 2_000
+const RECONNECT_MAX  = 30_000
+const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
+const LOG_MAX        = 200
 
 // ─── State ────────────────────────────────────────────────────────────────
-let win              = null
-let tray             = null
-let ws               = null
-let agentState       = 'stopped'   // stopped | connecting | connected | error
-let deviceId         = null
-let heartbeatTimer   = null
-let reconnectTimer   = null
-let reconnectDelay   = RECONNECT_BASE
-let sessionStart     = null
-let config           = loadConfig()
-let logEntries       = []
-let quitting         = false
+let win            = null
+let tray           = null
+let ws             = null
+let agentState     = 'stopped'   // stopped | connecting | connected | error
+let deviceId       = null
+let heartbeatTimer = null
+let reconnectTimer = null
+let reconnectDelay = RECONNECT_BASE
+let sessionStart   = null
+let config         = loadConfig()
+let logEntries     = []
+let quitting       = false
+let lastStats      = null
 
 // ─── Config ───────────────────────────────────────────────────────────────
 function defaultConfig() {
@@ -67,7 +68,8 @@ function addLog(level, msg) {
 // ─── Status ───────────────────────────────────────────────────────────────
 function setState(state, extra) {
   agentState = state
-  const payload = { state, deviceId, serverUrl: config.serverUrl, ...extra }
+  const uptime = sessionStart ? Math.floor((Date.now() - sessionStart) / 1000) : 0
+  const payload = { state, deviceId, serverUrl: config.serverUrl, uptime, ...extra }
   if (win && !win.isDestroyed()) win.webContents.send('state', payload)
   refreshTray()
 }
@@ -85,12 +87,12 @@ function getIpLocal() {
 
 function getDeviceInfo() {
   return {
-    hostname:   os.hostname(),
-    platform:   'windows',
-    arch:       os.arch(),
-    osVersion:  `${os.type()} ${os.release()}`,
-    ipLocal:    getIpLocal(),
-    ipPublic:   '',
+    hostname:     os.hostname(),
+    platform:     'windows',
+    arch:         os.arch(),
+    osVersion:    `${os.type()} ${os.release()}`,
+    ipLocal:      getIpLocal(),
+    ipPublic:     '',
     agentVersion: '1.0.0'
   }
 }
@@ -116,13 +118,13 @@ async function getDiskPercent() {
     const out = await runCmd('powershell -NoProfile -Command "Get-PSDrive C | Select-Object Used,Free | ConvertTo-Json"', 4000)
     const d = JSON.parse(out.trim())
     const used = d.Used || 0, free = d.Free || 1
-    return Math.round(used / (used + free) * 100)
-  } catch { return 0 }
+    return { pct: Math.round(used / (used + free) * 100), usedGb: Math.round(used / 1073741824), totalGb: Math.round((used + free) / 1073741824) }
+  } catch { return { pct: 0, usedGb: 0, totalGb: 0 } }
 }
 
 function runCmd(cmd, timeout = 10000) {
   return new Promise((resolve, reject) => {
-    exec(cmd, { timeout }, (err, stdout, stderr) => {
+    exec(cmd, { timeout }, (err, stdout) => {
       if (err) reject(err); else resolve(stdout)
     })
   })
@@ -131,16 +133,18 @@ function runCmd(cmd, timeout = 10000) {
 async function getStats() {
   const cpuPercent = await getCpuPercent()
   const total = os.totalmem(), free = os.freemem()
-  const ramTotalMb = Math.round(total / 1048576)
-  const ramUsedMb  = Math.round((total - free) / 1048576)
-  const ramPercent = Math.round(ramUsedMb / ramTotalMb * 100)
-  const diskPercent = await getDiskPercent()
-  return {
+  const ramTotalMb  = Math.round(total / 1048576)
+  const ramUsedMb   = Math.round((total - free) / 1048576)
+  const ramPercent  = Math.round(ramUsedMb / ramTotalMb * 100)
+  const disk        = await getDiskPercent()
+  const stats = {
     cpuPercent, ramPercent, ramUsedMb, ramTotalMb,
-    diskPercent, diskUsedGb: 0, diskTotalGb: 0,
+    diskPercent: disk.pct, diskUsedGb: disk.usedGb, diskTotalGb: disk.totalGb,
     networkUpKbps: 0, networkDownKbps: 0,
     uptime: Math.floor(os.uptime())
   }
+  lastStats = stats
+  return stats
 }
 
 // ─── Agent WebSocket Logic ─────────────────────────────────────────────────
@@ -160,7 +164,7 @@ function stopAgent() {
   if (agentState === 'stopped') return
   clearTimers()
   if (ws) { try { ws.close() } catch {} ws = null }
-  deviceId = null
+  deviceId     = null
   sessionStart = null
   setState('stopped')
   addLog('info', '🛑 تم إيقاف الـ Agent')
@@ -215,7 +219,7 @@ function handleMsg(msg) {
     case 'server:registered': {
       deviceId = msg.payload?.deviceId
       setState('connected')
-      addLog('info', `✅ مسجل ← ID: ${deviceId?.slice(0, 12)}...`)
+      addLog('info', `✅ مسجل بنجاح — Device ID: ${deviceId?.slice(0, 12)}...`)
       break
     }
     case 'server:command': {
@@ -236,9 +240,10 @@ function handleMsg(msg) {
 function executeCommand(payload) {
   if (payload.type !== 'shell' || !payload.command) return
   const cmd = payload.command
-  addLog('info', `▶ ${cmd}`)
+  addLog('info', `▶ تنفيذ: ${cmd}`)
   const t0 = Date.now()
   exec(cmd, { shell: 'cmd.exe', timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    addLog(err ? 'error' : 'info', `✔ انتهى في ${Date.now() - t0}ms`)
     send({
       type: 'agent:command_result',
       payload: {
@@ -263,6 +268,8 @@ async function startHeartbeat() {
         payload: { deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now() },
         timestamp: Date.now()
       })
+      // Send stats to renderer too
+      if (win && !win.isDestroyed()) win.webContents.send('stats', stats)
     } catch {}
   }, HEARTBEAT_MS)
 }
@@ -275,8 +282,8 @@ function scheduleReconnect() {
 }
 
 function clearTimers() {
-  if (heartbeatTimer) { clearInterval(heartbeatTimer);  heartbeatTimer = null }
-  if (reconnectTimer) { clearTimeout(reconnectTimer);   reconnectTimer = null }
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null }
+  if (reconnectTimer) { clearTimeout(reconnectTimer);  reconnectTimer = null }
 }
 
 function send(msg) {
@@ -285,11 +292,13 @@ function send(msg) {
   }
 }
 
-// ─── Tray Icon (SVG → NativeImage) ────────────────────────────────────────
-function buildTrayIcon() {
+// ─── Tray Icon ────────────────────────────────────────────────────────────
+function buildTrayIcon(state) {
+  const colors = { connected: '#22c55e', connecting: '#f59e0b', error: '#ef4444', stopped: '#64748b' }
+  const fill = colors[state] || colors.stopped
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
     <rect width="16" height="16" rx="3" fill="#0f172a"/>
-    <path d="M9.5 2L4 9h3.5L6 14l6-7H8.5z" fill="#3b82f6"/>
+    <path d="M9.5 2L4 9h3.5L6 14l6-7H8.5z" fill="${fill}"/>
   </svg>`
   return nativeImage.createFromDataURL(
     'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64')
@@ -298,7 +307,7 @@ function buildTrayIcon() {
 
 // ─── Tray ─────────────────────────────────────────────────────────────────
 function createTray() {
-  const icon = buildTrayIcon()
+  const icon = buildTrayIcon(agentState)
   tray = new Tray(icon)
   refreshTray()
   tray.on('double-click', showWindow)
@@ -306,14 +315,18 @@ function createTray() {
 
 function refreshTray() {
   if (!tray) return
-  const labels = { stopped: 'متوقف ●', connecting: 'جاري الاتصال... ◌', connected: 'متصل ●', error: 'خطأ ●' }
+  const labels = { stopped: 'متوقف', connecting: 'جاري الاتصال...', connected: 'متصل', error: 'خطأ' }
   tray.setToolTip(`AiRemote Agent — ${labels[agentState] || agentState}`)
+  tray.setImage(buildTrayIcon(agentState))
+
+  const statusLabel = agentState === 'connected'
+    ? `● متصل — ${os.hostname()}`
+    : agentState === 'connecting'
+    ? '◌ جاري الاتصال...'
+    : '○ متوقف'
 
   const menu = Menu.buildFromTemplate([
-    {
-      label: agentState === 'connected' ? '● متصل' : agentState === 'connecting' ? '◌ جاري الاتصال...' : '○ متوقف',
-      enabled: false
-    },
+    { label: statusLabel, enabled: false },
     { type: 'separator' },
     { label: '↑ فتح النافذة', click: showWindow },
     { type: 'separator' },
@@ -322,7 +335,7 @@ function refreshTray() {
       click: () => { agentState === 'stopped' ? startAgent() : stopAgent() }
     },
     { type: 'separator' },
-    { label: '✕ إغلاق', click: () => { quitting = true; app.quit() } }
+    { label: '✕ إغلاق التطبيق', click: () => { quitting = true; app.quit() } }
   ])
   tray.setContextMenu(menu)
 }
@@ -335,17 +348,18 @@ function showWindow() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 480,
-    height: 700,
-    minWidth:  420,
-    minHeight: 580,
+    width:     480,
+    height:    720,
+    minWidth:  440,
+    minHeight: 600,
     resizable: true,
-    frame: false,
+    frame:     false,
     transparent: false,
     backgroundColor: '#0f172a',
     title: 'AiRemote Agent',
-    show: false,
+    show:   false,
     center: true,
+    icon: path.join(__dirname, 'build', 'icon.ico'),
     webPreferences: {
       preload:          path.join(__dirname, 'preload.js'),
       nodeIntegration:  false,
@@ -358,15 +372,26 @@ function createWindow() {
 
   win.once('ready-to-show', () => {
     if (!config.startMinimized) win.show()
+    const info = getDeviceInfo()
     win.webContents.send('init', {
-      config: { serverUrl: config.serverUrl, token: config.token, autoStart: config.autoStart, startMinimized: config.startMinimized },
-      logs:   logEntries,
-      state:  agentState,
+      config: {
+        serverUrl:      config.serverUrl,
+        token:          config.token,
+        autoStart:      config.autoStart,
+        startMinimized: config.startMinimized
+      },
+      logs:      logEntries,
+      state:     agentState,
       deviceId,
-      serverUrl: config.serverUrl
+      serverUrl: config.serverUrl,
+      // Device info for the UI
+      hostname:  info.hostname,
+      ipLocal:   info.ipLocal,
+      platform:  info.osVersion,
+      arch:      info.arch
     })
     if (config.autoStart && config.serverUrl && config.token && agentState === 'stopped') {
-      setTimeout(startAgent, 600)
+      setTimeout(startAgent, 800)
     }
   })
 
@@ -394,28 +419,38 @@ ipcMain.on('save-config', (_, cfg) => {
 })
 
 ipcMain.handle('get-state', () => ({
-  state: agentState, deviceId, serverUrl: config.serverUrl,
-  config: { serverUrl: config.serverUrl, token: config.token, autoStart: config.autoStart, startMinimized: config.startMinimized },
+  state:     agentState,
+  deviceId,
+  serverUrl: config.serverUrl,
+  uptime:    sessionStart ? Math.floor((Date.now() - sessionStart) / 1000) : 0,
+  config: {
+    serverUrl:      config.serverUrl,
+    token:          config.token,
+    autoStart:      config.autoStart,
+    startMinimized: config.startMinimized
+  },
   logs: logEntries
 }))
 
 ipcMain.handle('get-stats-now', async () => {
-  try { return await getStats() } catch { return null }
+  try { return await getStats() } catch { return lastStats }
+})
+
+ipcMain.handle('get-device-info', () => {
+  const info = getDeviceInfo()
+  return { ...info, uptime: Math.floor(os.uptime()) }
 })
 
 // ─── App Lifecycle ─────────────────────────────────────────────────────────
 app.whenReady().then(() => {
-  // Disable menu bar
   Menu.setApplicationMenu(null)
-
   createWindow()
   createTray()
-
   app.on('activate', () => { if (!win || win.isDestroyed()) createWindow() })
 })
 
 app.on('window-all-closed', () => {
-  // Keep running in tray
+  // Keep running in tray on Windows
 })
 
 app.on('before-quit', () => {

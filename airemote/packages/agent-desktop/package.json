@@ -2,11 +2,13 @@
   "name": "airemote-agent-desktop",
   "version": "1.0.0",
   "description": "AiRemote Agent — Windows Desktop Application",
+  "author": "AiRemote <support@airemote.io>",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win --x64",
-    "build:dir": "electron-builder --win --x64 --dir"
+    "build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64",
+    "build:portable": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --config.win.target=portable",
+    "build:dir": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --dir"
   },
   "dependencies": {
     "ws": "^8.21.0"
@@ -18,7 +20,7 @@
   "build": {
     "appId": "io.airemote.agent",
     "productName": "AiRemote Agent",
-    "copyright": "AiRemote",
+    "copyright": "Copyright © 2025 AiRemote",
     "directories": {
       "output": "dist"
     },
@@ -32,28 +34,16 @@
     "extraResources": [],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
+        { "target": "portable", "arch": ["x64"] }
       ],
       "icon": "build/icon.ico",
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": false,
+      "signingHashAlgorithms": null
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "AiRemote Agent",
-      "runAfterFinish": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico",
-      "displayLanguageSelector": false,
-      "language": "1025"
+    "portable": {
+      "requestExecutionLevel": "user",
+      "unpackDirName": "airemote-agent"
     },
     "publish": null
   }

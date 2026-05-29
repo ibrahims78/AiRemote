@@ -3,7 +3,7 @@ directories:
   buildResources: build
 appId: io.airemote.agent
 productName: AiRemote Agent
-copyright: AiRemote
+copyright: Copyright © 2025 AiRemote
 files:
   - filter:
       - main.js
@@ -13,23 +13,13 @@ files:
       - node_modules/**/*
 extraResources: []
 win:
-  target:
-    - target: nsis
-      arch:
-        - x64
+  target: portable
   icon: build/icon.ico
   requestedExecutionLevel: asInvoker
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: AiRemote Agent
-  runAfterFinish: true
-  installerIcon: build/icon.ico
-  uninstallerIcon: build/icon.ico
-  installerHeaderIcon: build/icon.ico
-  displayLanguageSelector: false
-  language: '1025'
+  signAndEditExecutable: false
+  signingHashAlgorithms: null
+portable:
+  requestExecutionLevel: user
+  unpackDirName: airemote-agent
 publish: null
 electronVersion: 28.3.3

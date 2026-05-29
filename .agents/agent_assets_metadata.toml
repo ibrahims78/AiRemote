@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "LU1j_ywDImneduOI55pBu"
+uri = "file://airemote/packages/agent-desktop/dist/AiRemote-Agent-Win10-Portable.tar.gz"
+type = "unspecified"
+title = "AiRemote Agent — Windows 10 x64 Portable (.exe داخل الملف)"
