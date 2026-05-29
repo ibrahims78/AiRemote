@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="dark" data-lang="ar">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -16,16 +16,42 @@
         <path d="M7 1L1.5 7.5H5.5L4 13L10.5 6H6.5Z" fill="white"/>
       </svg>
     </div>
-    <span>AiRemote Agent</span>
+    <span class="brand-name">AiRemote Agent</span>
   </div>
+
   <div class="title-status" id="title-status">
     <span class="title-dot" id="title-dot"></span>
-    <span id="title-state-lbl">متوقف</span>
+    <span id="title-state-lbl" data-i18n="stopped">متوقف</span>
   </div>
+
+  <div class="title-actions">
+    <!-- Language Toggle -->
+    <button class="icon-btn" id="btn-lang" title="Switch Language / تبديل اللغة">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+      </svg>
+      <span id="lang-lbl">EN</span>
+    </button>
+    <!-- Theme Toggle -->
+    <button class="icon-btn" id="btn-theme" title="Toggle Theme / تبديل المظهر">
+      <svg id="icon-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+      <svg id="icon-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    </button>
+  </div>
+
   <div class="win-btns">
-    <button class="win-btn" id="btn-min" title="تصغير الشاشة">─</button>
-    <button class="win-btn" id="btn-tray" title="تصغير إلى الإشعارات">⬇</button>
-    <button class="win-btn close" id="btn-close" title="إغلاق">✕</button>
+    <button class="win-btn" id="btn-min" title="Minimize">─</button>
+    <button class="win-btn" id="btn-tray" title="Hide to Tray">⬇</button>
+    <button class="win-btn close" id="btn-close" title="Close">✕</button>
   </div>
 </div>
 
@@ -40,29 +66,29 @@
         <div class="status-dot"></div>
       </div>
       <div class="status-info">
-        <div class="status-label" id="status-label">متوقف</div>
-        <div class="status-sub" id="status-sub">الـ Agent غير متصل بأي خادم</div>
+        <div class="status-label" id="status-label" data-i18n="stopped">متوقف</div>
+        <div class="status-sub" id="status-sub" data-i18n="notConnected">الـ Agent غير متصل بأي خادم</div>
       </div>
       <button id="toggle-btn" class="stopped">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-        تشغيل
+        <span data-i18n="start">تشغيل</span>
       </button>
     </div>
 
     <!-- ── Quick Info Strip ─────────────────────────────── -->
     <div id="info-strip">
       <div class="strip-item">
-        <div class="strip-lbl">الجهاز</div>
+        <div class="strip-lbl" data-i18n="device">الجهاز</div>
         <div class="strip-val" id="inf-host">—</div>
       </div>
       <div class="strip-sep"></div>
       <div class="strip-item">
-        <div class="strip-lbl">IP المحلي</div>
+        <div class="strip-lbl" data-i18n="localIp">IP المحلي</div>
         <div class="strip-val mono" id="inf-ip">—</div>
       </div>
       <div class="strip-sep"></div>
       <div class="strip-item">
-        <div class="strip-lbl">الخادم</div>
+        <div class="strip-lbl" data-i18n="server">الخادم</div>
         <div class="strip-val mono" id="inf-server">—</div>
       </div>
       <div class="strip-sep"></div>
@@ -79,27 +105,27 @@
           <circle cx="12" cy="12" r="3"/>
           <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
         </svg>
-        إعدادات الاتصال
+        <span data-i18n="connSettings">إعدادات الاتصال</span>
         <span class="arrow">▲</span>
       </button>
       <div class="collapse-body" id="cfg-body">
 
         <div class="field">
-          <label>عنوان خادم AiRemote (WebSocket)</label>
-          <div class="input-hint">مثال: ws://192.168.1.100:3001/ws &nbsp;|&nbsp; wss://myserver.replit.app/ws</div>
+          <label data-i18n="serverUrl">عنوان الخادم (WebSocket)</label>
+          <div class="input-hint" data-i18n="serverHint">مثال: wss://myserver.replit.app/ws</div>
           <input id="inp-server" type="text"
-            placeholder="ws://192.168.1.100:3001/ws"
+            placeholder="wss://your-server.replit.app/ws"
             dir="ltr" autocomplete="off" spellcheck="false" />
         </div>
 
         <div class="field" style="margin-top:12px;">
-          <label>Device Token</label>
-          <div class="input-hint">انسخه من لوحة تحكم AiRemote ← إدارة الأجهزة</div>
+          <label data-i18n="deviceToken">Device Token</label>
+          <div class="input-hint" data-i18n="tokenHint">Dashboard → Devices → Add Device</div>
           <div class="input-wrap">
             <input id="inp-token" type="password" class="has-btn"
-              placeholder="أدخل الـ Token الخاص بهذا الجهاز"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               dir="ltr" autocomplete="off" spellcheck="false" />
-            <button class="toggle-visibility" id="btn-show-token" title="إظهار/إخفاء التوكن">
+            <button class="toggle-visibility" id="btn-show-token" title="Show/Hide Token">
               <svg id="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                 <circle cx="12" cy="12" r="3"/>
@@ -111,11 +137,11 @@
         <div class="options-row">
           <label class="check-row">
             <input type="checkbox" id="chk-autostart" />
-            <span>تشغيل تلقائي عند فتح البرنامج</span>
+            <span data-i18n="autoStart">تشغيل تلقائي عند فتح البرنامج</span>
           </label>
           <label class="check-row">
             <input type="checkbox" id="chk-minimized" />
-            <span>بدء مصغراً في شريط الإشعارات</span>
+            <span data-i18n="startMinimized">بدء مصغراً في شريط الإشعارات</span>
           </label>
         </div>
 
@@ -126,14 +152,14 @@
               <polyline points="17 21 17 13 7 13 7 21"/>
               <polyline points="7 3 7 8 15 8"/>
             </svg>
-            حفظ الإعدادات
+            <span data-i18n="saveSettings">حفظ الإعدادات</span>
           </button>
-          <button id="reconnect-btn" class="btn-secondary" title="قطع الاتصال وإعادته">
+          <button id="reconnect-btn" class="btn-secondary" title="Reconnect">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polyline points="23 4 23 10 17 10"/>
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
             </svg>
-            إعادة الاتصال
+            <span data-i18n="reconnect">إعادة الاتصال</span>
           </button>
         </div>
       </div>
@@ -145,23 +171,23 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
         </svg>
-        موارد الجهاز
-        <span id="stats-uptime" style="margin-right:auto; font-size:10px; font-weight:400; font-family:'Courier New',monospace; color:var(--muted);"></span>
+        <span data-i18n="resources">موارد الجهاز</span>
+        <span id="stats-uptime" class="uptime-badge"></span>
       </div>
       <div class="card-body">
         <div class="stat-row">
           <span class="stat-lbl">CPU</span>
-          <div class="stat-bar"><div class="stat-fill" id="bar-cpu" style="width:0%;background:#38bdf8"></div></div>
+          <div class="stat-bar"><div class="stat-fill cpu" id="bar-cpu"></div></div>
           <span class="stat-pct" id="pct-cpu">—%</span>
         </div>
         <div class="stat-row">
           <span class="stat-lbl">RAM</span>
-          <div class="stat-bar"><div class="stat-fill" id="bar-ram" style="width:0%;background:#2dd4bf"></div></div>
+          <div class="stat-bar"><div class="stat-fill ram" id="bar-ram"></div></div>
           <span class="stat-pct" id="pct-ram">—%</span>
         </div>
         <div class="stat-row">
-          <span class="stat-lbl">Disk C:</span>
-          <div class="stat-bar"><div class="stat-fill" id="bar-disk" style="width:0%;background:#c084fc"></div></div>
+          <span class="stat-lbl">Disk</span>
+          <div class="stat-bar"><div class="stat-fill disk" id="bar-disk"></div></div>
           <span class="stat-pct" id="pct-disk">—%</span>
         </div>
         <div class="stat-detail" id="stat-detail">—</div>
@@ -177,12 +203,12 @@
           <line x1="16" y1="13" x2="8" y2="13"/>
           <line x1="16" y1="17" x2="8" y2="17"/>
         </svg>
-        سجل الأحداث
-        <button id="clear-log" class="btn-text">مسح</button>
+        <span data-i18n="eventLog">سجل الأحداث</span>
+        <button id="clear-log" class="btn-text" data-i18n="clear">مسح</button>
       </div>
-      <div class="card-body" style="padding:8px;">
+      <div class="card-body log-body">
         <div id="log-box">
-          <div class="log-empty">لا توجد أحداث بعد...</div>
+          <div class="log-empty" data-i18n="noEvents">لا توجد أحداث بعد...</div>
         </div>
       </div>
     </div>
@@ -190,12 +216,12 @@
     <!-- ── Footer ───────────────────────────────────────── -->
     <div id="footer">
       <span>AiRemote Agent v1.0.0</span>
-      <span>·</span>
+      <span class="footer-dot">·</span>
       <span id="footer-os">Windows</span>
     </div>
 
-  </div><!-- /scroll -->
-</div><!-- /app -->
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

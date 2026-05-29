@@ -292,50 +292,49 @@ function send(msg) {
   }
 }
 
-// ─── Tray Icon ────────────────────────────────────────────────────────────
-function buildTrayIcon(state) {
-  const colors = { connected: '#22c55e', connecting: '#f59e0b', error: '#ef4444', stopped: '#64748b' }
-  const fill = colors[state] || colors.stopped
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-    <rect width="16" height="16" rx="3" fill="#0f172a"/>
-    <path d="M9.5 2L4 9h3.5L6 14l6-7H8.5z" fill="${fill}"/>
-  </svg>`
-  return nativeImage.createFromDataURL(
-    'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64')
-  )
+// ─── Tray Icon (PNG file — Windows doesn't support SVG tray icons) ────────
+function getTrayIcon() {
+  const pngPath = path.join(__dirname, 'build', 'icon.png')
+  if (fs.existsSync(pngPath)) {
+    return nativeImage.createFromPath(pngPath).resize({ width: 16, height: 16 })
+  }
+  const icoPath = path.join(__dirname, 'build', 'icon.ico')
+  if (fs.existsSync(icoPath)) {
+    return nativeImage.createFromPath(icoPath).resize({ width: 16, height: 16 })
+  }
+  return nativeImage.createEmpty()
 }
 
 // ─── Tray ─────────────────────────────────────────────────────────────────
 function createTray() {
-  const icon = buildTrayIcon(agentState)
-  tray = new Tray(icon)
+  tray = new Tray(getTrayIcon())
   refreshTray()
   tray.on('double-click', showWindow)
+  tray.on('click', showWindow)
 }
 
 function refreshTray() {
   if (!tray) return
-  const labels = { stopped: 'متوقف', connecting: 'جاري الاتصال...', connected: 'متصل', error: 'خطأ' }
-  tray.setToolTip(`AiRemote Agent — ${labels[agentState] || agentState}`)
-  tray.setImage(buildTrayIcon(agentState))
-
-  const statusLabel = agentState === 'connected'
-    ? `● متصل — ${os.hostname()}`
-    : agentState === 'connecting'
-    ? '◌ جاري الاتصال...'
-    : '○ متوقف'
+  const labels = {
+    stopped:    'Stopped / متوقف',
+    connecting: 'Connecting... / جاري الاتصال',
+    connected:  `Connected — ${os.hostname()}`,
+    error:      'Error / خطأ'
+  }
+  tray.setToolTip(`AiRemote Agent  ·  ${labels[agentState] || agentState}`)
 
   const menu = Menu.buildFromTemplate([
-    { label: statusLabel, enabled: false },
+    { label: 'AiRemote Agent', enabled: false },
+    { label: labels[agentState] || agentState, enabled: false },
     { type: 'separator' },
-    { label: '↑ فتح النافذة', click: showWindow },
+    { label: 'Open / فتح', click: showWindow },
     { type: 'separator' },
     {
-      label: agentState === 'stopped' ? '▶ تشغيل Agent' : '■ إيقاف Agent',
+      label: agentState === 'stopped' ? 'Start / تشغيل' : 'Stop / إيقاف',
       click: () => { agentState === 'stopped' ? startAgent() : stopAgent() }
     },
     { type: 'separator' },
-    { label: '✕ إغلاق التطبيق', click: () => { quitting = true; app.quit() } }
+    { label: 'Quit / إغلاق', click: () => { quitting = true; app.quit() } }
   ])
   tray.setContextMenu(menu)
 }
@@ -407,7 +406,11 @@ function createWindow() {
 }
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────
-ipcMain.on('start-agent',  () => startAgent())
+ipcMain.on('start-agent', (_, cfg) => {
+  // Renderer sends current field values so we save-then-start atomically
+  if (cfg && (cfg.serverUrl || cfg.token)) saveConfig(cfg)
+  startAgent()
+})
 ipcMain.on('stop-agent',   () => stopAgent())
 ipcMain.on('minimize-win', () => win?.minimize())
 ipcMain.on('hide-win',     () => win?.hide())

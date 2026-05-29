@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('airemote', {
   // Actions
-  startAgent:    ()    => ipcRenderer.send('start-agent'),
+  startAgent:    (cfg) => ipcRenderer.send('start-agent', cfg),
   stopAgent:     ()    => ipcRenderer.send('stop-agent'),
   minimizeWin:   ()    => ipcRenderer.send('minimize-win'),
   hideWin:       ()    => ipcRenderer.send('hide-win'),

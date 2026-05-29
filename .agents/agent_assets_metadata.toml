@@ -24,3 +24,9 @@ id = "WjBiB3s-BsgtzWYj_b0Cm"
 uri = "file://AiRemote-Agent-Script.tar.gz"
 type = "unspecified"
 title = "③ Script — أصغر حجم، يحتاج Node.js (4KB)"
+
+[[outputs]]
+id = "ka9C4_gtcBqqGm6G_P1dW"
+uri = "file://airemote/packages/agent-desktop/dist/AiRemote-Agent-v1.0.0-Updated.tar.gz"
+type = "unspecified"
+title = "AiRemote Agent — Windows (محدَّث)"
