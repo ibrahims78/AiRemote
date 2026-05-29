@@ -96,7 +96,7 @@ function getDeviceInfo() {
     osVersion:    `${os.type()} ${os.release()}`,
     ipLocal:      getIpLocal(),
     ipPublic:     '',
-    agentVersion: '1.0.0'
+    agentVersion: '1.1.0'
   }
 }
 
