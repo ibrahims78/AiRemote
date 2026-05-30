@@ -36,6 +36,12 @@ export async function handleAgentMessage(
 
     case 'agent:heartbeat': {
       const payload = message.payload as AgentHeartbeatPayload
+      // Security: verify that the socket is actually registered as this deviceId
+      const registeredId = deviceRegistry.getDeviceIdBySocket(socket)
+      if (!registeredId || registeredId !== payload.deviceId) {
+        socket.send(JSON.stringify({ type: 'server:error', payload: { message: 'Heartbeat rejected: device mismatch' }, timestamp: Date.now() }))
+        return null
+      }
       await updateDeviceSeen(payload.deviceId)
       deviceRegistry.updateDeviceStats(payload.deviceId, payload.stats)
       return { deviceId: payload.deviceId }

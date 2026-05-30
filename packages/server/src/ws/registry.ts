@@ -106,6 +106,13 @@ class DeviceRegistry {
     }
   }
 
+  getDeviceIdBySocket(socket: WebSocket): string | undefined {
+    for (const [deviceId, entry] of this.devices) {
+      if (entry.socket === socket) return deviceId
+    }
+    return undefined
+  }
+
   getStats() {
     return {
       onlineDevices: this.devices.size,
