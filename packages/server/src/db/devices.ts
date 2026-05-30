@@ -80,6 +80,12 @@ export async function updateDeviceSeen(id: string): Promise<void> {
   await db.execute({ sql: 'UPDATE devices SET last_seen = ?, updated_at = ? WHERE id = ?', args: [now, now, id] })
 }
 
+export async function resetAllDevicesOffline(): Promise<void> {
+  const db = getDb()
+  const now = new Date().toISOString()
+  await db.execute({ sql: `UPDATE devices SET status = 'offline', updated_at = ? WHERE status != 'offline'`, args: [now] })
+}
+
 export async function deleteDevice(id: string): Promise<void> {
   const db = getDb()
   await db.execute({ sql: 'DELETE FROM devices WHERE id = ?', args: [id] })

@@ -142,8 +142,23 @@ export function SSHTerminal({ config, deviceId, onClose }: Props) {
 
         else if (msg.type === 'ssh:error') {
           setStatus('error')
-          setErrorMsg(msg.payload.message)
-          term.writeln('\r\n\x1b[31m  ✗ خطأ: ' + msg.payload.message + '\x1b[0m')
+          const errMsg: string = msg.payload.message || ''
+          setErrorMsg(errMsg)
+          term.writeln('\r\n\x1b[31m  ✗ خطأ: ' + errMsg + '\x1b[0m')
+
+          if (errMsg.includes('offline') || errMsg.includes('not online')) {
+            term.writeln('\x1b[33m  ⚠ برنامج الـ Agent غير متصل بالسيرفر — أعد تشغيله ثم حاول مجدداً\x1b[0m')
+          } else if (errMsg.toLowerCase().includes('authentication') || errMsg.toLowerCase().includes('auth')) {
+            term.writeln('\x1b[33m  ⚠ فشل التحقق من الهوية — تحقق من:')
+            term.writeln('    • اسم المستخدم وكلمة المرور')
+            term.writeln('    • تفعيل PasswordAuthentication في إعدادات SSH:')
+            term.writeln('      sudo nano /etc/ssh/sshd_config')
+            term.writeln('      PasswordAuthentication yes')
+            term.writeln('      sudo systemctl restart sshd\x1b[0m')
+          } else if (errMsg.toLowerCase().includes('refused') || errMsg.toLowerCase().includes('connect')) {
+            term.writeln('\x1b[33m  ⚠ تعذر الاتصال — تأكد أن SSH مثبت وعامل:')
+            term.writeln('      sudo systemctl status sshd\x1b[0m')
+          }
         }
 
         else if (msg.type === 'ssh:closed') {
