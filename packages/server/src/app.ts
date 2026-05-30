@@ -86,9 +86,12 @@ export async function buildServer() {
   await app.register(alertRoutes,      { prefix: '/api/alerts' })
   await app.register(credentialRoutes, { prefix: '/api/credentials' })
 
-  // ── WebSocket routes (authenticated) ─────────────────────────────────────
+  // ── WebSocket routes ──────────────────────────────────────────────────────
+  // /ws accepts both agents (device-token auth via first message) and
+  // dashboard clients (JWT via ?token= query param verified inside wsHandler).
+  // /ssh still requires a valid JWT upfront.
   await app.register(async function (fastify) {
-    fastify.get('/ws',  { websocket: true, preHandler: [requireAuthWs] }, wsHandler)
+    fastify.get('/ws',  { websocket: true }, wsHandler)
     fastify.get('/ssh', { websocket: true, preHandler: [requireAuthWs] }, handleSshWebSocket)
   })
 
