@@ -280,7 +280,7 @@ export function DeviceWorkspacePage() {
   const { deviceId } = useParams<{ deviceId: string }>()
   const { devices, statsMap, fetchDevices } = useDeviceStore()
   const [tab, setTab] = useState<Tab>('overview')
-  const [sshConfig, setSshConfig] = useState<SSHConfig | null>(() => deviceId ? loadSavedSSHConfig(deviceId) : null)
+  const [sshConfig, setSshConfig] = useState<SSHConfig | null>(null)
   const [showConnForm, setShowConnForm] = useState(false)
   const [savedCredentials, setSavedCredentials] = useState<SavedCredential[]>([])
   const [autoConnecting, setAutoConnecting] = useState(false)
