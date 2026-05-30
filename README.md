@@ -67,7 +67,7 @@ AiRemote Agent  (runs on each remote device)
 
 ```bash
 git clone https://github.com/yourusername/airemote.git
-cd airemote/airemote
+cd airemote
 
 # Edit JWT_SECRET before running
 cp packages/server/src/.env.example .env
@@ -80,7 +80,7 @@ Open `http://localhost` in your browser and complete the first-run setup.
 
 ```bash
 git clone https://github.com/yourusername/airemote.git
-cd airemote/airemote
+cd airemote
 
 pnpm install
 
@@ -96,18 +96,17 @@ pnpm dev:dashboard     # http://localhost:5000
 ## 📦 Repository Structure
 
 ```
-airemote/                    ← Root
-├── airemote/                ← Main monorepo (pnpm workspaces)
-│   ├── packages/
-│   │   ├── server/          ← Fastify API + WebSocket relay
-│   │   ├── dashboard/       ← React + TailwindCSS SPA
-│   │   ├── agent/           ← Node.js agent with system tray
-│   │   ├── agent-desktop/   ← Electron Windows wrapper
-│   │   ├── ai-engine/       ← OpenAI / Gemini / Ollama abstraction
-│   │   ├── shared/          ← Shared TypeScript types
-│   │   ├── headless-agent/  ← Lightweight headless agent (no UI)
-│   │   └── script-agent/    ← Minimal script-only agent (.bat / .js)
-│   └── docker/              ← Docker Compose & Dockerfile
+/                            ← Project root
+├── packages/
+│   ├── server/              ← Fastify API + WebSocket relay
+│   ├── dashboard/           ← React + TailwindCSS SPA
+│   ├── agent/               ← Node.js agent with system tray
+│   ├── agent-desktop/       ← Electron Windows wrapper
+│   ├── ai-engine/           ← OpenAI / Gemini / Ollama abstraction
+│   ├── shared/              ← Shared TypeScript types
+│   ├── headless-agent/      ← Lightweight headless agent (no UI)
+│   └── script-agent/        ← Minimal script-only agent (.bat / .js)
+├── docker/                  ← Docker Compose & Dockerfile
 └── releases/                ← Built agent binaries (Windows / Headless / Script)
 ```
 

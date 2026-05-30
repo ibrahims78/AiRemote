@@ -1,5 +1,5 @@
 # ── Database ────────────────────────────────────────────────
-airemote/packages/server/data/
+packages/server/data/
 
 # ── Dependencies ─────────────────────────────────────────────
 node_modules/

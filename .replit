@@ -36,7 +36,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd airemote/packages/server && pnpm dev"
+args = "cd packages/server && pnpm dev"
 waitForPort = 3001
 
 [[workflows.workflow]]
@@ -48,7 +48,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd airemote/packages/dashboard && pnpm dev"
+args = "cd packages/dashboard && pnpm dev"
 waitForPort = 5000
 
 [userenv]
