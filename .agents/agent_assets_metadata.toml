@@ -48,3 +48,9 @@ id = "1zAnxGnzgKWn4DVeWhJ8t"
 uri = "file://releases/agent-script/AiRemote-Agent-Script-v1.1.0.zip"
 type = "unspecified"
 title = "📜 Script (Node.js) — v1.1.0 (5 KB)"
+
+[[outputs]]
+id = "_O4kgaZZg-dbCOLEc-GUa"
+uri = "file://ROADMAP.md"
+type = "text"
+title = "AiRemote — خارطة الطريق الاحترافية"
