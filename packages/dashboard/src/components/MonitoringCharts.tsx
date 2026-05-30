@@ -133,12 +133,12 @@ export function MonitoringCharts({ deviceId, stats }: Props) {
         <StatCard
           icon={MemoryStick} label="الذاكرة"
           value={stats.ramPercent} unit="%" colorClass="bg-brand-teal" textClass="text-brand-teal"
-          subLabel={`${(stats.ramUsedMb / 1024).toFixed(1)} / ${(stats.ramTotalMb / 1024).toFixed(1)} GB`}
+          subLabel={`${((stats.ramUsedMb ?? 0) / 1024).toFixed(1)} / ${((stats.ramTotalMb ?? 0) / 1024).toFixed(1)} GB`}
         />
         <StatCard
           icon={HardDrive} label="القرص"
           value={stats.diskPercent} unit="%" colorClass="bg-purple-400" textClass="text-purple-400"
-          subLabel={`${stats.diskUsedGb.toFixed(1)} / ${stats.diskTotalGb.toFixed(1)} GB`}
+          subLabel={`${(stats.diskUsedGb ?? 0).toFixed(1)} / ${(stats.diskTotalGb ?? 0).toFixed(1)} GB`}
         />
         <div className="glass rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -152,13 +152,13 @@ export function MonitoringCharts({ deviceId, stats }: Props) {
               <div className="flex items-center gap-1 text-xs text-slate-400">
                 <ArrowUp size={10} className="text-emerald-400" /> رفع
               </div>
-              <span className="text-xs font-mono text-white">{stats.networkUpKbps.toFixed(0)} KB/s</span>
+              <span className="text-xs font-mono text-white">{(stats.networkUpKbps ?? 0).toFixed(0)} KB/s</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1 text-xs text-slate-400">
                 <ArrowDown size={10} className="text-brand-blue" /> تنزيل
               </div>
-              <span className="text-xs font-mono text-white">{stats.networkDownKbps.toFixed(0)} KB/s</span>
+              <span className="text-xs font-mono text-white">{(stats.networkDownKbps ?? 0).toFixed(0)} KB/s</span>
             </div>
           </div>
         </div>

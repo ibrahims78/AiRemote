@@ -17,10 +17,11 @@ interface SSHConfig {
 
 interface Props {
   config: SSHConfig | null
+  deviceId?: string
   onClose?: () => void
 }
 
-export function SSHTerminal({ config, onClose }: Props) {
+export function SSHTerminal({ config, deviceId, onClose }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const termInstance = useRef<Terminal | null>(null)
   const fitAddon = useRef<FitAddon | null>(null)
@@ -112,6 +113,7 @@ export function SSHTerminal({ config, onClose }: Props) {
         type: 'ssh:connect',
         payload: {
           ...cfg,
+          deviceId,
           rows: dim?.rows || 24,
           cols: dim?.cols || 80
         }

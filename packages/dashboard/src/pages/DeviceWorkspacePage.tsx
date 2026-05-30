@@ -357,7 +357,7 @@ export function DeviceWorkspacePage() {
                   </button>
                 </div>
                 <div className="flex-1 min-h-0">
-                  <SSHTerminal config={sshConfig} />
+                  <SSHTerminal config={sshConfig} deviceId={deviceId} />
                 </div>
               </>
             )}
