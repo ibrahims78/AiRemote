@@ -23,7 +23,7 @@ export function connectWebSocket(userId: string, token: string, onMessage?: Mess
   extraCallback = onMessage ?? null
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl    = `${protocol}//${window.location.host}/ws`
+  const wsUrl    = `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`
 
   ws = new WebSocket(wsUrl)
 
