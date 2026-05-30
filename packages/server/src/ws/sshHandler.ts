@@ -67,7 +67,24 @@ export function handleSshWebSocket(socket: WebSocket, request: FastifyRequest) {
         if (!sent) {
           deviceRegistry.removeSshSession(sessionId)
           socket.send(JSON.stringify({ type: 'ssh:error', payload: { message: 'Failed to reach device agent' } }))
+          return
         }
+
+        // Server-side connect timeout — if agent doesn't respond in 20s, notify the dashboard
+        const connectTimer = setTimeout(() => {
+          const session = deviceRegistry.getSshSession(sessionId)
+          if (session) {
+            try {
+              session.dashboardSocket.send(JSON.stringify({
+                type: 'ssh:error',
+                payload: { message: `Connection timed out — could not reach ${host}:${port || 22} within 20s` }
+              }))
+            } catch {}
+            deviceRegistry.removeSshSession(sessionId)
+          }
+        }, 20_000)
+
+        deviceRegistry.setSshConnectTimeout(sessionId, connectTimer)
       }
 
       // ── ssh:data — keystrokes from dashboard → forward to agent ─────────────

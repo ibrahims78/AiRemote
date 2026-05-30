@@ -20,6 +20,7 @@ interface SshTunnelSession {
   userId?: string
   userEmail?: string
   startedAt: number
+  connectTimeout?: NodeJS.Timeout
 }
 
 class DeviceRegistry {
@@ -159,8 +160,22 @@ class DeviceRegistry {
 
   removeSshSession(sessionId: string): SshTunnelSession | undefined {
     const s = this.sshSessions.get(sessionId)
+    if (s?.connectTimeout) clearTimeout(s.connectTimeout)
     this.sshSessions.delete(sessionId)
     return s
+  }
+
+  setSshConnectTimeout(sessionId: string, timer: NodeJS.Timeout): void {
+    const s = this.sshSessions.get(sessionId)
+    if (s) s.connectTimeout = timer
+  }
+
+  clearSshConnectTimeout(sessionId: string): void {
+    const s = this.sshSessions.get(sessionId)
+    if (s?.connectTimeout) {
+      clearTimeout(s.connectTimeout)
+      s.connectTimeout = undefined
+    }
   }
 
   getSessionIdByDashboardSocket(socket: WebSocket): string | undefined {

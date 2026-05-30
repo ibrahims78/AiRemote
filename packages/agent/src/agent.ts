@@ -226,11 +226,28 @@ export class AgentService {
       this.sshTunnels.delete(sessionId)
     })
 
+    // Hard abort if the overall connect takes longer than 15 s (covers TCP-level hangs)
+    const abortTimer = setTimeout(() => {
+      if (!this.sshTunnels.has(sessionId)) {
+        try { client.end() } catch {}
+        this.send({
+          type: 'agent:ssh_error',
+          payload: { sessionId, message: `Connection timed out after 15s — is SSH running on ${host}:${port}?` },
+          timestamp: Date.now()
+        })
+      }
+    }, 15_000)
+
+    client.once('ready', () => clearTimeout(abortTimer))
+    client.once('error', () => clearTimeout(abortTimer))
+
     const connectConfig: Record<string, unknown> = {
       host,
       port,
       username,
-      readyTimeout: 15000
+      readyTimeout: 12000,
+      keepaliveInterval: 5000,
+      keepaliveCountMax: 3
     }
     if (privateKey) {
       connectConfig.privateKey = Buffer.from(privateKey, 'base64')

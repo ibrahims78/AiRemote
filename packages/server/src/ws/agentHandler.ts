@@ -109,6 +109,7 @@ export async function handleAgentMessage(
 
     case 'agent:ssh_opened': {
       const { sessionId } = message.payload as { sessionId: string }
+      deviceRegistry.clearSshConnectTimeout(sessionId)
       const session = deviceRegistry.getSshSession(sessionId)
       if (session?.dashboardSocket.readyState === 1) {
         session.dashboardSocket.send(JSON.stringify({ type: 'ssh:connected', payload: { message: 'Connected' } }))
@@ -137,6 +138,7 @@ export async function handleAgentMessage(
 
     case 'agent:ssh_error': {
       const { sessionId, message: errMsg } = message.payload as { sessionId: string; message: string }
+      deviceRegistry.clearSshConnectTimeout(sessionId)
       const session = deviceRegistry.getSshSession(sessionId)
       if (session?.dashboardSocket.readyState === 1) {
         session.dashboardSocket.send(JSON.stringify({ type: 'ssh:error', payload: { message: errMsg } }))
