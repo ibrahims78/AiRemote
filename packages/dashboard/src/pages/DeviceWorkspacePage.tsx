@@ -27,16 +27,26 @@ interface SSHConfig {
 }
 
 const SSH_CFG_KEY = 'airemote-ssh-cfg'
+const SSH_SESSION_KEY = 'airemote-ssh-session'
 
 function loadSavedSSHConfig(deviceId: string): SSHConfig | null {
   try {
+    // Session storage first (has password, cleared on browser close)
+    const session = sessionStorage.getItem(`${SSH_SESSION_KEY}-${deviceId}`)
+    if (session) return JSON.parse(session)
+    // Fall back to localStorage (no password, just host/port/username)
     const d = localStorage.getItem(`${SSH_CFG_KEY}-${deviceId}`)
     return d ? JSON.parse(d) : null
   } catch { return null }
 }
 
 function saveSSHConfig(deviceId: string, cfg: SSHConfig) {
-  try { localStorage.setItem(`${SSH_CFG_KEY}-${deviceId}`, JSON.stringify(cfg)) } catch {}
+  try {
+    // Save full config (with password) in sessionStorage for this browser session
+    sessionStorage.setItem(`${SSH_SESSION_KEY}-${deviceId}`, JSON.stringify(cfg))
+    // Save without password in localStorage for pre-filling next session
+    localStorage.setItem(`${SSH_CFG_KEY}-${deviceId}`, JSON.stringify({ ...cfg, password: undefined, privateKey: undefined }))
+  } catch {}
 }
 
 function ConnectionForm({ device, onConnect }: {
@@ -44,11 +54,12 @@ function ConnectionForm({ device, onConnect }: {
   onConnect: (cfg: SSHConfig) => void
 }) {
   const t = useT()
-  const [host, setHost] = useState(device.info?.ipLocal || device.info?.ipPublic || '')
-  const [port, setPort] = useState(22)
-  const [username, setUsername] = useState('root')
-  const [password, setPassword] = useState('')
-  const [authMethod, setAuthMethod] = useState<'password' | 'key'>('password')
+  const saved = loadSavedSSHConfig(device.id)
+  const [host, setHost] = useState(saved?.host || 'localhost')
+  const [port, setPort] = useState(saved?.port || 22)
+  const [username, setUsername] = useState(saved?.username || 'root')
+  const [password, setPassword] = useState(saved?.password || '')
+  const [authMethod, setAuthMethod] = useState<'password' | 'key'>(saved?.privateKey ? 'key' : 'password')
   const [privateKey, setPrivateKey] = useState('')
 
   function handleSubmit(e: React.FormEvent) {
@@ -58,7 +69,7 @@ function ConnectionForm({ device, onConnect }: {
       password: authMethod === 'password' ? password : undefined,
       privateKey: authMethod === 'key' ? btoa(privateKey) : undefined
     }
-    saveSSHConfig(device.id, { ...cfg, password: undefined, privateKey: undefined })
+    saveSSHConfig(device.id, cfg)
     onConnect(cfg)
   }
 
@@ -228,8 +239,18 @@ export function DeviceWorkspacePage() {
   }, [])
 
   useEffect(() => {
-    if ((tab === 'terminal' || tab === 'files') && !sshConfig) setShowConnForm(true)
-  }, [tab])
+    if (tab === 'terminal' || tab === 'files') {
+      if (!sshConfig) {
+        setShowConnForm(true)
+      } else if (sshConfig.password || sshConfig.privateKey) {
+        // Has full credentials — auto-connect, skip the form
+        setShowConnForm(false)
+      } else {
+        // Has host/username but no password — show form to re-enter password
+        setShowConnForm(true)
+      }
+    }
+  }, [tab, sshConfig])
 
   if (!device) {
     return (
