@@ -251,6 +251,19 @@ document.querySelectorAll('input[name="ssh-auth"]').forEach(r => {
   })
 })
 
+// ─── Browse SSH Key File ───────────────────────────────────────────────────
+$('btn-browse-key').addEventListener('click', async () => {
+  try {
+    const filePath = await airemote.browseForFile()
+    if (filePath) {
+      $('inp-ssh-key').value = filePath
+      $('inp-ssh-key').dispatchEvent(new Event('input'))
+    }
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error')
+  }
+})
+
 // ─── Info Grid Copy Buttons ────────────────────────────────────────────────
 let fullDeviceId = ''
 
@@ -487,9 +500,11 @@ airemote.onSshState(data => {
 
   if (active) {
     setSshDot('connected')
-    $('ssh-session-info').textContent = sessionId ? sessionId.slice(0, 8) + '...' : ''
+    const sessionPart = sessionId ? sessionId.slice(0, 8) + '…' : ''
+    const userPart    = username   ? `${username}` : ''
+    $('ssh-session-info').textContent = [userPart, sessionPart].filter(Boolean).join(' · ')
     badge.style.display = ''
-    showToast(t.sshConnected, 'success', 3000)
+    showToast(`🔐 ${t.sshConnected}${username ? ' (' + username + ')' : ''}`, 'success', 3500)
   } else {
     setSshDot('')
     $('ssh-session-info').textContent = ''

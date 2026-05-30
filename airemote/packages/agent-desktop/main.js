@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, dialog } = require('electron')
 const path   = require('path')
 const os     = require('os')
 const fs     = require('fs')
@@ -310,7 +310,7 @@ function handleMsg(msg) {
         win.webContents.send('ssh-state', { active, sessionId, username, method })
       }
       addLog('info', active
-        ? `🔐 SSH: جلسة نشطة${sessionId ? ' [' + sessionId.slice(0, 8) + ']' : ''} — الخادم متصل بهذا الجهاز`
+        ? `🔐 SSH: جلسة نشطة${username ? ' — ' + username : ''}${sessionId ? ' [' + sessionId.slice(0, 8) + ']' : ''}${method ? ' (' + method + ')' : ''} — الخادم متصل بهذا الجهاز`
         : `🔒 SSH: انتهت جلسة الخادم`)
       break
     }
@@ -543,6 +543,21 @@ ipcMain.handle('test-ssh-port', (_, { host, port }) => {
 
 ipcMain.handle('get-ssh-keys',      () => loadSshKeys())
 ipcMain.handle('generate-ssh-keys', () => generateSshKeyPair())
+
+ipcMain.handle('browse-file', async () => {
+  if (!win || win.isDestroyed()) return null
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Select SSH Private Key',
+    properties: ['openFile'],
+    filters: [
+      { name: 'SSH Keys', extensions: ['pem', 'key', 'ppk', 'rsa', 'ed25519', 'ecdsa'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    defaultPath: path.join(os.homedir(), '.ssh')
+  })
+  if (result.canceled || !result.filePaths.length) return null
+  return result.filePaths[0]
+})
 
 ipcMain.handle('get-state', () => ({
   state:     agentState,

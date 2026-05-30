@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('airemote', {
   testSshPort:      (cfg)  => ipcRenderer.invoke('test-ssh-port', cfg),
   getSshKeys:       ()     => ipcRenderer.invoke('get-ssh-keys'),
   generateSshKeys:  ()     => ipcRenderer.invoke('generate-ssh-keys'),
+  browseForFile:    ()     => ipcRenderer.invoke('browse-file'),
 
   getState:         ()     => ipcRenderer.invoke('get-state'),
   getStatsNow:      ()     => ipcRenderer.invoke('get-stats-now'),
