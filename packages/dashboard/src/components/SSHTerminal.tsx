@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { clsx } from 'clsx'
 import { Wifi, WifiOff, X, Maximize2, Minimize2 } from 'lucide-react'
+import { useAuthStore } from '../store/authStore'
 import '@xterm/xterm/css/xterm.css'
 
 interface SSHConfig {
@@ -27,6 +28,7 @@ export function SSHTerminal({ config, onClose }: Props) {
   const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error' | 'closed'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [fullscreen, setFullscreen] = useState(false)
+  const { token } = useAuthStore()
 
   useEffect(() => {
     if (!termRef.current) return
@@ -100,7 +102,8 @@ export function SSHTerminal({ config, onClose }: Props) {
     term.writeln('\x1b[33m  جاري الاتصال بـ ' + cfg.host + ':' + cfg.port + '...\x1b[0m')
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ssh`)
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ssh${tokenParam}`)
     wsRef.current = ws
 
     ws.onopen = () => {

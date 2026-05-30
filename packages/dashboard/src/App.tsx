@@ -13,6 +13,7 @@ import { UsersPage } from './pages/UsersPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AuditPage } from './pages/AuditPage'
 import { NotificationsPage } from './pages/NotificationsPage'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { useEffect, useState } from 'react'
 import { api } from './lib/api'
 import { applyTheme, applyLang } from './store/uiStore'
@@ -63,15 +64,15 @@ export default function App() {
           <>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
-              <Route index                             element={<OverviewPage />} />
-              <Route path="devices"                   element={<DevicesPage />} />
+              <Route index                             element={<ErrorBoundary><OverviewPage /></ErrorBoundary>} />
+              <Route path="devices"                   element={<ErrorBoundary><DevicesPage /></ErrorBoundary>} />
               <Route path="devices/:deviceId"         element={<DeviceWorkspacePage />} />
-              <Route path="ai"                        element={<AiPage />} />
-              <Route path="sessions"                  element={<SessionsPage />} />
-              <Route path="notifications"             element={<NotificationsPage />} />
-              <Route path="audit"                     element={<AuditPage />} />
-              <Route path="users"                     element={<UsersPage />} />
-              <Route path="settings"                  element={<SettingsPage />} />
+              <Route path="ai"                        element={<ErrorBoundary><AiPage /></ErrorBoundary>} />
+              <Route path="sessions"                  element={<ErrorBoundary><SessionsPage /></ErrorBoundary>} />
+              <Route path="notifications"             element={<ErrorBoundary><NotificationsPage /></ErrorBoundary>} />
+              <Route path="audit"                     element={<ErrorBoundary><AuditPage /></ErrorBoundary>} />
+              <Route path="users"                     element={<ErrorBoundary><UsersPage /></ErrorBoundary>} />
+              <Route path="settings"                  element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </>

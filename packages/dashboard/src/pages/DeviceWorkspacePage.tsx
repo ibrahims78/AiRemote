@@ -12,6 +12,7 @@ import { MonitoringCharts } from '../components/MonitoringCharts'
 import { FileManager } from '../components/FileManager'
 import { AiChatPanel } from '../components/AiChatPanel'
 import { CommandRunner } from '../components/CommandRunner'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import type { Device } from '@airemote/shared'
 import { useT } from '../lib/i18n'
 
@@ -213,13 +214,18 @@ function DeviceInfoPanel({ device }: { device: Device }) {
 export function DeviceWorkspacePage() {
   const t = useT()
   const { deviceId } = useParams<{ deviceId: string }>()
-  const { devices, statsMap } = useDeviceStore()
+  const { devices, statsMap, fetchDevices } = useDeviceStore()
   const [tab, setTab] = useState<Tab>('overview')
   const [sshConfig, setSshConfig] = useState<SSHConfig | null>(() => deviceId ? loadSavedSSHConfig(deviceId) : null)
   const [showConnForm, setShowConnForm] = useState(false)
 
   const device = devices.find(d => d.id === deviceId)
   const stats = deviceId ? statsMap[deviceId] : undefined
+
+  // Fetch devices on mount in case the store is empty (e.g. direct URL access)
+  useEffect(() => {
+    if (devices.length === 0) fetchDevices()
+  }, [])
 
   useEffect(() => {
     if ((tab === 'terminal' || tab === 'files') && !sshConfig) setShowConnForm(true)
@@ -307,6 +313,7 @@ export function DeviceWorkspacePage() {
 
       {/* Content */}
       <div className={clsx('flex-1 min-h-0', tab === 'ai' || tab === 'terminal' || tab === 'commands' ? 'overflow-hidden' : 'overflow-auto p-5')}>
+        <ErrorBoundary>
 
         {tab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 p-5">
@@ -396,6 +403,8 @@ export function DeviceWorkspacePage() {
             <AiChatPanel deviceId={deviceId} />
           </div>
         )}
+
+        </ErrorBoundary>
       </div>
     </div>
   )
