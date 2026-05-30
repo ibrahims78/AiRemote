@@ -5,3 +5,4 @@
 - [AiRemote Phase 1 Complete](airemote-phase1.md) — All 14 bugs/gaps fixed; server rebuilt; both workflows running; BUILD_REPORT at airemote/.local/BUILD_REPORT.md
 - [AiRemote Phase 2 Complete](airemote-phase2.md) — AI command execution, CommandRunner, device context in AI, agent install modal; exec endpoint at POST /api/devices/:id/exec
 - [AiRemote UI System](airemote-ui-system.md) — Dark/light theme via html.light class; AR/EN i18n via useT() hook (reactive Zustand); all 9 pages updated
+- [AiRemote Agent Desktop UI](airemote-agent-ui.md) — Collapsible sections (.coll-sec/collapsed); IP bug: main.js error/timeout must send public-ip IPC; build: packaging runs but portable needs --prepackaged flag

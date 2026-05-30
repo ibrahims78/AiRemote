@@ -104,8 +104,17 @@ function fetchPublicIp() {
         } catch { resolve('') }
       })
     })
-    req.on('error',   () => resolve(''))
-    req.on('timeout', () => { req.destroy(); resolve('') })
+    req.on('error', () => {
+      cachedPublicIp = ''
+      if (win && !win.isDestroyed()) win.webContents.send('public-ip', '')
+      resolve('')
+    })
+    req.on('timeout', () => {
+      req.destroy()
+      cachedPublicIp = ''
+      if (win && !win.isDestroyed()) win.webContents.send('public-ip', '')
+      resolve('')
+    })
   })
 }
 

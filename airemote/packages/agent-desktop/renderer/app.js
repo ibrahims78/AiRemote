@@ -44,7 +44,8 @@ const LANG = {
     logExported:     'تم تصدير السجل',
     generating:      'جاري التوليد...',
     keyGenerated:    'تم توليد المفتاح',
-    // SSH
+    deviceInfo:      'معلومات الجهاز',
+    settingsTitle:   'الإعدادات',
     sshNotConn:      'SSH غير نشط',
     sshConnected:    'SSH نشط — الخادم متصل',
     sshConnecting:   'جاري الاتصال بـ SSH...',
@@ -112,7 +113,8 @@ const LANG = {
     logExported:     'Log exported',
     generating:      'Generating...',
     keyGenerated:    'Key generated',
-    // SSH
+    deviceInfo:      'Device Info',
+    settingsTitle:   'Settings',
     sshNotConn:      'SSH not active',
     sshConnected:    'SSH active — server connected',
     sshConnecting:   'Connecting via SSH...',
@@ -201,6 +203,77 @@ function applyTheme(theme) {
 $('btn-lang').addEventListener('click',  () => applyLang(currentLang  === 'ar' ? 'en' : 'ar'))
 $('btn-theme').addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark'))
 
+// ─── Collapsible Sections ──────────────────────────────────────────────────
+// Defaults: info=collapsed, settings=expanded, stats=collapsed, log=expanded
+const COLL_DEFAULTS = { info: true, settings: false, stats: true, log: false }
+
+function initCollapseSections() {
+  Object.entries(COLL_DEFAULTS).forEach(([id, defaultCollapsed]) => {
+    const stored = localStorage.getItem(`coll-${id}`)
+    const shouldCollapse = stored !== null ? stored === '1' : defaultCollapsed
+    if (shouldCollapse) {
+      if (id === 'log') {
+        document.getElementById('app').classList.add('log-mini')
+      } else {
+        const sec = $(`sec-${id}`)
+        if (sec) sec.classList.add('collapsed')
+      }
+    } else {
+      if (id !== 'log') {
+        const sec = $(`sec-${id}`)
+        if (sec) sec.classList.remove('collapsed')
+      }
+    }
+  })
+}
+
+function toggleSection(id) {
+  if (id === 'log') {
+    const app = $('app')
+    const isMini = app.classList.contains('log-mini')
+    app.classList.toggle('log-mini', !isMini)
+    localStorage.setItem('coll-log', isMini ? '0' : '1')
+  } else {
+    const sec = $(`sec-${id}`)
+    if (!sec) return
+    const wasCollapsed = sec.classList.contains('collapsed')
+    sec.classList.toggle('collapsed', !wasCollapsed)
+    localStorage.setItem(`coll-${id}`, wasCollapsed ? '0' : '1')
+    if (id === 'info') updateInfoSummary()
+    if (id === 'stats') updateStatsSummary()
+  }
+}
+
+// Wire up section header buttons
+document.querySelectorAll('.sec-hdr[data-target]').forEach(btn => {
+  btn.addEventListener('click', () => toggleSection(btn.dataset.target))
+})
+$('log-coll-btn').addEventListener('click', () => toggleSection('log'))
+
+// Summary updaters (shown when section is collapsed)
+function updateInfoSummary() {
+  const host = ($('inf-host').textContent || '').trim()
+  const ip   = ($('inf-ip').textContent   || '').trim()
+  const pub  = ($('inf-pubip').textContent || '').trim()
+  const parts = [
+    host !== '—' ? host : '',
+    ip   !== '—' ? ip   : '',
+    (pub && pub !== '—' && !pub.includes('•')) ? `(${pub})` : ''
+  ].filter(Boolean)
+  $('sum-info').textContent = parts.join('  ·  ')
+}
+
+function updateStatsSummary() {
+  const cpu  = $('pct-cpu').textContent
+  const ram  = $('pct-ram').textContent
+  const disk = $('pct-disk').textContent
+  if (cpu && cpu !== '—%') {
+    $('sum-stats').textContent = `CPU ${cpu}  RAM ${ram}  Disk ${disk}`
+  } else {
+    $('sum-stats').textContent = ''
+  }
+}
+
 // ─── Tabs ──────────────────────────────────────────────────────────────────
 let activeTab = 'conn'
 
@@ -220,7 +293,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // ─── Window Controls ───────────────────────────────────────────────────────
 $('btn-min').addEventListener('click',   () => airemote.minimizeWin())
 $('btn-tray').addEventListener('click',  () => airemote.hideWin())
-$('btn-close').addEventListener('click', () => airemote.hideWin())
+$('btn-close').addEventListener('click', () => airemote.closeApp())
 
 // ─── Token Eye ─────────────────────────────────────────────────────────────
 let tokenVisible = false
@@ -274,7 +347,10 @@ document.querySelectorAll('.info-copy-btn').forEach(btn => {
       copyText(fullDeviceId || '—')
     } else {
       const el = $(targetId)
-      if (el) copyText(el.textContent.trim())
+      if (el) {
+        const txt = el.textContent.trim()
+        if (txt && txt !== '—' && !el.querySelector('.ip-loading')) copyText(txt)
+      }
     }
   })
 })
@@ -283,7 +359,6 @@ document.querySelectorAll('.info-copy-btn').forEach(btn => {
 let activeLogFilter = 'all'
 let logSearchQuery  = ''
 
-// ─── Log Filter ────────────────────────────────────────────────────────────
 document.querySelectorAll('.lf-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.lf-btn').forEach(b => b.classList.remove('active'))
@@ -384,12 +459,15 @@ function doStart() {
   const t = LANG[currentLang]
   if (!cfg.serverUrl || !cfg.token) {
     flashError(!cfg.serverUrl ? $('inp-server') : $('inp-token'), t.errNoConfig)
-    switchTab('conn')
+    // Expand settings section so user can see the fields
+    const sec = $('sec-settings')
+    if (sec && sec.classList.contains('collapsed')) toggleSection('settings')
     return
   }
   if (!cfg.serverUrl.startsWith('ws://') && !cfg.serverUrl.startsWith('wss://')) {
     flashError($('inp-server'), t.errNeedWs)
-    switchTab('conn')
+    const sec = $('sec-settings')
+    if (sec && sec.classList.contains('collapsed')) toggleSection('settings')
     return
   }
   airemote.startAgent(cfg)
@@ -514,15 +592,32 @@ airemote.onSshState(data => {
 })
 
 // ─── Public IP ─────────────────────────────────────────────────────────────
+let ipReceived = false
+
 airemote.onPublicIp(ip => {
+  ipReceived = true
   const el = $('inf-pubip')
-  if (ip) {
-    el.textContent = ip
+  if (ip && ip.trim()) {
+    el.textContent = ip.trim()
     el.classList.add('mono')
   } else {
     el.textContent = '—'
+    el.classList.remove('mono')
   }
+  updateInfoSummary()
 })
+
+// Fallback: if no IP event received after 9 seconds, clear loading animation
+setTimeout(() => {
+  if (!ipReceived) {
+    const el = $('inf-pubip')
+    if (el && el.querySelector('.ip-loading')) {
+      el.textContent = '—'
+      el.classList.remove('mono')
+      updateInfoSummary()
+    }
+  }
+}, 9000)
 
 // ─── SSH Key Pair ──────────────────────────────────────────────────────────
 let currentKeyType = 'public'
@@ -530,10 +625,7 @@ let currentKeys    = null
 
 async function loadAndShowKeys() {
   const keys = await airemote.getSshKeys()
-  if (keys) {
-    currentKeys = keys
-    showKeys(keys)
-  }
+  if (keys) { currentKeys = keys; showKeys(keys) }
 }
 
 function showKeys(keys) {
@@ -597,19 +689,20 @@ function applyState(state, deviceId, serverUrl, uptime) {
   lastServerUrl = serverUrl || lastServerUrl
   applyStateLabels(state, deviceId, serverUrl || lastServerUrl)
 
-  const wasConnected = (state === 'connected')
-  const wasConnecting = (state === 'connecting')
-
-  if (wasConnected || wasConnecting) {
+  if (state === 'connected' || state === 'connecting') {
     startStatsPolling()
     startUptimeCounter(uptime || 0)
+    // Auto-expand stats when connected
+    const secStats = $('sec-stats')
+    if (secStats && secStats.classList.contains('collapsed') && state === 'connected') {
+      toggleSection('stats')
+    }
   } else {
     stopStatsPolling()
     stopUptimeCounter()
     resetStats()
   }
 
-  // Toast on state change
   const t = LANG[currentLang]
   if (state === 'connected') showToast(`✅ ${t.connected}`, 'success')
   if (state === 'error')     showToast(`❌ ${t.error}`, 'error')
@@ -647,7 +740,6 @@ function applyStateLabels(state, deviceId, serverUrl) {
     btn.className = 'stopped'
   }
 
-  // Device ID — full value stored separately
   fullDeviceId = deviceId || ''
   if (deviceId) {
     $('inf-devid').textContent = deviceId.length > 28
@@ -657,6 +749,7 @@ function applyStateLabels(state, deviceId, serverUrl) {
     $('inf-devid').textContent = '—'
   }
   updateServerDisplay(serverUrl)
+  updateInfoSummary()
 }
 
 function resolveHost(url) {
@@ -668,6 +761,7 @@ function resolveHost(url) {
 
 function updateServerDisplay(url) {
   $('inf-server').textContent = resolveHost(url) || '—'
+  updateInfoSummary()
 }
 
 // ─── Uptime ─────────────────────────────────────────────────────────────────
@@ -708,6 +802,7 @@ function applyStats(s) {
   const ramTotal = (s.ramTotalMb / 1024).toFixed(1)
   const disk = s.diskTotalGb > 0 ? `${s.diskUsedGb}/${s.diskTotalGb} GB` : `${s.diskPercent}%`
   $('stat-detail').textContent = `RAM: ${ramUsed}/${ramTotal} GB  ·  Disk C: ${disk}`
+  updateStatsSummary()
 }
 function setBar(bar, lbl, val, danger) {
   const pct = Math.min(Math.max(val || 0, 0), 100)
@@ -721,7 +816,11 @@ function resetStats() {
   })
   $('pct-cpu').textContent = $('pct-ram').textContent = $('pct-disk').textContent = '—%'
   $('stat-detail').textContent = '—'
+  $('sum-stats').textContent = ''
 }
+
+// ─── IPC Stats (from heartbeat) ─────────────────────────────────────────────
+airemote.onStats(s => { if (s) applyStats(s) })
 
 // ─── Logging ────────────────────────────────────────────────────────────────
 function appendLog(entry) {
@@ -734,7 +833,6 @@ function appendLog(entry) {
   el.dataset.level = entry.level || 'info'
   el.innerHTML = `<span class="log-t">${esc(entry.t)}</span><span class="log-msg ${entry.level || ''}">${esc(entry.msg)}</span>`
 
-  // Apply current filter
   const msg = (entry.msg || '').toLowerCase()
   const matchSearch = !logSearchQuery || msg.includes(logSearchQuery)
   const matchLevel  = activeLogFilter === 'all' || (entry.level || 'info') === activeLogFilter
@@ -742,8 +840,14 @@ function appendLog(entry) {
 
   box.appendChild(el)
   while (box.children.length > 200) box.removeChild(box.firstChild)
-  box.scrollTop = box.scrollHeight
+
+  // Auto-scroll only if log is not mini
+  if (!document.getElementById('app').classList.contains('log-mini')) {
+    box.scrollTop = box.scrollHeight
+  }
 }
+
+airemote.onLog(entry => appendLog(entry))
 
 function esc(s) {
   return String(s)
@@ -751,6 +855,11 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 }
+
+// ─── State IPC ───────────────────────────────────────────────────────────────
+airemote.onState(data => {
+  applyState(data.state, data.deviceId, data.serverUrl, data.uptime)
+})
 
 // ─── Flash helpers ───────────────────────────────────────────────────────────
 function flashError(el, msg) {
@@ -765,14 +874,16 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') airemote.hideWin()
   if ((e.ctrlKey || e.metaKey) && e.key === '1') { e.preventDefault(); switchTab('conn') }
   if ((e.ctrlKey || e.metaKey) && e.key === '2') { e.preventDefault(); switchTab('ssh') }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); toggleSection('info') }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'l') { e.preventDefault(); toggleSection('log') }
 })
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 airemote.onInit(data => {
   const { config, ssh, logs, state, deviceId, serverUrl, hostname, ipLocal, ipPublic, platform } = data
 
-  $('inp-server').value      = config.serverUrl       || ''
-  $('inp-token').value       = config.token           || ''
+  $('inp-server').value         = config.serverUrl       || ''
+  $('inp-token').value          = config.token           || ''
   $('chk-autostart').checked    = config.autoStart      || false
   $('chk-minimized').checked    = config.startMinimized || false
 
@@ -790,26 +901,45 @@ airemote.onInit(data => {
     }
   }
 
-  $('inf-host').textContent   = hostname || '—'
-  $('inf-ip').textContent     = ipLocal  || '—'
-  $('footer-os').textContent  = platform || 'Windows'
+  $('inf-host').textContent  = hostname || '—'
+  $('inf-ip').textContent    = ipLocal  || '—'
+  $('footer-os').textContent = platform || 'Windows'
 
-  // Public IP
-  if (ipPublic) {
-    $('inf-pubip').textContent = ipPublic
+  // Public IP: show loading animation, wait for onPublicIp event
+  if (ipPublic && ipPublic.trim()) {
+    ipReceived = true
+    $('inf-pubip').textContent = ipPublic.trim()
     $('inf-pubip').classList.add('mono')
   }
+  // else: loading animation stays until onPublicIp fires or fallback timeout
 
+  // Restore collapse states THEN update summaries
+  initCollapseSections()
+  updateInfoSummary()
+  updateStatsSummary()
+
+  // Apply lang/theme
   applyLang(currentLang)
   applyTheme(currentTheme)
-  applyState(state || 'stopped', deviceId, serverUrl, 0)
 
-  if (logs && logs.length) logs.forEach(appendLog)
-
-  // Load SSH keys if any
+  // Load existing SSH keys
   loadAndShowKeys()
-})
 
-airemote.onState(data  => applyState(data.state, data.deviceId, data.serverUrl, data.uptime || 0))
-airemote.onLog(entry   => appendLog(entry))
-airemote.onStats(s     => { if (s) applyStats(s) })
+  // Restore state
+  if (state && state !== 'stopped') {
+    applyState(state, deviceId, serverUrl, data.uptime || 0)
+  } else {
+    applyStateLabels('stopped', deviceId, serverUrl)
+    updateServerDisplay(serverUrl)
+  }
+
+  // Replay logs
+  if (logs && logs.length) {
+    logs.forEach(entry => appendLog(entry))
+  }
+
+  // Auto-start if configured
+  if (config.autoStart && config.serverUrl && config.token && state === 'stopped') {
+    setTimeout(doStart, 800)
+  }
+})
