@@ -2,15 +2,21 @@ import type { WebSocket } from 'ws'
 import type { FastifyRequest } from 'fastify'
 import { deviceRegistry } from './registry'
 import { getDeviceById } from '../db/devices'
+import type { AuthTokenPayload } from '@airemote/shared'
 
 export function handleClientMessage(
   socket: WebSocket,
   message: { type: string; payload: Record<string, unknown> },
-  _request: FastifyRequest
+  request: FastifyRequest
 ): void {
+  // Use the authenticated user identity — never trust client-provided userId
+  const authUser = request.user as unknown as AuthTokenPayload | undefined
+  const authenticatedUserId = authUser?.userId
+
   switch (message.type) {
     case 'client:subscribe': {
-      const { userId, deviceIds } = message.payload as { userId: string; deviceIds: string[] }
+      const { deviceIds } = message.payload as { deviceIds: string[] }
+      const userId = authenticatedUserId || ''
       deviceRegistry.addClient(userId, socket)
 
       if (Array.isArray(deviceIds) && deviceIds.length > 0) {

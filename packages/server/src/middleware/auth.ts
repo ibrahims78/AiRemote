@@ -20,3 +20,19 @@ export async function requireAdmin(request: FastifyRequest, reply: FastifyReply)
     reply.code(401).send({ error: 'Unauthorized' })
   }
 }
+
+/**
+ * WebSocket auth: browsers cannot set Authorization headers on WS upgrades,
+ * so we accept the JWT from the `?token=` query parameter as well.
+ */
+export async function requireAuthWs(request: FastifyRequest, reply: FastifyReply) {
+  const query = request.query as { token?: string }
+  if (query.token) {
+    request.headers.authorization = `Bearer ${query.token}`
+  }
+  try {
+    await request.jwtVerify()
+  } catch {
+    reply.code(401).send({ error: 'Unauthorized' })
+  }
+}

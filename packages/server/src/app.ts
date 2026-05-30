@@ -14,6 +14,7 @@ import { aiRoutes } from './routes/ai'
 import { settingsRoutes } from './routes/settings'
 import { wsHandler } from './ws/handler'
 import { handleSshWebSocket } from './ws/sshHandler'
+import { requireAuthWs } from './middleware/auth'
 
 export async function buildServer() {
   const app = Fastify({
@@ -27,8 +28,11 @@ export async function buildServer() {
 
   await initDatabase()
 
+  const isProduction = process.env.NODE_ENV === 'production'
   await app.register(cors, {
-    origin: process.env.DASHBOARD_URL || true,
+    origin: process.env.DASHBOARD_URL
+      ? process.env.DASHBOARD_URL
+      : (isProduction ? false : true),
     credentials: true
   })
 
@@ -63,8 +67,8 @@ export async function buildServer() {
   await app.register(settingsRoutes, { prefix: '/api/settings' })
 
   await app.register(async function (fastify) {
-    fastify.get('/ws', { websocket: true }, wsHandler)
-    fastify.get('/ssh', { websocket: true }, handleSshWebSocket)
+    fastify.get('/ws', { websocket: true, preHandler: [requireAuthWs] }, wsHandler)
+    fastify.get('/ssh', { websocket: true, preHandler: [requireAuthWs] }, handleSshWebSocket)
   })
 
   return app
