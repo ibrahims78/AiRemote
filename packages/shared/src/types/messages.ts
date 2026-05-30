@@ -6,9 +6,17 @@ export type WSMessageType =
   | 'agent:stats'
   | 'agent:status'
   | 'agent:command_result'
+  | 'agent:ssh_opened'
+  | 'agent:ssh_data'
+  | 'agent:ssh_closed'
+  | 'agent:ssh_error'
   | 'server:registered'
   | 'server:command'
   | 'server:error'
+  | 'server:ssh_open'
+  | 'server:ssh_data'
+  | 'server:ssh_resize'
+  | 'server:ssh_close'
   | 'client:subscribe'
   | 'client:command'
   | 'client:ai_chat'
@@ -61,4 +69,30 @@ export interface BroadcastDeviceUpdatePayload {
 export interface BroadcastStatsUpdatePayload {
   deviceId: string
   stats: DeviceStats
+}
+
+export interface ServerSshOpenPayload {
+  sessionId: string
+  host: string
+  port: number
+  username: string
+  password?: string
+  privateKey?: string
+  rows?: number
+  cols?: number
+}
+
+export interface SshDataPayload {
+  sessionId: string
+  data: string
+}
+
+export interface SshResizePayload {
+  sessionId: string
+  rows: number
+  cols: number
+}
+
+export interface SshClosePayload {
+  sessionId: string
 }

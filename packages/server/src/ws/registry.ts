@@ -14,9 +14,18 @@ interface ConnectedClient {
   subscribedDevices: Set<string>
 }
 
+interface SshTunnelSession {
+  dashboardSocket: WebSocket
+  deviceId: string
+  userId?: string
+  userEmail?: string
+  startedAt: number
+}
+
 class DeviceRegistry {
   private devices = new Map<string, ConnectedDevice>()
   private clients = new Map<WebSocket, ConnectedClient>()
+  private sshSessions = new Map<string, SshTunnelSession>()
 
   registerDevice(deviceId: string, socket: WebSocket, stats?: DeviceStats): void {
     this.devices.set(deviceId, { deviceId, socket, stats, connectedAt: new Date() })
@@ -106,7 +115,6 @@ class DeviceRegistry {
     }
   }
 
-  /** Push a real-time notification to all dashboard sessions belonging to userId */
   broadcastNotification(userId: string, notification: object): void {
     const msg = JSON.stringify({
       type: 'broadcast:notification',
@@ -123,6 +131,41 @@ class DeviceRegistry {
   getDeviceIdBySocket(socket: WebSocket): string | undefined {
     for (const [deviceId, entry] of this.devices) {
       if (entry.socket === socket) return deviceId
+    }
+    return undefined
+  }
+
+  // ── SSH Tunnel Session Management ─────────────────────────────────────────
+
+  addSshSession(
+    sessionId: string,
+    dashboardSocket: WebSocket,
+    deviceId: string,
+    userId?: string,
+    userEmail?: string
+  ): void {
+    this.sshSessions.set(sessionId, {
+      dashboardSocket,
+      deviceId,
+      userId,
+      userEmail,
+      startedAt: Date.now()
+    })
+  }
+
+  getSshSession(sessionId: string): SshTunnelSession | undefined {
+    return this.sshSessions.get(sessionId)
+  }
+
+  removeSshSession(sessionId: string): SshTunnelSession | undefined {
+    const s = this.sshSessions.get(sessionId)
+    this.sshSessions.delete(sessionId)
+    return s
+  }
+
+  getSessionIdByDashboardSocket(socket: WebSocket): string | undefined {
+    for (const [sessionId, s] of this.sshSessions) {
+      if (s.dashboardSocket === socket) return sessionId
     }
     return undefined
   }

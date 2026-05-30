@@ -12,7 +12,6 @@ const pendingCommands = new Map<string, {
   timeout: NodeJS.Timeout
 }>()
 
-// Throttle stats saving: save every N heartbeats (default every 3rd ≈ 30 seconds)
 const heartbeatCount = new Map<string, number>()
 const SAVE_EVERY_N = 3
 
@@ -46,8 +45,6 @@ export async function handleAgentMessage(
         timestamp: Date.now()
       }))
       deviceRegistry.broadcastDeviceStatus(device.id, 'online')
-
-      // Fire device_online alert (fire-and-forget)
       fireDeviceOnlineAlert(device.id).catch(() => {})
 
       console.log(`✅ Agent registered: ${device.name} (${device.id}) from ${clientIp}`)
@@ -57,7 +54,6 @@ export async function handleAgentMessage(
     case 'agent:heartbeat': {
       const payload = message.payload as AgentHeartbeatPayload
 
-      // Security: verify the socket is actually registered as this deviceId
       const registeredId = deviceRegistry.getDeviceIdBySocket(socket)
       if (!registeredId || registeredId !== payload.deviceId) {
         socket.send(JSON.stringify({
@@ -71,7 +67,6 @@ export async function handleAgentMessage(
       await updateDeviceSeen(payload.deviceId)
       deviceRegistry.updateDeviceStats(payload.deviceId, payload.stats)
 
-      // ── Historical stats: save every SAVE_EVERY_N heartbeats ─────────────
       const count = (heartbeatCount.get(payload.deviceId) ?? 0) + 1
       heartbeatCount.set(payload.deviceId, count)
 
@@ -95,9 +90,7 @@ export async function handleAgentMessage(
         }).catch(() => {})
       }
 
-      // ── Alert engine evaluation (fire-and-forget) ─────────────────────────
       evaluateAlerts(payload.deviceId, payload.stats).catch(() => {})
-
       return { deviceId: payload.deviceId }
     }
 
@@ -109,6 +102,46 @@ export async function handleAgentMessage(
         pending.resolve(payload)
         pendingCommands.delete(payload.commandId)
       }
+      return null
+    }
+
+    // ── SSH Tunnel messages (agent → server → dashboard) ─────────────────────
+
+    case 'agent:ssh_opened': {
+      const { sessionId } = message.payload as { sessionId: string }
+      const session = deviceRegistry.getSshSession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({ type: 'ssh:connected', payload: { message: 'Connected' } }))
+      }
+      return null
+    }
+
+    case 'agent:ssh_data': {
+      const { sessionId, data } = message.payload as { sessionId: string; data: string }
+      const session = deviceRegistry.getSshSession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({ type: 'ssh:data', payload: { data } }))
+      }
+      return null
+    }
+
+    case 'agent:ssh_closed': {
+      const { sessionId } = message.payload as { sessionId: string }
+      const session = deviceRegistry.getSshSession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({ type: 'ssh:closed', payload: {} }))
+      }
+      deviceRegistry.removeSshSession(sessionId)
+      return null
+    }
+
+    case 'agent:ssh_error': {
+      const { sessionId, message: errMsg } = message.payload as { sessionId: string; message: string }
+      const session = deviceRegistry.getSshSession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({ type: 'ssh:error', payload: { message: errMsg } }))
+      }
+      deviceRegistry.removeSshSession(sessionId)
       return null
     }
 
@@ -140,6 +173,5 @@ export function sendCommandToAgent(
 
 export function cleanupDevice(deviceId: string): void {
   heartbeatCount.delete(deviceId)
-  // fire device_offline alert
   fireDeviceOfflineAlert(deviceId).catch(() => {})
 }
