@@ -8,7 +8,10 @@
 </head>
 <body>
 
-<!-- ── Titlebar ──────────────────────────────────────────────────── -->
+<!-- ── Toast Container ──────────────────────────────────────────────── -->
+<div id="toast-wrap"></div>
+
+<!-- ── Titlebar ──────────────────────────────────────────────────────── -->
 <div id="titlebar">
   <div class="brand">
     <div class="logo">
@@ -26,7 +29,7 @@
 
   <div class="title-actions">
     <button class="icon-btn" id="btn-lang" title="Switch Language">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="10"/>
         <line x1="2" y1="12" x2="22" y2="12"/>
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -34,10 +37,10 @@
       <span id="lang-lbl">EN</span>
     </button>
     <button class="icon-btn" id="btn-theme" title="Toggle Theme">
-      <svg id="icon-moon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg id="icon-moon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
       </svg>
-      <svg id="icon-sun" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+      <svg id="icon-sun" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
         <circle cx="12" cy="12" r="5"/>
         <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
         <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
@@ -48,15 +51,17 @@
   </div>
 
   <div class="win-btns">
-    <button class="win-btn" id="btn-min">─</button>
-    <button class="win-btn" id="btn-tray">⬇</button>
-    <button class="win-btn close" id="btn-close">✕</button>
+    <button class="win-btn" id="btn-min" title="Minimize">─</button>
+    <button class="win-btn" id="btn-tray" title="Hide to Tray">⬇</button>
+    <button class="win-btn close" id="btn-close" title="Close">✕</button>
   </div>
 </div>
 
-<!-- ── App ────────────────────────────────────────────────────────── -->
+<!-- ── App ────────────────────────────────────────────────────────────── -->
 <div id="app">
-  <div id="scroll">
+
+  <!-- Upper section: status + info + settings + stats -->
+  <div id="upper">
 
     <!-- Status Card -->
     <div id="status-card" class="stopped">
@@ -76,25 +81,58 @@
 
     <!-- Info Grid -->
     <div id="info-grid">
-      <div class="info-cell">
+      <div class="info-cell" id="ic-host">
         <div class="info-lbl" data-i18n="device">الجهاز</div>
         <div class="info-val" id="inf-host">—</div>
+        <button class="info-copy-btn" data-copy="inf-host" title="نسخ">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
       </div>
-      <div class="info-cell">
+      <div class="info-cell" id="ic-ip">
         <div class="info-lbl" data-i18n="localIp">IP المحلي</div>
         <div class="info-val mono" id="inf-ip">—</div>
+        <button class="info-copy-btn" data-copy="inf-ip" title="نسخ">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
       </div>
-      <div class="info-cell">
+      <div class="info-cell" id="ic-pubip">
+        <div class="info-lbl" data-i18n="publicIp">IP الإنترنت</div>
+        <div class="info-val mono" id="inf-pubip">
+          <span class="ip-loading">
+            <span></span><span></span><span></span>
+          </span>
+        </div>
+        <button class="info-copy-btn" data-copy="inf-pubip" title="نسخ">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
+      </div>
+      <div class="info-cell" id="ic-server">
         <div class="info-lbl" data-i18n="server">الخادم</div>
         <div class="info-val mono" id="inf-server">—</div>
+        <button class="info-copy-btn" data-copy="inf-server" title="نسخ">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
       </div>
-      <div class="info-cell">
+      <div class="info-cell info-cell-wide" id="ic-devid">
         <div class="info-lbl">Device ID</div>
-        <div class="info-val mono" id="inf-devid">—</div>
+        <div class="info-val mono selectable" id="inf-devid">—</div>
+        <button class="info-copy-btn" data-copy="inf-devid-full" title="نسخ">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
       </div>
     </div>
 
-    <!-- Tab Bar -->
+    <!-- Settings Card -->
     <div class="card" id="settings-card">
       <div id="tab-bar">
         <button class="tab-btn active" id="tab-conn" data-tab="conn">
@@ -114,7 +152,7 @@
         </button>
       </div>
 
-      <!-- ── Panel: Connection ──────────────────────────── -->
+      <!-- ── Panel: Connection ───────────────────────────────── -->
       <div class="tab-panel active" id="panel-conn">
 
         <div class="field">
@@ -172,13 +210,15 @@
 
       </div>
 
-      <!-- ── Panel: SSH ─────────────────────────────────── -->
+      <!-- ── Panel: SSH ──────────────────────────────────────── -->
       <div class="tab-panel" id="panel-ssh">
 
+        <!-- SSH Server Status (received FROM server) -->
         <div class="ssh-status-bar" id="ssh-status-bar">
           <span class="ssh-dot" id="ssh-dot"></span>
           <span id="ssh-status-lbl" data-i18n="sshNotConn">SSH غير متصل</span>
           <span id="ssh-session-info" class="ssh-session-info"></span>
+          <span id="ssh-server-badge" class="ssh-server-badge" style="display:none" data-i18n="sshFromServer">من الخادم</span>
         </div>
 
         <div class="fields-row">
@@ -209,7 +249,7 @@
             </label>
             <label class="radio-row">
               <input type="radio" name="ssh-auth" id="rad-key" value="key"/>
-              <span data-i18n="sshKey">مفتاح خاص (Private Key)</span>
+              <span data-i18n="sshKey">مفتاح خاص</span>
             </label>
           </div>
         </div>
@@ -257,7 +297,41 @@
           </button>
         </div>
 
+        <!-- SSH Test Log -->
         <div id="ssh-log-box" class="ssh-log"></div>
+
+        <!-- ── SSH Key Pair Section ──────────────────────── -->
+        <div class="ssh-keygen-section">
+          <div class="keygen-header">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+            </svg>
+            <span data-i18n="sshKeyPair">مفتاح SSH التشفيري</span>
+            <button id="gen-key-btn" class="btn-ghost btn-xs" data-i18n="generateKey">توليد مفتاح</button>
+          </div>
+          <p class="keygen-hint" data-i18n="keyHint">أنشئ مفتاحاً حتى يتصل الخادم بهذا الجهاز عبر SSH بدون كلمة مرور</p>
+          <div id="key-display" style="display:none">
+            <div class="key-type-row">
+              <button class="key-tab-btn active" data-kt="public" data-i18n="publicKey">المفتاح العام</button>
+              <button class="key-tab-btn" data-kt="private" data-i18n="privateKey">المفتاح الخاص</button>
+            </div>
+            <div class="key-panel-wrap">
+              <pre id="key-content" class="key-code selectable"></pre>
+              <button id="copy-key-btn" class="copy-key-btn" title="نسخ">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            </div>
+            <div class="key-instruction" id="key-instruction-public" data-i18n="keyInstructionPublic">
+              أضف هذا المفتاح العام إلى ملف <code>authorized_keys</code> على هذا الجهاز
+            </div>
+            <div class="key-instruction" id="key-instruction-private" style="display:none" data-i18n="keyInstructionPrivate">
+              أعطِ هذا المفتاح الخاص للخادم — الاتصال يُنشأ من طرف الخادم فقط
+            </div>
+          </div>
+        </div>
 
       </div>
     </div>
@@ -291,9 +365,12 @@
       </div>
     </div>
 
-    <!-- Event Log -->
-    <div class="card">
-      <div class="card-header">
+  </div><!-- /#upper -->
+
+  <!-- ── Log Section ────────────────────────────────────────────────── -->
+  <div id="log-section">
+    <div class="card log-card">
+      <div class="card-header log-header">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
@@ -301,24 +378,56 @@
           <line x1="16" y1="17" x2="8" y2="17"/>
         </svg>
         <span data-i18n="eventLog">سجل الأحداث</span>
-        <button id="clear-log" class="btn-text" data-i18n="clear">مسح</button>
+
+        <div class="log-toolbar">
+          <div class="log-search-wrap">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input id="log-search" type="text" placeholder="بحث..." spellcheck="false" />
+          </div>
+          <div class="log-filter-wrap">
+            <button class="lf-btn active" data-level="all">الكل</button>
+            <button class="lf-btn" data-level="info">Info</button>
+            <button class="lf-btn" data-level="warn">Warn</button>
+            <button class="lf-btn" data-level="error">Error</button>
+          </div>
+          <button id="copy-log-btn" class="icon-btn-sm" title="نسخ الكل">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+          <button id="export-log-btn" class="icon-btn-sm" title="تصدير .txt">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </button>
+          <button id="clear-log" class="icon-btn-sm danger-hover" title="مسح" data-i18n-title="clear">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+              <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
+          </button>
+        </div>
       </div>
+
       <div class="log-wrap">
         <div id="log-box">
           <div class="log-empty" data-i18n="noEvents">لا توجد أحداث بعد...</div>
         </div>
       </div>
     </div>
+  </div><!-- /#log-section -->
 
-    <!-- Footer -->
-    <div id="footer">
-      <span>AiRemote Agent v1.1.0</span>
-      <span class="sep">·</span>
-      <span id="footer-os">Windows</span>
-    </div>
-
+  <!-- Footer -->
+  <div id="footer">
+    <span>AiRemote Agent v1.1.0</span>
+    <span class="sep">·</span>
+    <span id="footer-os">Windows</span>
   </div>
-</div>
+
+</div><!-- /#app -->
 
 <script src="app.js"></script>
 </body>

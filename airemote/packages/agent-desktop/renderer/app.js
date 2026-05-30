@@ -4,112 +4,140 @@
 // ─── Translations ──────────────────────────────────────────────────────────
 const LANG = {
   ar: {
-    stopped:       'متوقف',
-    connecting:    'جاري الاتصال...',
-    connected:     'متصل',
-    error:         'خطأ في الاتصال',
-    notConnected:  'الـ Agent غير متصل بأي خادم',
-    checkConfig:   'تحقق من العنوان والـ Token',
-    start:         'تشغيل',
-    stop:          'إيقاف',
-    reconnect:     'إعادة الاتصال',
-    tabConn:       'الاتصال',
-    serverUrl:     'عنوان الخادم (WebSocket)',
-    serverHint:    'مثال: wss://myserver.replit.app/ws',
-    deviceToken:   'Device Token',
-    tokenHint:     'Dashboard → Devices → نسخ Token',
-    autoStart:     'تشغيل تلقائي عند فتح البرنامج',
-    startMinimized:'بدء مصغراً في شريط الإشعارات',
-    saveSettings:  'حفظ الإعدادات',
-    saved:         'تم الحفظ ✓',
-    resources:     'موارد الجهاز',
-    eventLog:      'سجل الأحداث',
-    clear:         'مسح',
-    noEvents:      'لا توجد أحداث بعد...',
-    cleared:       'تم مسح السجل...',
-    device:        'الجهاز',
-    localIp:       'IP المحلي',
-    server:        'الخادم',
-    errNoConfig:   '⚠ أدخل عنوان الخادم والـ Token أولاً',
-    errNeedWs:     '⚠ العنوان يجب أن يبدأ بـ ws:// أو wss://',
-    errNeedPath:   '⚠ تأكد أن العنوان ينتهي بـ /ws',
-    titleConnecting:'جاري الاتصال...',
-    titleConnected:'متصل',
-    titleError:    'خطأ',
-    titleStopped:  'متوقف',
-    lang:          'EN',
-    uptimeFmt:     (h, m, s) => `${h ? h + 'س ' : ''}${m}د ${s}ث`,
+    stopped:        'متوقف',
+    connecting:     'جاري الاتصال...',
+    connected:      'متصل',
+    error:          'خطأ في الاتصال',
+    notConnected:   'الـ Agent غير متصل بأي خادم',
+    checkConfig:    'تحقق من العنوان والـ Token',
+    start:          'تشغيل',
+    stop:           'إيقاف',
+    reconnect:      'إعادة الاتصال',
+    tabConn:        'الاتصال',
+    serverUrl:      'عنوان الخادم (WebSocket)',
+    serverHint:     'مثال: wss://myserver.replit.app/ws',
+    deviceToken:    'Device Token',
+    tokenHint:      'Dashboard → Devices → نسخ Token',
+    autoStart:      'تشغيل تلقائي عند فتح البرنامج',
+    startMinimized: 'بدء مصغراً في شريط الإشعارات',
+    saveSettings:   'حفظ الإعدادات',
+    saved:          'تم الحفظ ✓',
+    resources:      'موارد الجهاز',
+    eventLog:       'سجل الأحداث',
+    clear:          'مسح',
+    noEvents:       'لا توجد أحداث بعد...',
+    cleared:        'تم مسح السجل...',
+    device:         'الجهاز',
+    localIp:        'IP المحلي',
+    publicIp:       'IP الإنترنت',
+    server:         'الخادم',
+    errNoConfig:    '⚠ أدخل عنوان الخادم والـ Token أولاً',
+    errNeedWs:      '⚠ العنوان يجب أن يبدأ بـ ws:// أو wss://',
+    titleConnecting: 'جاري الاتصال...',
+    titleConnected:  'متصل',
+    titleError:      'خطأ',
+    titleStopped:    'متوقف',
+    lang:            'EN',
+    uptimeFmt:       (h, m, s) => `${h ? h + 'س ' : ''}${m}د ${s}ث`,
+    copied:          'تم النسخ',
+    logCopied:       'تم نسخ السجل',
+    logExported:     'تم تصدير السجل',
+    generating:      'جاري التوليد...',
+    keyGenerated:    'تم توليد المفتاح',
     // SSH
-    sshNotConn:    'SSH غير متصل',
-    sshConnected:  'SSH متصل',
-    sshConnecting: 'جاري الاتصال بـ SSH...',
-    sshHost:       'SSH Host',
-    sshPort:       'Port',
-    sshUser:       'اسم المستخدم',
-    sshAuth:       'طريقة المصادقة',
-    sshPassword:   'كلمة المرور',
-    sshKey:        'مفتاح خاص (Private Key)',
-    sshKeyPath:    'مسار ملف المفتاح',
-    saveSsh:       'حفظ إعدادات SSH',
-    testSsh:       'اختبار الاتصال',
-    sshSaved:      'تم الحفظ ✓',
-    sshTestOk:     '✓ المنفذ متاح',
-    sshTestFail:   '✗ تعذر الاتصال',
-    sshTesting:    'جاري الاختبار...',
+    sshNotConn:      'SSH غير نشط',
+    sshConnected:    'SSH نشط — الخادم متصل',
+    sshConnecting:   'جاري الاتصال بـ SSH...',
+    sshFromServer:   'من الخادم',
+    sshHost:         'SSH Host',
+    sshPort:         'Port',
+    sshUser:         'اسم المستخدم',
+    sshAuth:         'طريقة المصادقة',
+    sshPassword:     'كلمة المرور',
+    sshKey:          'مفتاح خاص',
+    sshKeyPath:      'مسار ملف المفتاح',
+    saveSsh:         'حفظ إعدادات SSH',
+    testSsh:         'اختبار الاتصال',
+    sshSaved:        'تم الحفظ ✓',
+    sshTestOk:       '✓ المنفذ متاح',
+    sshTestFail:     '✗ تعذر الاتصال',
+    sshTesting:      'جاري الاختبار...',
+    sshKeyPair:      'مفتاح SSH التشفيري',
+    generateKey:     'توليد مفتاح',
+    publicKey:       'المفتاح العام',
+    privateKey:      'المفتاح الخاص',
+    keyHint:         'أنشئ مفتاحاً حتى يتصل الخادم بهذا الجهاز عبر SSH بدون كلمة مرور',
+    keyInstructionPublic:  'أضف هذا المفتاح العام إلى ملف authorized_keys على هذا الجهاز',
+    keyInstructionPrivate: 'أعطِ هذا المفتاح الخاص للخادم — الاتصال يُنشأ من طرف الخادم فقط',
+    noKeyGenerated:  'لا يوجد مفتاح — اضغط "توليد مفتاح"',
   },
   en: {
-    stopped:       'Stopped',
-    connecting:    'Connecting...',
-    connected:     'Connected',
-    error:         'Connection Error',
-    notConnected:  'Agent is not connected to any server',
-    checkConfig:   'Check server URL and Token',
-    start:         'Start',
-    stop:          'Stop',
-    reconnect:     'Reconnect',
-    tabConn:       'Connection',
-    serverUrl:     'Server URL (WebSocket)',
-    serverHint:    'Example: wss://myserver.replit.app/ws',
-    deviceToken:   'Device Token',
-    tokenHint:     'Dashboard → Devices → Copy Token',
-    autoStart:     'Auto-start when app opens',
-    startMinimized:'Start minimized to tray',
-    saveSettings:  'Save Settings',
-    saved:         'Saved ✓',
-    resources:     'Device Resources',
-    eventLog:      'Event Log',
-    clear:         'Clear',
-    noEvents:      'No events yet...',
-    cleared:       'Log cleared...',
-    device:        'Device',
-    localIp:       'Local IP',
-    server:        'Server',
-    errNoConfig:   '⚠ Enter server URL and Token first',
-    errNeedWs:     '⚠ URL must start with ws:// or wss://',
-    errNeedPath:   '⚠ Make sure URL ends with /ws',
-    titleConnecting:'Connecting...',
-    titleConnected:'Connected',
-    titleError:    'Error',
-    titleStopped:  'Stopped',
-    lang:          'عربي',
-    uptimeFmt:     (h, m, s) => `${h ? h + 'h ' : ''}${m}m ${s}s`,
+    stopped:        'Stopped',
+    connecting:     'Connecting...',
+    connected:      'Connected',
+    error:          'Connection Error',
+    notConnected:   'Agent is not connected to any server',
+    checkConfig:    'Check server URL and Token',
+    start:          'Start',
+    stop:           'Stop',
+    reconnect:      'Reconnect',
+    tabConn:        'Connection',
+    serverUrl:      'Server URL (WebSocket)',
+    serverHint:     'Example: wss://myserver.replit.app/ws',
+    deviceToken:    'Device Token',
+    tokenHint:      'Dashboard → Devices → Copy Token',
+    autoStart:      'Auto-start when app opens',
+    startMinimized: 'Start minimized to tray',
+    saveSettings:   'Save Settings',
+    saved:          'Saved ✓',
+    resources:      'Device Resources',
+    eventLog:       'Event Log',
+    clear:          'Clear',
+    noEvents:       'No events yet...',
+    cleared:        'Log cleared...',
+    device:         'Device',
+    localIp:        'Local IP',
+    publicIp:       'Public IP',
+    server:         'Server',
+    errNoConfig:    '⚠ Enter server URL and Token first',
+    errNeedWs:      '⚠ URL must start with ws:// or wss://',
+    titleConnecting: 'Connecting...',
+    titleConnected:  'Connected',
+    titleError:      'Error',
+    titleStopped:    'Stopped',
+    lang:            'عربي',
+    uptimeFmt:       (h, m, s) => `${h ? h + 'h ' : ''}${m}m ${s}s`,
+    copied:          'Copied',
+    logCopied:       'Log copied',
+    logExported:     'Log exported',
+    generating:      'Generating...',
+    keyGenerated:    'Key generated',
     // SSH
-    sshNotConn:    'SSH not connected',
-    sshConnected:  'SSH connected',
-    sshConnecting: 'Connecting via SSH...',
-    sshHost:       'SSH Host',
-    sshPort:       'Port',
-    sshUser:       'Username',
-    sshAuth:       'Authentication Method',
-    sshPassword:   'Password',
-    sshKey:        'Private Key',
-    sshKeyPath:    'Key file path',
-    saveSsh:       'Save SSH Settings',
-    testSsh:       'Test Connection',
-    sshSaved:      'Saved ✓',
-    sshTestOk:     '✓ Port reachable',
-    sshTestFail:   '✗ Connection failed',
-    sshTesting:    'Testing...',
+    sshNotConn:      'SSH not active',
+    sshConnected:    'SSH active — server connected',
+    sshConnecting:   'Connecting via SSH...',
+    sshFromServer:   'From server',
+    sshHost:         'SSH Host',
+    sshPort:         'Port',
+    sshUser:         'Username',
+    sshAuth:         'Authentication Method',
+    sshPassword:     'Password',
+    sshKey:          'Private Key',
+    sshKeyPath:      'Key file path',
+    saveSsh:         'Save SSH Settings',
+    testSsh:         'Test Connection',
+    sshSaved:        'Saved ✓',
+    sshTestOk:       '✓ Port reachable',
+    sshTestFail:     '✗ Connection failed',
+    sshTesting:      'Testing...',
+    sshKeyPair:      'SSH Cryptographic Key',
+    generateKey:     'Generate Key',
+    publicKey:       'Public Key',
+    privateKey:      'Private Key',
+    keyHint:         'Generate a key so the server can connect to this device via SSH without a password',
+    keyInstructionPublic:  'Add this public key to authorized_keys on this device',
+    keyInstructionPrivate: 'Give this private key to the server — connection is initiated by the server only',
+    noKeyGenerated:  'No key — click "Generate Key"',
   }
 }
 
@@ -118,6 +146,30 @@ function $(id) { return document.getElementById(id) }
 let currentLang  = localStorage.getItem('lang')  || 'ar'
 let currentTheme = localStorage.getItem('theme') || 'dark'
 const html = document.documentElement
+
+// ─── Toast ─────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info', duration = 2200) {
+  const wrap = $('toast-wrap')
+  const toast = document.createElement('div')
+  toast.className = `toast toast-${type}`
+  toast.textContent = msg
+  wrap.appendChild(toast)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.add('show'))
+  })
+  setTimeout(() => {
+    toast.classList.remove('show')
+    setTimeout(() => { if (toast.parentNode) toast.remove() }, 320)
+  }, duration)
+}
+
+// ─── Copy helper ───────────────────────────────────────────────────────────
+function copyText(text) {
+  if (!text || text === '—') return
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(LANG[currentLang].copied, 'success')
+  }).catch(() => {})
+}
 
 // ─── Language ──────────────────────────────────────────────────────────────
 function applyLang(lang) {
@@ -132,7 +184,9 @@ function applyLang(lang) {
   })
   $('inp-server').placeholder = 'wss://your-server.replit.app/ws'
   $('inp-token').placeholder  = lang === 'ar' ? 'أدخل الـ Token الخاص بهذا الجهاز' : 'Paste device token here'
+  $('log-search').placeholder = lang === 'ar' ? 'بحث...' : 'Search...'
   if (currentState) applyStateLabels(currentState, lastDeviceId, lastServerUrl)
+  updateKeyInstructions()
 }
 
 // ─── Theme ─────────────────────────────────────────────────────────────────
@@ -159,7 +213,6 @@ function switchTab(tab) {
     panel.classList.toggle('active', panel.id === `panel-${tab}`)
   })
 }
-
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab))
 })
@@ -179,7 +232,7 @@ $('btn-show-token').addEventListener('click', () => {
     : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
 })
 
-// ─── SSH Eye ───────────────────────────────────────────────────────────────
+// ─── SSH Pass Eye ──────────────────────────────────────────────────────────
 let sshPassVisible = false
 $('btn-show-ssh-pass').addEventListener('click', () => {
   sshPassVisible = !sshPassVisible
@@ -189,13 +242,96 @@ $('btn-show-ssh-pass').addEventListener('click', () => {
     : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
 })
 
-// ─── SSH Auth Method Toggle ─────────────────────────────────────────────────
+// ─── SSH Auth Method ───────────────────────────────────────────────────────
 document.querySelectorAll('input[name="ssh-auth"]').forEach(r => {
   r.addEventListener('change', () => {
     const isKey = $('rad-key').checked
     $('ssh-pass-group').style.display = isKey ? 'none' : ''
     $('ssh-key-group').style.display  = isKey ? ''     : 'none'
   })
+})
+
+// ─── Info Grid Copy Buttons ────────────────────────────────────────────────
+let fullDeviceId = ''
+
+document.querySelectorAll('.info-copy-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.dataset.copy
+    if (targetId === 'inf-devid-full') {
+      copyText(fullDeviceId || '—')
+    } else {
+      const el = $(targetId)
+      if (el) copyText(el.textContent.trim())
+    }
+  })
+})
+
+// ─── Log State ─────────────────────────────────────────────────────────────
+let activeLogFilter = 'all'
+let logSearchQuery  = ''
+
+// ─── Log Filter ────────────────────────────────────────────────────────────
+document.querySelectorAll('.lf-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.lf-btn').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    activeLogFilter = btn.dataset.level
+    applyLogFilter()
+  })
+})
+
+$('log-search').addEventListener('input', () => {
+  logSearchQuery = $('log-search').value.toLowerCase().trim()
+  applyLogFilter()
+})
+
+function applyLogFilter() {
+  const entries = $('log-box').querySelectorAll('.log-entry')
+  entries.forEach(el => {
+    const msg   = (el.querySelector('.log-msg')?.textContent || '').toLowerCase()
+    const level = el.dataset.level || 'info'
+    const matchSearch = !logSearchQuery || msg.includes(logSearchQuery)
+    const matchLevel  = activeLogFilter === 'all' || level === activeLogFilter
+    el.style.display  = matchSearch && matchLevel ? '' : 'none'
+  })
+}
+
+// ─── Log Copy All ──────────────────────────────────────────────────────────
+$('copy-log-btn').addEventListener('click', () => {
+  const entries = $('log-box').querySelectorAll('.log-entry')
+  const lines = [...entries].map(el => {
+    const t = el.querySelector('.log-t')?.textContent   || ''
+    const m = el.querySelector('.log-msg')?.textContent || ''
+    return `[${t}] ${m}`
+  }).join('\n')
+  if (!lines) return
+  navigator.clipboard.writeText(lines).then(() => {
+    showToast(LANG[currentLang].logCopied, 'success')
+  }).catch(() => {})
+})
+
+// ─── Log Export ────────────────────────────────────────────────────────────
+$('export-log-btn').addEventListener('click', () => {
+  const entries = $('log-box').querySelectorAll('.log-entry')
+  const lines = [...entries].map(el => {
+    const t = el.querySelector('.log-t')?.textContent   || ''
+    const m = el.querySelector('.log-msg')?.textContent || ''
+    return `[${t}] ${m}`
+  }).join('\n')
+  if (!lines) return
+  const blob = new Blob([lines], { type: 'text/plain' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `airemote-log-${new Date().toISOString().slice(0, 10)}.txt`
+  a.click()
+  URL.revokeObjectURL(url)
+  showToast(LANG[currentLang].logExported, 'info')
+})
+
+// ─── Log Clear ─────────────────────────────────────────────────────────────
+$('clear-log').addEventListener('click', () => {
+  $('log-box').innerHTML = `<div class="log-empty">${LANG[currentLang].cleared}</div>`
 })
 
 // ─── State ─────────────────────────────────────────────────────────────────
@@ -260,6 +396,7 @@ $('save-btn').addEventListener('click', () => {
   btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t.saved}`
   btn.classList.add('saved')
   setTimeout(() => { btn.innerHTML = origHtml; btn.classList.remove('saved') }, 2500)
+  showToast(t.saved, 'success')
 })
 
 // ─── SSH Config ─────────────────────────────────────────────────────────────
@@ -283,6 +420,7 @@ $('save-ssh-btn').addEventListener('click', () => {
   btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> ${t.sshSaved}`
   btn.classList.add('saved')
   setTimeout(() => { btn.innerHTML = origHtml; btn.classList.remove('saved') }, 2500)
+  showToast(t.sshSaved, 'success')
 })
 
 $('test-ssh-btn').addEventListener('click', async () => {
@@ -303,6 +441,7 @@ $('test-ssh-btn').addEventListener('click', async () => {
       btn.className = 'btn-ghost ok'
       sshLog(`✅ ${host}:${cfg.port} — ${t.sshTestOk}`, 'info')
       setSshDot('connected')
+      showToast(t.sshTestOk, 'success')
     } else {
       throw new Error(result.error || 'unreachable')
     }
@@ -311,6 +450,7 @@ $('test-ssh-btn').addEventListener('click', async () => {
     btn.className = 'btn-ghost fail'
     sshLog(`❌ ${t.sshTestFail}: ${e.message}`, 'error')
     setSshDot('error')
+    showToast(t.sshTestFail, 'error')
   }
 
   setTimeout(() => {
@@ -339,13 +479,113 @@ function sshLog(msg, level) {
   box.scrollTop = box.scrollHeight
 }
 
+// ─── SSH State from Server ─────────────────────────────────────────────────
+airemote.onSshState(data => {
+  const { active, sessionId, username } = data
+  const t = LANG[currentLang]
+  const badge = $('ssh-server-badge')
+
+  if (active) {
+    setSshDot('connected')
+    $('ssh-session-info').textContent = sessionId ? sessionId.slice(0, 8) + '...' : ''
+    badge.style.display = ''
+    showToast(t.sshConnected, 'success', 3000)
+  } else {
+    setSshDot('')
+    $('ssh-session-info').textContent = ''
+    badge.style.display = 'none'
+    showToast(t.sshNotConn, 'warn')
+  }
+})
+
+// ─── Public IP ─────────────────────────────────────────────────────────────
+airemote.onPublicIp(ip => {
+  const el = $('inf-pubip')
+  if (ip) {
+    el.textContent = ip
+    el.classList.add('mono')
+  } else {
+    el.textContent = '—'
+  }
+})
+
+// ─── SSH Key Pair ──────────────────────────────────────────────────────────
+let currentKeyType = 'public'
+let currentKeys    = null
+
+async function loadAndShowKeys() {
+  const keys = await airemote.getSshKeys()
+  if (keys) {
+    currentKeys = keys
+    showKeys(keys)
+  }
+}
+
+function showKeys(keys) {
+  currentKeys = keys
+  $('key-display').style.display = ''
+  renderKeyContent()
+}
+
+function renderKeyContent() {
+  if (!currentKeys) return
+  const content = currentKeyType === 'public' ? currentKeys.publicKey : currentKeys.privateKey
+  $('key-content').textContent = content || ''
+  $('key-instruction-public').style.display  = currentKeyType === 'public'  ? '' : 'none'
+  $('key-instruction-private').style.display = currentKeyType === 'private' ? '' : 'none'
+}
+
+function updateKeyInstructions() {
+  if (!currentKeys) return
+  const t = LANG[currentLang]
+  $('key-instruction-public').textContent  = t.keyInstructionPublic
+  $('key-instruction-private').textContent = t.keyInstructionPrivate
+}
+
+document.querySelectorAll('.key-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.key-tab-btn').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    currentKeyType = btn.dataset.kt
+    renderKeyContent()
+  })
+})
+
+$('gen-key-btn').addEventListener('click', async () => {
+  const btn = $('gen-key-btn')
+  const t = LANG[currentLang]
+  const orig = btn.textContent
+  btn.textContent = t.generating
+  btn.disabled = true
+  try {
+    const keys = await airemote.generateSshKeys()
+    showKeys(keys)
+    showToast(t.keyGenerated, 'success')
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error')
+  } finally {
+    btn.textContent = orig
+    btn.disabled = false
+  }
+})
+
+$('copy-key-btn').addEventListener('click', () => {
+  if (!currentKeys) return
+  const content = currentKeyType === 'public' ? currentKeys.publicKey : currentKeys.privateKey
+  if (content) copyText(content)
+})
+
 // ─── State Management ───────────────────────────────────────────────────────
 function applyState(state, deviceId, serverUrl, uptime) {
   currentState  = state
   lastDeviceId  = deviceId
   lastServerUrl = serverUrl || lastServerUrl
   applyStateLabels(state, deviceId, serverUrl || lastServerUrl)
-  if (state === 'connected' || state === 'connecting') {
+
+  const wasConnected = (state === 'connected')
+  const wasConnecting = (state === 'connecting')
+
+  if (wasConnected || wasConnecting) {
     startStatsPolling()
     startUptimeCounter(uptime || 0)
   } else {
@@ -353,6 +593,11 @@ function applyState(state, deviceId, serverUrl, uptime) {
     stopUptimeCounter()
     resetStats()
   }
+
+  // Toast on state change
+  const t = LANG[currentLang]
+  if (state === 'connected') showToast(`✅ ${t.connected}`, 'success')
+  if (state === 'error')     showToast(`❌ ${t.error}`, 'error')
 }
 
 function applyStateLabels(state, deviceId, serverUrl) {
@@ -364,14 +609,14 @@ function applyStateLabels(state, deviceId, serverUrl) {
   $('title-dot').className = `title-dot ${state}`
 
   const META = {
-    stopped:    { label: t.stopped,    sub: t.notConnected,                     title: t.titleStopped    },
-    connecting: { label: t.connecting, sub: resolveHost(serverUrl) || '—',      title: t.titleConnecting },
-    connected:  { label: t.connected,  sub: resolveHost(serverUrl) || '—',      title: t.titleConnected  },
-    error:      { label: t.error,      sub: t.checkConfig,                      title: t.titleError      }
+    stopped:    { label: t.stopped,    sub: t.notConnected,               title: t.titleStopped    },
+    connecting: { label: t.connecting, sub: resolveHost(serverUrl) || '—', title: t.titleConnecting },
+    connected:  { label: t.connected,  sub: resolveHost(serverUrl) || '—', title: t.titleConnected  },
+    error:      { label: t.error,      sub: t.checkConfig,                 title: t.titleError      }
   }
   const m = META[state] || { label: '—', sub: '—', title: '—' }
-  $('status-label').textContent   = m.label
-  $('status-sub').textContent     = m.sub
+  $('status-label').textContent    = m.label
+  $('status-sub').textContent      = m.sub
   $('title-state-lbl').textContent = m.title
 
   const btn = $('toggle-btn')
@@ -387,7 +632,15 @@ function applyStateLabels(state, deviceId, serverUrl) {
     btn.className = 'stopped'
   }
 
-  $('inf-devid').textContent = deviceId ? deviceId.slice(0, 13) + '...' : '—'
+  // Device ID — full value stored separately
+  fullDeviceId = deviceId || ''
+  if (deviceId) {
+    $('inf-devid').textContent = deviceId.length > 28
+      ? deviceId.slice(0, 14) + '…' + deviceId.slice(-8)
+      : deviceId
+  } else {
+    $('inf-devid').textContent = '—'
+  }
   updateServerDisplay(serverUrl)
 }
 
@@ -438,7 +691,7 @@ function applyStats(s) {
   setBar($('bar-disk'), $('pct-disk'), s.diskPercent, s.diskPercent > 90)
   const ramUsed  = (s.ramUsedMb  / 1024).toFixed(1)
   const ramTotal = (s.ramTotalMb / 1024).toFixed(1)
-  const disk     = s.diskTotalGb > 0 ? `${s.diskUsedGb}/${s.diskTotalGb} GB` : `${s.diskPercent}%`
+  const disk = s.diskTotalGb > 0 ? `${s.diskUsedGb}/${s.diskTotalGb} GB` : `${s.diskPercent}%`
   $('stat-detail').textContent = `RAM: ${ramUsed}/${ramTotal} GB  ·  Disk C: ${disk}`
 }
 function setBar(bar, lbl, val, danger) {
@@ -448,7 +701,9 @@ function setBar(bar, lbl, val, danger) {
   lbl.textContent = `${pct}%`
 }
 function resetStats() {
-  ;[$('bar-cpu'), $('bar-ram'), $('bar-disk')].forEach(b => { b.style.width = '0%'; b.classList.remove('danger') })
+  ;[$('bar-cpu'), $('bar-ram'), $('bar-disk')].forEach(b => {
+    b.style.width = '0%'; b.classList.remove('danger')
+  })
   $('pct-cpu').textContent = $('pct-ram').textContent = $('pct-disk').textContent = '—%'
   $('stat-detail').textContent = '—'
 }
@@ -458,18 +713,28 @@ function appendLog(entry) {
   const box = $('log-box')
   const empty = box.querySelector('.log-empty')
   if (empty) empty.remove()
+
   const el = document.createElement('div')
   el.className = 'log-entry'
+  el.dataset.level = entry.level || 'info'
   el.innerHTML = `<span class="log-t">${esc(entry.t)}</span><span class="log-msg ${entry.level || ''}">${esc(entry.msg)}</span>`
+
+  // Apply current filter
+  const msg = (entry.msg || '').toLowerCase()
+  const matchSearch = !logSearchQuery || msg.includes(logSearchQuery)
+  const matchLevel  = activeLogFilter === 'all' || (entry.level || 'info') === activeLogFilter
+  if (!matchSearch || !matchLevel) el.style.display = 'none'
+
   box.appendChild(el)
-  while (box.children.length > 100) box.removeChild(box.firstChild)
+  while (box.children.length > 200) box.removeChild(box.firstChild)
   box.scrollTop = box.scrollHeight
 }
-$('clear-log').addEventListener('click', () => {
-  $('log-box').innerHTML = `<div class="log-empty">${LANG[currentLang].cleared}</div>`
-})
+
 function esc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 // ─── Flash helpers ───────────────────────────────────────────────────────────
@@ -480,14 +745,21 @@ function flashError(el, msg) {
   setTimeout(() => { el.style.borderColor = ''; el.style.boxShadow = ''; el.title = '' }, 3000)
 }
 
+// ─── Keyboard Shortcuts ───────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') airemote.hideWin()
+  if ((e.ctrlKey || e.metaKey) && e.key === '1') { e.preventDefault(); switchTab('conn') }
+  if ((e.ctrlKey || e.metaKey) && e.key === '2') { e.preventDefault(); switchTab('ssh') }
+})
+
 // ─── Init ────────────────────────────────────────────────────────────────────
 airemote.onInit(data => {
-  const { config, ssh, logs, state, deviceId, serverUrl, hostname, ipLocal, platform } = data
+  const { config, ssh, logs, state, deviceId, serverUrl, hostname, ipLocal, ipPublic, platform } = data
 
-  $('inp-server').value   = config.serverUrl      || ''
-  $('inp-token').value    = config.token          || ''
-  $('chk-autostart').checked = config.autoStart   || false
-  $('chk-minimized').checked = config.startMinimized || false
+  $('inp-server').value      = config.serverUrl       || ''
+  $('inp-token').value       = config.token           || ''
+  $('chk-autostart').checked    = config.autoStart      || false
+  $('chk-minimized').checked    = config.startMinimized || false
 
   if (ssh) {
     $('inp-ssh-host').value = ssh.host     || ''
@@ -503,26 +775,26 @@ airemote.onInit(data => {
     }
   }
 
-  $('inf-host').textContent = hostname || '—'
-  $('inf-ip').textContent   = ipLocal  || '—'
-  $('footer-os').textContent = platform || 'Windows'
+  $('inf-host').textContent   = hostname || '—'
+  $('inf-ip').textContent     = ipLocal  || '—'
+  $('footer-os').textContent  = platform || 'Windows'
+
+  // Public IP
+  if (ipPublic) {
+    $('inf-pubip').textContent = ipPublic
+    $('inf-pubip').classList.add('mono')
+  }
 
   applyLang(currentLang)
   applyTheme(currentTheme)
   applyState(state || 'stopped', deviceId, serverUrl, 0)
 
   if (logs && logs.length) logs.forEach(appendLog)
+
+  // Load SSH keys if any
+  loadAndShowKeys()
 })
 
 airemote.onState(data  => applyState(data.state, data.deviceId, data.serverUrl, data.uptime || 0))
 airemote.onLog(entry   => appendLog(entry))
 airemote.onStats(s     => { if (s) applyStats(s) })
-
-// ─── Keyboard shortcuts ──────────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') airemote.hideWin()
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    if (activeTab === 'ssh') $('save-ssh-btn').click()
-    else $('save-btn').click()
-  }
-})

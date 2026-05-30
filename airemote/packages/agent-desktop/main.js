@@ -1,11 +1,14 @@
 'use strict'
 
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require('electron')
-const path = require('path')
-const os = require('os')
-const fs = require('fs')
+const path   = require('path')
+const os     = require('os')
+const fs     = require('fs')
+const https  = require('https')
+const net    = require('net')
+const crypto = require('crypto')
 const { exec } = require('child_process')
-const WebSocket = require('ws')
+const WebSocket  = require('ws')
 
 // ─── Single Instance Lock ──────────────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock()
@@ -19,13 +22,14 @@ const HEARTBEAT_MS   = 10_000
 const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
-const LOG_MAX        = 200
+const SSH_KEYS_FILE  = path.join(app.getPath('userData'), 'airemote-ssh-keys.json')
+const LOG_MAX        = 300
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null
 let tray           = null
 let ws             = null
-let agentState     = 'stopped'   // stopped | connecting | connected | error
+let agentState     = 'stopped'
 let deviceId       = null
 let heartbeatTimer = null
 let reconnectTimer = null
@@ -35,11 +39,14 @@ let config         = loadConfig()
 let logEntries     = []
 let quitting       = false
 let lastStats      = null
+let cachedPublicIp = ''
+let boundsTimer    = null
 
 // ─── Config ───────────────────────────────────────────────────────────────
 function defaultConfig() {
   return {
     serverUrl: '', token: '', autoStart: false, startMinimized: false,
+    _winBounds: null,
     ssh: { host: '', port: 22, username: '', authType: 'password', password: '', keyPath: '' }
   }
 }
@@ -58,14 +65,56 @@ function saveConfig(updates) {
   try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8') } catch {}
 }
 
+// ─── SSH Keys ─────────────────────────────────────────────────────────────
+function loadSshKeys() {
+  try {
+    if (fs.existsSync(SSH_KEYS_FILE))
+      return JSON.parse(fs.readFileSync(SSH_KEYS_FILE, 'utf8'))
+  } catch {}
+  return null
+}
+
+function saveSshKeys(keys) {
+  try { fs.writeFileSync(SSH_KEYS_FILE, JSON.stringify(keys, null, 2), 'utf8') } catch {}
+}
+
+function generateSshKeyPair() {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding:  { type: 'spki',  format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+  })
+  const keys = { privateKey, publicKey, generatedAt: new Date().toISOString() }
+  saveSshKeys(keys)
+  return keys
+}
+
+// ─── Public IP ────────────────────────────────────────────────────────────
+function fetchPublicIp() {
+  return new Promise(resolve => {
+    const req = https.get('https://api.ipify.org?format=json', { timeout: 6000 }, res => {
+      let data = ''
+      res.on('data', c => { data += c })
+      res.on('end', () => {
+        try {
+          const ip = JSON.parse(data).ip || ''
+          cachedPublicIp = ip
+          if (win && !win.isDestroyed()) win.webContents.send('public-ip', ip)
+          resolve(ip)
+        } catch { resolve('') }
+      })
+    })
+    req.on('error',   () => resolve(''))
+    req.on('timeout', () => { req.destroy(); resolve('') })
+  })
+}
+
 // ─── Logging ──────────────────────────────────────────────────────────────
 function addLog(level, msg) {
   const entry = { t: new Date().toLocaleTimeString('en', { hour12: false }), level, msg }
   logEntries.push(entry)
   if (logEntries.length > LOG_MAX) logEntries.shift()
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('log', entry)
-  }
+  if (win && !win.isDestroyed()) win.webContents.send('log', entry)
 }
 
 // ─── Status ───────────────────────────────────────────────────────────────
@@ -95,7 +144,7 @@ function getDeviceInfo() {
     arch:         os.arch(),
     osVersion:    `${os.type()} ${os.release()}`,
     ipLocal:      getIpLocal(),
-    ipPublic:     '',
+    ipPublic:     cachedPublicIp,
     agentVersion: '1.1.0'
   }
 }
@@ -109,7 +158,7 @@ function getCpuPercent() {
       for (let i = 0; i < c1.length; i++) {
         idle  += c2[i].times.idle  - c1[i].times.idle
         total += Object.values(c2[i].times).reduce((a, b) => a + b, 0)
-              -  Object.values(c1[i].times).reduce((a, b) => a + b, 0)
+               - Object.values(c1[i].times).reduce((a, b) => a + b, 0)
       }
       resolve(total === 0 ? 0 : Math.round((1 - idle / total) * 100))
     }, 150)
@@ -143,7 +192,6 @@ async function getStats() {
   const stats = {
     cpuPercent, ramPercent, ramUsedMb, ramTotalMb,
     diskPercent: disk.pct, diskUsedGb: disk.usedGb, diskTotalGb: disk.totalGb,
-    networkUpKbps: 0, networkDownKbps: 0,
     uptime: Math.floor(os.uptime())
   }
   lastStats = stats
@@ -178,6 +226,9 @@ function doConnect() {
   const url = config.serverUrl.trim()
   addLog('info', `🔌 الاتصال بـ ${url} ...`)
 
+  // Fetch public IP in parallel
+  fetchPublicIp().catch(() => {})
+
   try {
     ws = new WebSocket(url, { rejectUnauthorized: false })
   } catch (e) {
@@ -192,7 +243,23 @@ function doConnect() {
     try {
       const info  = getDeviceInfo()
       const stats = await getStats()
-      send({ type: 'agent:register', payload: { token: config.token.trim(), info, stats, tunnelLayer: 'relay' }, timestamp: Date.now() })
+      const sshCfg = config.ssh || {}
+      send({
+        type: 'agent:register',
+        payload: {
+          token:       config.token.trim(),
+          info,
+          stats,
+          tunnelLayer: 'relay',
+          sshInfo: {
+            available: !!(sshCfg.host || sshCfg.username),
+            host:      sshCfg.host || info.ipLocal,
+            port:      sshCfg.port || 22,
+            username:  sshCfg.username
+          }
+        },
+        timestamp: Date.now()
+      })
       startHeartbeat()
     } catch (e) {
       addLog('error', `خطأ في التسجيل: ${e.message}`)
@@ -237,6 +304,16 @@ function handleMsg(msg) {
       send({ type: 'agent:pong', payload: {}, timestamp: Date.now() })
       break
     }
+    case 'server:ssh_state': {
+      const { active, sessionId, username, method } = msg.payload || {}
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('ssh-state', { active, sessionId, username, method })
+      }
+      addLog('info', active
+        ? `🔐 SSH: جلسة نشطة${sessionId ? ' [' + sessionId.slice(0, 8) + ']' : ''} — الخادم متصل بهذا الجهاز`
+        : `🔒 SSH: انتهت جلسة الخادم`)
+      break
+    }
   }
 }
 
@@ -271,7 +348,6 @@ async function startHeartbeat() {
         payload: { deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now() },
         timestamp: Date.now()
       })
-      // Send stats to renderer too
       if (win && !win.isDestroyed()) win.webContents.send('stats', stats)
     } catch {}
   }, HEARTBEAT_MS)
@@ -295,20 +371,15 @@ function send(msg) {
   }
 }
 
-// ─── Tray Icon (PNG file — Windows doesn't support SVG tray icons) ────────
+// ─── Tray ─────────────────────────────────────────────────────────────────
 function getTrayIcon() {
   const pngPath = path.join(__dirname, 'build', 'icon.png')
-  if (fs.existsSync(pngPath)) {
-    return nativeImage.createFromPath(pngPath).resize({ width: 16, height: 16 })
-  }
+  if (fs.existsSync(pngPath)) return nativeImage.createFromPath(pngPath).resize({ width: 16, height: 16 })
   const icoPath = path.join(__dirname, 'build', 'icon.ico')
-  if (fs.existsSync(icoPath)) {
-    return nativeImage.createFromPath(icoPath).resize({ width: 16, height: 16 })
-  }
+  if (fs.existsSync(icoPath)) return nativeImage.createFromPath(icoPath).resize({ width: 16, height: 16 })
   return nativeImage.createEmpty()
 }
 
-// ─── Tray ─────────────────────────────────────────────────────────────────
 function createTray() {
   tray = new Tray(getTrayIcon())
   refreshTray()
@@ -325,7 +396,6 @@ function refreshTray() {
     error:      'Error / خطأ'
   }
   tray.setToolTip(`AiRemote Agent  ·  ${labels[agentState] || agentState}`)
-
   const menu = Menu.buildFromTemplate([
     { label: 'AiRemote Agent', enabled: false },
     { label: labels[agentState] || agentState, enabled: false },
@@ -348,19 +418,31 @@ function showWindow() {
   else { win.show(); win.focus() }
 }
 
+function saveBounds() {
+  if (!win || win.isDestroyed() || win.isMaximized() || win.isMinimized()) return
+  clearTimeout(boundsTimer)
+  boundsTimer = setTimeout(() => {
+    if (!win || win.isDestroyed()) return
+    saveConfig({ _winBounds: win.getBounds() })
+  }, 500)
+}
+
 function createWindow() {
+  const saved = (config._winBounds && config._winBounds.width > 300) ? config._winBounds : {}
   win = new BrowserWindow({
-    width:     480,
-    height:    720,
+    width:     saved.width  || 480,
+    height:    saved.height || 740,
+    x:         saved.x,
+    y:         saved.y,
     minWidth:  440,
-    minHeight: 600,
+    minHeight: 560,
     resizable: true,
     frame:     false,
     transparent: false,
     backgroundColor: '#0f172a',
     title: 'AiRemote Agent',
     show:   false,
-    center: true,
+    center: !saved.x,
     icon: path.join(__dirname, 'build', 'icon.ico'),
     webPreferences: {
       preload:          path.join(__dirname, 'preload.js'),
@@ -371,6 +453,9 @@ function createWindow() {
   })
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+
+  win.on('resize', saveBounds)
+  win.on('move',   saveBounds)
 
   win.once('ready-to-show', () => {
     if (!config.startMinimized) win.show()
@@ -389,12 +474,15 @@ function createWindow() {
       serverUrl: config.serverUrl,
       hostname:  info.hostname,
       ipLocal:   info.ipLocal,
+      ipPublic:  cachedPublicIp,
       platform:  info.osVersion,
       arch:      info.arch
     })
     if (config.autoStart && config.serverUrl && config.token && agentState === 'stopped') {
       setTimeout(startAgent, 800)
     }
+    // Try to fetch public IP
+    fetchPublicIp().catch(() => {})
   })
 
   win.on('close', e => {
@@ -410,7 +498,6 @@ function createWindow() {
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────
 ipcMain.on('start-agent', (_, cfg) => {
-  // Renderer sends current field values so we save-then-start atomically
   if (cfg && (cfg.serverUrl || cfg.token)) saveConfig(cfg)
   startAgent()
 })
@@ -427,22 +514,35 @@ ipcMain.on('save-config', (_, cfg) => {
 ipcMain.on('save-ssh-config', (_, ssh) => {
   saveConfig({ ssh: { ...defaultConfig().ssh, ...ssh } })
   addLog('info', '💾 تم حفظ إعدادات SSH')
+  // Notify server if connected — so it updates the SSH credentials for this device
+  if (ws?.readyState === WebSocket.OPEN && deviceId) {
+    send({
+      type: 'agent:ssh_info',
+      payload: {
+        deviceId,
+        sshHost:     ssh.host || getIpLocal(),
+        sshPort:     ssh.port || 22,
+        sshUsername: ssh.username,
+        sshAuthType: ssh.authType,
+        timestamp:   Date.now()
+      }
+    })
+    addLog('info', '📡 تم إرسال بيانات SSH إلى الخادم')
+  }
 })
 
 ipcMain.handle('test-ssh-port', (_, { host, port }) => {
   return new Promise(resolve => {
-    const net = require('net')
     const sock = new net.Socket()
-    const timeout = 4000
-    sock.setTimeout(timeout)
-    sock.connect(port || 22, host, () => {
-      sock.destroy()
-      resolve({ ok: true })
-    })
-    sock.on('error', err => { sock.destroy(); resolve({ ok: false, error: err.message }) })
-    sock.on('timeout',   () => { sock.destroy(); resolve({ ok: false, error: 'timeout' }) })
+    sock.setTimeout(4000)
+    sock.connect(port || 22, host, () => { sock.destroy(); resolve({ ok: true }) })
+    sock.on('error',   err => { sock.destroy(); resolve({ ok: false, error: err.message }) })
+    sock.on('timeout', ()  => { sock.destroy(); resolve({ ok: false, error: 'timeout'   }) })
   })
 })
+
+ipcMain.handle('get-ssh-keys',      () => loadSshKeys())
+ipcMain.handle('generate-ssh-keys', () => generateSshKeyPair())
 
 ipcMain.handle('get-state', () => ({
   state:     agentState,
@@ -475,9 +575,7 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (!win || win.isDestroyed()) createWindow() })
 })
 
-app.on('window-all-closed', () => {
-  // Keep running in tray on Windows
-})
+app.on('window-all-closed', () => {})
 
 app.on('before-quit', () => {
   quitting = true
