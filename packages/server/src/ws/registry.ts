@@ -106,6 +106,20 @@ class DeviceRegistry {
     }
   }
 
+  /** Push a real-time notification to all dashboard sessions belonging to userId */
+  broadcastNotification(userId: string, notification: object): void {
+    const msg = JSON.stringify({
+      type: 'broadcast:notification',
+      payload: notification,
+      timestamp: Date.now()
+    })
+    for (const [, client] of this.clients) {
+      if (client.userId === userId && client.socket.readyState === 1) {
+        try { client.socket.send(msg) } catch {}
+      }
+    }
+  }
+
   getDeviceIdBySocket(socket: WebSocket): string | undefined {
     for (const [deviceId, entry] of this.devices) {
       if (entry.socket === socket) return deviceId

@@ -37,6 +37,7 @@ export interface Device {
   status: DeviceStatus
   tunnelLayer?: TunnelLayer
   tunnelAddress?: string
+  tags?: string[]
   lastSeen?: Date
   createdAt: Date
   updatedAt: Date
@@ -51,6 +52,7 @@ export interface DeviceRow {
   status: DeviceStatus
   tunnel_layer: TunnelLayer | null
   tunnel_address: string | null
+  tags: string | null
   last_seen: string | null
   created_at: string
   updated_at: string

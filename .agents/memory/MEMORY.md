@@ -6,3 +6,4 @@
 - [AiRemote Phase 2 Complete](airemote-phase2.md) — AI command execution, CommandRunner, device context in AI, agent install modal; exec endpoint at POST /api/devices/:id/exec
 - [AiRemote UI System](airemote-ui-system.md) — Dark/light theme via html.light class; AR/EN i18n via useT() hook (reactive Zustand); all 9 pages updated
 - [AiRemote Agent Desktop UI](airemote-agent-ui.md) — Collapsible sections (.coll-sec/collapsed); IP bug: main.js error/timeout must send public-ip IPC; build: packaging runs but portable needs --prepackaged flag
+- [AiRemote Phase 3 Complete](airemote-phase3.md) — All 11 roadmap features done; otplib v13 API, tags double-parse bug, ALTER TABLE migrations, @fastify/rate-limit@8

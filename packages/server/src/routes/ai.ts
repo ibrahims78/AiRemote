@@ -1,7 +1,11 @@
 import type { FastifyInstance } from 'fastify'
+import { v4 as uuidv4 } from 'uuid'
 import { requireAuth } from '../middleware/auth'
 import { createAIProvider, SYSTEM_PROMPT_AR } from '@airemote/ai-engine'
 import { getDb } from '../db/database'
+import { getDeviceById } from '../db/devices'
+import { deviceRegistry } from '../ws/registry'
+import { sendCommandToAgent } from '../ws/agentHandler'
 import type { AIConfig, AIMessage, AuthTokenPayload } from '@airemote/shared'
 
 async function loadConversation(convId: string): Promise<AIMessage[]> {
@@ -105,6 +109,61 @@ export async function aiRoutes(fastify: FastifyInstance) {
       await db.execute({ sql: 'DELETE FROM ai_conversations WHERE id = ?', args: [convId] })
     } catch {}
     return { ok: true }
+  })
+
+  // ── POST /auto-heal — AI Auto-Healing diagnosis ──────────────────────────
+  fastify.post<{
+    Body: { deviceId: string; config: AIConfig; metric?: string }
+  }>('/auto-heal', async (request, reply) => {
+    const user = request.user as unknown as AuthTokenPayload
+    const { deviceId, config, metric = 'general' } = request.body
+
+    if (!deviceId) return reply.code(400).send({ error: 'deviceId required' })
+    if (!config?.provider) return reply.code(400).send({ error: 'AI config required' })
+
+    const device = await getDeviceById(deviceId)
+    if (!device) return reply.code(404).send({ error: 'Device not found' })
+    if (user.role !== 'admin' && device.ownerId !== user.userId) return reply.code(403).send({ error: 'Forbidden' })
+
+    const isOnline = deviceRegistry.isDeviceOnline(deviceId)
+    let context = 'Device is currently offline — no live data available.'
+
+    if (isOnline) {
+      const diagnosticCmds = [
+        `echo "=== top ===" && top -bn1 2>/dev/null | head -15`,
+        `echo "=== memory ===" && free -h 2>/dev/null`,
+        `echo "=== disk ===" && df -h 2>/dev/null`,
+        `echo "=== journal ===" && journalctl -n 30 --no-pager 2>/dev/null || dmesg | tail -20 2>/dev/null`
+      ]
+      const parts: string[] = []
+      for (const cmd of diagnosticCmds) {
+        try {
+          const r = await sendCommandToAgent(deviceId, uuidv4(), cmd, 10000)
+          parts.push(r.stdout.trim())
+        } catch { /* skip failed diagnostics */ }
+      }
+      if (parts.length) context = parts.join('\n\n')
+    }
+
+    const prompt = `Device "${device.name}" may be experiencing issues related to: ${metric}.\n\nDiagnostic data collected:\n\`\`\`\n${context.slice(0, 3000)}\n\`\`\`\n\nPlease analyze the data and respond in this exact JSON format (no extra text):\n{\n  "diagnosis": "<root cause>",\n  "suggestion": "<shell command to fix>",\n  "confidence": "high|medium|low",\n  "risk": "low|medium|high",\n  "explanation": "<brief explanation>"\n}`
+
+    try {
+      const provider = createAIProvider(config)
+      const msgs: AIMessage[] = [{ role: 'user', content: prompt, timestamp: new Date() }]
+      const raw = await provider.chat(msgs)
+
+      let parsed: unknown
+      try {
+        const jsonMatch = raw.match(/\{[\s\S]*\}/)
+        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { diagnosis: raw, suggestion: '', confidence: 'low', risk: 'medium', explanation: '' }
+      } catch {
+        parsed = { diagnosis: raw, suggestion: '', confidence: 'low', risk: 'medium', explanation: '' }
+      }
+
+      return reply.send({ deviceId, device: device.name, metric, result: parsed, contextLength: context.length })
+    } catch (err) {
+      return reply.code(500).send({ error: `AI error: ${(err as Error).message}` })
+    }
   })
 
   // Validate AI API key

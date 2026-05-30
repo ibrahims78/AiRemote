@@ -12,6 +12,7 @@ function rowToDevice(row: DeviceRow): Device {
     status: row.status,
     tunnelLayer: row.tunnel_layer || undefined,
     tunnelAddress: row.tunnel_address || undefined,
+    tags: (() => { try { return JSON.parse(row.tags || '[]') } catch { return [] } })(),
     lastSeen: row.last_seen ? new Date(row.last_seen) : undefined,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at)

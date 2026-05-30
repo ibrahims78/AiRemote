@@ -11,6 +11,8 @@ import { AiPage } from './pages/AiPage'
 import { SessionsPage } from './pages/SessionsPage'
 import { UsersPage } from './pages/UsersPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { AuditPage } from './pages/AuditPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 import { useEffect, useState } from 'react'
 import { api } from './lib/api'
 import { applyTheme, applyLang } from './store/uiStore'
@@ -25,7 +27,6 @@ export default function App() {
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
   const { theme, lang } = useUIStore()
 
-  // Sync theme/lang to DOM whenever they change
   useEffect(() => { applyTheme(theme) }, [theme])
   useEffect(() => { applyLang(lang) }, [lang])
 
@@ -56,19 +57,21 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {setupRequired && <Route path="/setup" element={<SetupPage onComplete={() => setSetupRequired(false)} />} />}
-        {setupRequired && <Route path="*" element={<Navigate to="/setup" replace />} />}
+        {setupRequired  && <Route path="/setup" element={<SetupPage onComplete={() => setSetupRequired(false)} />} />}
+        {setupRequired  && <Route path="*" element={<Navigate to="/setup" replace />} />}
         {!setupRequired && (
           <>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
-              <Route index element={<OverviewPage />} />
-              <Route path="devices" element={<DevicesPage />} />
-              <Route path="devices/:deviceId" element={<DeviceWorkspacePage />} />
-              <Route path="ai" element={<AiPage />} />
-              <Route path="sessions" element={<SessionsPage />} />
-              <Route path="users" element={<UsersPage />} />
-              <Route path="settings" element={<SettingsPage />} />
+              <Route index                             element={<OverviewPage />} />
+              <Route path="devices"                   element={<DevicesPage />} />
+              <Route path="devices/:deviceId"         element={<DeviceWorkspacePage />} />
+              <Route path="ai"                        element={<AiPage />} />
+              <Route path="sessions"                  element={<SessionsPage />} />
+              <Route path="notifications"             element={<NotificationsPage />} />
+              <Route path="audit"                     element={<AuditPage />} />
+              <Route path="users"                     element={<UsersPage />} />
+              <Route path="settings"                  element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </>
