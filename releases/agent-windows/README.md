@@ -1,11 +1,20 @@
-# AiRemote Agent — Windows Releases
+# AiRemote Agent — Desktop (Windows GUI)
 
-| File | Version | Size |
-|------|---------|------|
-| AiRemote-Agent-v1.0.0-Windows-x64.exe | v1.0.0 | ~67 MB |
+نسخة سطح المكتب مع واجهة رسومية كاملة.
 
-## Usage
-1. Download the `.exe` file
-2. Run it directly — no installation required (portable)
-3. Enter the **Server URL** and **Device Token** from the Dashboard
-4. Click **Start**
+| الملف | الإصدار | الحجم |
+|-------|---------|-------|
+| AiRemote-Agent-v1.1.0-Windows-x64.exe | v1.1.0 | ~67 MB |
+
+## المميزات
+- واجهة رسومية احترافية
+- تابَيْن: إعدادات الاتصال + إعدادات SSH
+- مراقبة موارد الجهاز (CPU / RAM / Disk)
+- سجل أحداث مباشر
+- الإخفاء في شريط المهام (System Tray)
+- دعم عربي/إنجليزي + وضع مظلم/فاتح
+
+## الاستخدام
+1. شغّل الـ exe مباشرة (بدون تثبيت)
+2. أدخل **Server URL** و **Device Token** من الـ Dashboard
+3. اضغط **تشغيل**

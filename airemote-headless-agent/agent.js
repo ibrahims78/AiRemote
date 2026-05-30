@@ -22,7 +22,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 const HEARTBEAT_MS   = 10_000
 const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
-const VERSION        = '1.0.0'
+const VERSION        = '1.1.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let ws             = null
