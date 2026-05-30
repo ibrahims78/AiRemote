@@ -1,0 +1,4 @@
+{
+  "serverUrl": "wss://YOUR-SERVER-URL/ws",
+  "token": "YOUR-DEVICE-TOKEN"
+}

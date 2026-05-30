@@ -3,10 +3,23 @@ import { requireAuth } from '../middleware/auth'
 import { Client as SSH2Client } from 'ssh2'
 import type { SFTPWrapper } from 'ssh2'
 
-function buildSSHConfig(body: { host: string; port?: number; username: string; password?: string; privateKey?: string }): Record<string, unknown> {
-  const cfg: Record<string, unknown> = { host: body.host, port: body.port || 22, username: body.username, readyTimeout: 15000 }
-  if (body.privateKey) cfg.privateKey = Buffer.from(body.privateKey, 'base64')
-  else if (body.password) cfg.password = body.password
+interface SSHCredentials {
+  host: string
+  port?: number
+  username: string
+  password?: string
+  privateKey?: string
+}
+
+function buildSSHConfig(creds: SSHCredentials): Record<string, unknown> {
+  const cfg: Record<string, unknown> = {
+    host: creds.host,
+    port: creds.port || 22,
+    username: creds.username,
+    readyTimeout: 15000
+  }
+  if (creds.privateKey) cfg.privateKey = Buffer.from(creds.privateKey, 'base64')
+  else if (creds.password) cfg.password = creds.password
   return cfg
 }
 
@@ -14,18 +27,23 @@ export async function sftpRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth)
 
   // List directory
-  fastify.post<{
-    Body: { host: string; port?: number; username: string; password?: string; privateKey?: string; path?: string }
-  }>('/list', async (request, reply) => {
+  fastify.post<{ Body: SSHCredentials & { path?: string } }>('/list', async (request, reply) => {
     const { path = '/' } = request.body
 
     return new Promise((resolve, reject) => {
       const client = new SSH2Client()
-      const timeout = setTimeout(() => { client.end(); reject(reply.code(504).send({ error: 'Connection timeout' })) }, 15000)
+      const timeout = setTimeout(() => {
+        client.end()
+        reject(reply.code(504).send({ error: 'Connection timeout' }))
+      }, 15000)
 
       client.on('ready', () => {
         client.sftp((err, sftp: SFTPWrapper) => {
-          if (err) { clearTimeout(timeout); client.end(); return reject(reply.code(500).send({ error: err.message })) }
+          if (err) {
+            clearTimeout(timeout)
+            client.end()
+            return reject(reply.code(500).send({ error: err.message }))
+          }
 
           sftp.readdir(path, (err2, list) => {
             clearTimeout(timeout)
@@ -45,29 +63,40 @@ export async function sftpRoutes(fastify: FastifyInstance) {
         })
       })
 
-      client.on('error', (err) => { clearTimeout(timeout); reject(reply.code(500).send({ error: err.message })) })
+      client.on('error', (err) => {
+        clearTimeout(timeout)
+        reject(reply.code(500).send({ error: err.message }))
+      })
       client.connect(buildSSHConfig(request.body) as Parameters<typeof client.connect>[0])
     })
   })
 
   // Download file
-  fastify.post<{
-    Body: { host: string; port?: number; username: string; password?: string; privateKey?: string; path: string }
-  }>('/download', async (request, reply) => {
+  fastify.post<{ Body: SSHCredentials & { path: string } }>('/download', async (request, reply) => {
     const { path } = request.body
+    if (!path) return reply.code(400).send({ error: 'path required' })
 
     return new Promise((resolve, reject) => {
       const client = new SSH2Client()
+      const timeout = setTimeout(() => {
+        client.end()
+        reject(reply.code(504).send({ error: 'Connection timeout' }))
+      }, 30000)
 
       client.on('ready', () => {
         client.sftp((err, sftp: SFTPWrapper) => {
-          if (err) { client.end(); return reject(reply.code(500).send({ error: err.message })) }
+          if (err) {
+            clearTimeout(timeout)
+            client.end()
+            return reject(reply.code(500).send({ error: err.message }))
+          }
 
           const chunks: Buffer[] = []
           const readStream = sftp.createReadStream(path)
 
           readStream.on('data', (chunk: Buffer) => chunks.push(chunk))
           readStream.on('end', () => {
+            clearTimeout(timeout)
             client.end()
             const buf = Buffer.concat(chunks)
             const name = path.split('/').pop() || 'file'
@@ -76,13 +105,17 @@ export async function sftpRoutes(fastify: FastifyInstance) {
             resolve(reply.send(buf))
           })
           readStream.on('error', (e: Error) => {
+            clearTimeout(timeout)
             client.end()
             reject(reply.code(500).send({ error: e.message }))
           })
         })
       })
 
-      client.on('error', (err) => reject(reply.code(500).send({ error: err.message })))
+      client.on('error', (err) => {
+        clearTimeout(timeout)
+        reject(reply.code(500).send({ error: err.message }))
+      })
       client.connect(buildSSHConfig(request.body) as Parameters<typeof client.connect>[0])
     })
   })
@@ -94,13 +127,18 @@ export async function sftpRoutes(fastify: FastifyInstance) {
 
     const fields = data.fields as Record<string, { value: string }>
     const host = fields.host?.value
-    const port = parseInt(fields.port?.value || '22')
     const username = fields.username?.value
-    const password = fields.password?.value
-    const privateKey = fields.privateKey?.value
-    const remotePath = fields.path?.value || '/'
 
     if (!host || !username) return reply.code(400).send({ error: 'host and username required' })
+
+    const creds: SSHCredentials = {
+      host,
+      port: parseInt(fields.port?.value || '22'),
+      username,
+      password: fields.password?.value,
+      privateKey: fields.privateKey?.value
+    }
+    const remotePath = fields.path?.value || '/'
 
     const fileBuffer = await data.toBuffer()
     const fileName = data.filename
@@ -108,11 +146,18 @@ export async function sftpRoutes(fastify: FastifyInstance) {
 
     return new Promise((resolve, reject) => {
       const client = new SSH2Client()
-      const timeout = setTimeout(() => { client.end(); reject(reply.code(504).send({ error: 'Upload timeout' })) }, 30000)
+      const timeout = setTimeout(() => {
+        client.end()
+        reject(reply.code(504).send({ error: 'Upload timeout' }))
+      }, 30000)
 
       client.on('ready', () => {
         client.sftp((err, sftp: SFTPWrapper) => {
-          if (err) { clearTimeout(timeout); client.end(); return reject(reply.code(500).send({ error: err.message })) }
+          if (err) {
+            clearTimeout(timeout)
+            client.end()
+            return reject(reply.code(500).send({ error: err.message }))
+          }
 
           const writeStream = sftp.createWriteStream(uploadPath)
           writeStream.on('close', () => {
@@ -129,28 +174,33 @@ export async function sftpRoutes(fastify: FastifyInstance) {
         })
       })
 
-      client.on('error', (err) => { clearTimeout(timeout); reject(reply.code(500).send({ error: err.message })) })
-
-      const cfg: Record<string, unknown> = { host, port, username, readyTimeout: 15000 }
-      if (privateKey) cfg.privateKey = Buffer.from(privateKey, 'base64')
-      else if (password) cfg.password = password
-      client.connect(cfg as Parameters<typeof client.connect>[0])
+      client.on('error', (err) => {
+        clearTimeout(timeout)
+        reject(reply.code(500).send({ error: err.message }))
+      })
+      client.connect(buildSSHConfig(creds) as Parameters<typeof client.connect>[0])
     })
   })
 
   // Delete file or directory
-  fastify.post<{
-    Body: { host: string; port?: number; username: string; password?: string; privateKey?: string; path: string; isDirectory?: boolean }
-  }>('/delete', async (request, reply) => {
+  fastify.post<{ Body: SSHCredentials & { path: string; isDirectory?: boolean } }>('/delete', async (request, reply) => {
     const { path, isDirectory = false } = request.body
+    if (!path) return reply.code(400).send({ error: 'path required' })
 
     return new Promise((resolve, reject) => {
       const client = new SSH2Client()
-      const timeout = setTimeout(() => { client.end(); reject(reply.code(504).send({ error: 'Connection timeout' })) }, 15000)
+      const timeout = setTimeout(() => {
+        client.end()
+        reject(reply.code(504).send({ error: 'Connection timeout' }))
+      }, 15000)
 
       client.on('ready', () => {
         client.sftp((err, sftp: SFTPWrapper) => {
-          if (err) { clearTimeout(timeout); client.end(); return reject(reply.code(500).send({ error: err.message })) }
+          if (err) {
+            clearTimeout(timeout)
+            client.end()
+            return reject(reply.code(500).send({ error: err.message }))
+          }
 
           const done = (e?: Error | null) => {
             clearTimeout(timeout)
@@ -164,24 +214,33 @@ export async function sftpRoutes(fastify: FastifyInstance) {
         })
       })
 
-      client.on('error', (err) => { clearTimeout(timeout); reject(reply.code(500).send({ error: err.message })) })
+      client.on('error', (err) => {
+        clearTimeout(timeout)
+        reject(reply.code(500).send({ error: err.message }))
+      })
       client.connect(buildSSHConfig(request.body) as Parameters<typeof client.connect>[0])
     })
   })
 
   // Rename / move file
-  fastify.post<{
-    Body: { host: string; port?: number; username: string; password?: string; privateKey?: string; oldPath: string; newPath: string }
-  }>('/rename', async (request, reply) => {
+  fastify.post<{ Body: SSHCredentials & { oldPath: string; newPath: string } }>('/rename', async (request, reply) => {
     const { oldPath, newPath } = request.body
+    if (!oldPath || !newPath) return reply.code(400).send({ error: 'oldPath and newPath required' })
 
     return new Promise((resolve, reject) => {
       const client = new SSH2Client()
-      const timeout = setTimeout(() => { client.end(); reject(reply.code(504).send({ error: 'Connection timeout' })) }, 15000)
+      const timeout = setTimeout(() => {
+        client.end()
+        reject(reply.code(504).send({ error: 'Connection timeout' }))
+      }, 15000)
 
       client.on('ready', () => {
         client.sftp((err, sftp: SFTPWrapper) => {
-          if (err) { clearTimeout(timeout); client.end(); return reject(reply.code(500).send({ error: err.message })) }
+          if (err) {
+            clearTimeout(timeout)
+            client.end()
+            return reject(reply.code(500).send({ error: err.message }))
+          }
 
           sftp.rename(oldPath, newPath, (e) => {
             clearTimeout(timeout)
@@ -192,24 +251,33 @@ export async function sftpRoutes(fastify: FastifyInstance) {
         })
       })
 
-      client.on('error', (err) => { clearTimeout(timeout); reject(reply.code(500).send({ error: err.message })) })
+      client.on('error', (err) => {
+        clearTimeout(timeout)
+        reject(reply.code(500).send({ error: err.message }))
+      })
       client.connect(buildSSHConfig(request.body) as Parameters<typeof client.connect>[0])
     })
   })
 
   // Create directory
-  fastify.post<{
-    Body: { host: string; port?: number; username: string; password?: string; privateKey?: string; path: string }
-  }>('/mkdir', async (request, reply) => {
+  fastify.post<{ Body: SSHCredentials & { path: string } }>('/mkdir', async (request, reply) => {
     const { path } = request.body
+    if (!path) return reply.code(400).send({ error: 'path required' })
 
     return new Promise((resolve, reject) => {
       const client = new SSH2Client()
-      const timeout = setTimeout(() => { client.end(); reject(reply.code(504).send({ error: 'Connection timeout' })) }, 15000)
+      const timeout = setTimeout(() => {
+        client.end()
+        reject(reply.code(504).send({ error: 'Connection timeout' }))
+      }, 15000)
 
       client.on('ready', () => {
         client.sftp((err, sftp: SFTPWrapper) => {
-          if (err) { clearTimeout(timeout); client.end(); return reject(reply.code(500).send({ error: err.message })) }
+          if (err) {
+            clearTimeout(timeout)
+            client.end()
+            return reject(reply.code(500).send({ error: err.message }))
+          }
 
           sftp.mkdir(path, (e) => {
             clearTimeout(timeout)
@@ -220,7 +288,10 @@ export async function sftpRoutes(fastify: FastifyInstance) {
         })
       })
 
-      client.on('error', (err) => { clearTimeout(timeout); reject(reply.code(500).send({ error: err.message })) })
+      client.on('error', (err) => {
+        clearTimeout(timeout)
+        reject(reply.code(500).send({ error: err.message }))
+      })
       client.connect(buildSSHConfig(request.body) as Parameters<typeof client.connect>[0])
     })
   })

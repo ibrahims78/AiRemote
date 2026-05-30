@@ -1,9 +1,37 @@
-airemote/packages/server/data/airemote.db
+# ── Database ────────────────────────────────────────────────
+airemote/packages/server/data/
 
-# Agent build output — large binaries
+# ── Dependencies ─────────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ── Build output ─────────────────────────────────────────────
+**/dist/
+!releases/
+*.tsbuildinfo
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Environment ──────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── Release binaries & archives ──────────────────────────────
 releases/**/*.exe
 releases/**/*.zip
 releases/**/*.7z
+releases/**/*.tar.gz
 releases/**/win-unpacked/
 releases/**/builder-debug.yml
 releases/**/builder-effective-config.yaml
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Replit internal ──────────────────────────────────────────
+.cache/

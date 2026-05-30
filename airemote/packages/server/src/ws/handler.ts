@@ -39,8 +39,8 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
       deviceRegistry.disconnectDevice(connectionId)
       updateDeviceStatus(connectionId, 'offline').catch(() => {})
       console.log(`📴 Agent disconnected: ${connectionId}`)
-    } else if (connectionType === 'client' && connectionId) {
-      deviceRegistry.removeClient(connectionId, socket)
+    } else if (connectionType === 'client') {
+      deviceRegistry.removeClient(socket)
     }
   })
 

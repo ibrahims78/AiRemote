@@ -11,6 +11,21 @@ import {
 } from '../db/users'
 import type { LoginRequest } from '@airemote/shared'
 
+const BCRYPT_ROUNDS = 12
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+async function createRefreshToken(userId: string): Promise<string> {
+  const db = getDb()
+  const token = uuidv4()
+  const hash = await bcrypt.hash(token, BCRYPT_ROUNDS)
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString()
+  await db.execute({
+    sql: `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+    args: [uuidv4(), userId, hash, expiresAt]
+  })
+  return token
+}
+
 export async function authRoutes(fastify: FastifyInstance) {
   // Login
   fastify.post<{ Body: LoginRequest }>('/login', async (request, reply) => {
@@ -24,15 +39,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (!valid) return reply.code(401).send({ error: 'بيانات الدخول غير صحيحة' })
 
     const token = fastify.jwt.sign({ userId: user.id, email: user.email, role: user.role })
-
-    const refreshToken = uuidv4()
-    const refreshHash = await bcrypt.hash(refreshToken, 10)
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-    const db = getDb()
-    await db.execute({
-      sql: `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
-      args: [uuidv4(), user.id, refreshHash, expiresAt]
-    })
+    const refreshToken = await createRefreshToken(user.id)
 
     const { passwordHash, ...safeUser } = user
     return reply.send({ token, refreshToken, user: safeUser })
@@ -45,7 +52,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     const db = getDb()
     const result = await db.execute({
-      sql: `SELECT * FROM refresh_tokens WHERE expires_at > ? ORDER BY created_at DESC LIMIT 50`,
+      sql: `SELECT id, user_id, token_hash FROM refresh_tokens WHERE expires_at > ? ORDER BY created_at DESC LIMIT 50`,
       args: [new Date().toISOString()]
     })
 
@@ -57,23 +64,22 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     if (!matchedRow) return reply.code(401).send({ error: 'Invalid or expired refresh token' })
 
-    // Rotate refresh token
-    await db.execute({ sql: 'DELETE FROM refresh_tokens WHERE id = ?', args: [matchedRow.id] })
-
     const user = await findUserById(matchedRow.user_id)
-    if (!user) return reply.code(404).send({ error: 'User not found' })
+    if (!user) {
+      await db.execute({ sql: 'DELETE FROM refresh_tokens WHERE id = ?', args: [matchedRow.id] })
+      return reply.code(404).send({ error: 'User not found' })
+    }
 
-    const newToken = fastify.jwt.sign({ userId: user.id, email: user.email, role: user.role })
-    const newRefreshToken = uuidv4()
-    const newRefreshHash = await bcrypt.hash(newRefreshToken, 10)
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-
-    await db.execute({
-      sql: `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
-      args: [uuidv4(), user.id, newRefreshHash, expiresAt]
-    })
-
-    return reply.send({ token: newToken, refreshToken: newRefreshToken, user })
+    // Rotate refresh token — delete old, issue new atomically-ish
+    try {
+      await db.execute({ sql: 'DELETE FROM refresh_tokens WHERE id = ?', args: [matchedRow.id] })
+      const newToken = fastify.jwt.sign({ userId: user.id, email: user.email, role: user.role })
+      const newRefreshToken = await createRefreshToken(user.id)
+      return reply.send({ token: newToken, refreshToken: newRefreshToken, user })
+    } catch (err) {
+      console.error('Refresh token rotation failed:', err)
+      return reply.code(500).send({ error: 'Token refresh failed' })
+    }
   })
 
   // Setup initial admin account
@@ -89,15 +95,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     const user = await createUser(body.email, body.name, body.password, 'admin')
     const token = fastify.jwt.sign({ userId: user.id, email: user.email, role: user.role })
-
-    const refreshToken = uuidv4()
-    const refreshHash = await bcrypt.hash(refreshToken, 10)
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-    const db = getDb()
-    await db.execute({
-      sql: `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
-      args: [uuidv4(), user.id, refreshHash, expiresAt]
-    })
+    const refreshToken = await createRefreshToken(user.id)
 
     return reply.code(201).send({ token, refreshToken, user })
   })
@@ -127,7 +125,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       try {
         const db = getDb()
         const result = await db.execute({
-          sql: `SELECT * FROM refresh_tokens WHERE expires_at > ? LIMIT 50`,
+          sql: `SELECT id, token_hash FROM refresh_tokens WHERE expires_at > ? LIMIT 50`,
           args: [new Date().toISOString()]
         })
         for (const row of result.rows as unknown as { id: string; token_hash: string }[]) {

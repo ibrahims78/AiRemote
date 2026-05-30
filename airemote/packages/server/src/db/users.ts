@@ -1,7 +1,10 @@
 import { v4 as uuidv4 } from 'uuid'
 import bcrypt from 'bcryptjs'
 import { getDb } from './database'
+import type { InValue } from '@libsql/client'
 import type { User, UserRow, UserRole } from '@airemote/shared'
+
+const BCRYPT_ROUNDS = 12
 
 function rowToUser(row: UserRow): User {
   return {
@@ -44,7 +47,7 @@ export async function createUser(
 ): Promise<User> {
   const db = getDb()
   const id = uuidv4()
-  const passwordHash = await bcrypt.hash(password, 12)
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
   const now = new Date().toISOString()
 
   await db.execute({
@@ -69,13 +72,29 @@ export async function countUsers(): Promise<number> {
 export async function updateUser(id: string, updates: Partial<{ name: string; role: UserRole }>): Promise<User | null> {
   const db = getDb()
   const now = new Date().toISOString()
-  if (updates.name !== undefined) {
-    await db.execute({ sql: 'UPDATE users SET name = ?, updated_at = ? WHERE id = ?', args: [updates.name, now, id] })
-  }
-  if (updates.role !== undefined) {
-    await db.execute({ sql: 'UPDATE users SET role = ?, updated_at = ? WHERE id = ?', args: [updates.role, now, id] })
-  }
+  const fields: string[] = []
+  const args: InValue[] = []
+
+  if (updates.name !== undefined) { fields.push('name = ?'); args.push(updates.name) }
+  if (updates.role !== undefined) { fields.push('role = ?'); args.push(updates.role) }
+
+  if (fields.length === 0) return findUserById(id)
+
+  fields.push('updated_at = ?')
+  args.push(now, id)
+
+  await db.execute({ sql: `UPDATE users SET ${fields.join(', ')} WHERE id = ?`, args })
   return findUserById(id)
+}
+
+export async function updateUserPassword(id: string, password: string): Promise<void> {
+  const db = getDb()
+  const hash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+  const now = new Date().toISOString()
+  await db.execute({
+    sql: 'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+    args: [hash, now, id]
+  })
 }
 
 export async function deleteUser(id: string): Promise<void> {

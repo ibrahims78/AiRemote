@@ -10,23 +10,37 @@ export interface CommandResult {
   duration: number
 }
 
+// Patterns that could cause irreversible system damage — blocked unconditionally
 const BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+\/\s*$/,
-  /format\s+[a-z]:/i,
-  /mkfs\s+/,
-  /dd\s+if=.*of=\/dev\/(sd|hd|nvme)/,
-  />\s*\/dev\/(sd|hd|nvme)/,
-  /shutdown\s+-h\s+now/,
-  /halt\b/,
-  /poweroff\b/
+  // Recursive delete of root or critical paths
+  /rm\s+(-[rRf]{1,3}\s+)+\/(\s|$)/,
+  /rm\s+(-[rRf]{1,3}\s+)+~\/(\s|$)/,
+  // Low-level disk format/wipe
+  /\bmkfs\b/,
+  /\bdd\b.*\bof=\/dev\/(sd[a-z]|hd[a-z]|nvme[0-9])/i,
+  />\s*\/dev\/(sd[a-z]|hd[a-z]|nvme[0-9])/i,
+  // Disk partition table destruction
+  /\bfdisk\b.*\/dev\//,
+  /\bparted\b.*\/dev\/.*(rm|mklabel)/,
+  // Windows destructive format
+  /\bformat\s+[a-z]:\s*\/[qyp]/i,
+  // Immediate power-off/shutdown (without delay)
+  /\bshutdown\s+(-h\s+now|\/s\s*\/t\s*0)/i,
+  /\b(halt|poweroff)\b/,
+  // Fork bomb patterns
+  /:\(\)\s*\{.*\|.*&\s*\}/,
+  // Overwrite critical Linux files
+  />\s*\/(etc\/(passwd|shadow|hosts|sudoers)|boot\/)/
 ]
 
 export async function executeCommand(command: string): Promise<CommandResult> {
+  const trimmed = command.trim()
+
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(command)) {
+    if (pattern.test(trimmed)) {
       return {
         stdout: '',
-        stderr: `Command blocked by security policy: matches dangerous pattern`,
+        stderr: `Command blocked by security policy`,
         exitCode: 1,
         duration: 0
       }
@@ -36,7 +50,7 @@ export async function executeCommand(command: string): Promise<CommandResult> {
   const start = Date.now()
 
   try {
-    const { stdout, stderr } = await execAsync(command, {
+    const { stdout, stderr } = await execAsync(trimmed, {
       timeout: 30000,
       maxBuffer: 1024 * 1024 * 5,
       shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'

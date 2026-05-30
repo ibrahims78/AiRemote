@@ -43,7 +43,6 @@ class DeviceRegistry {
     const device = this.devices.get(deviceId)
     if (device) {
       device.stats = stats
-      // Broadcast to ALL connected clients (fix: not just subscribed ones, since clients subscribe to all)
       this.broadcastStatsUpdate(deviceId, stats)
     }
   }
@@ -52,7 +51,7 @@ class DeviceRegistry {
     this.clients.set(socket, { userId, socket, subscribedDevices: new Set() })
   }
 
-  removeClient(userId: string, socket: WebSocket): void {
+  removeClient(socket: WebSocket): void {
     this.clients.delete(socket)
   }
 
@@ -73,8 +72,12 @@ class DeviceRegistry {
   sendToDevice(deviceId: string, message: object): boolean {
     const device = this.devices.get(deviceId)
     if (!device || device.socket.readyState !== 1) return false
-    device.socket.send(JSON.stringify(message))
-    return true
+    try {
+      device.socket.send(JSON.stringify(message))
+      return true
+    } catch {
+      return false
+    }
   }
 
   broadcastDeviceStatus(deviceId: string, status: string, tunnelLayer?: string): void {
@@ -85,7 +88,7 @@ class DeviceRegistry {
     })
     for (const [, client] of this.clients) {
       if (client.socket.readyState === 1) {
-        client.socket.send(msg)
+        try { client.socket.send(msg) } catch {}
       }
     }
   }
@@ -96,10 +99,9 @@ class DeviceRegistry {
       payload: { deviceId, stats },
       timestamp: Date.now()
     })
-    // Broadcast to ALL clients — every dashboard user needs live stats
     for (const [, client] of this.clients) {
       if (client.socket.readyState === 1) {
-        client.socket.send(msg)
+        try { client.socket.send(msg) } catch {}
       }
     }
   }

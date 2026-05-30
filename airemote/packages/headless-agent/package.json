@@ -1,0 +1,15 @@
+{
+  "name": "airemote-agent-headless",
+  "version": "1.1.0",
+  "main": "agent.js",
+  "bin": "agent.js",
+  "pkg": {
+    "scripts": "agent.js",
+    "assets": [],
+    "targets": ["node18-win-x64"],
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
