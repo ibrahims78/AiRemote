@@ -467,7 +467,7 @@ export function DeviceWorkspacePage() {
 
         {tab === 'commands' && deviceId && (
           <div className="h-full p-5">
-            <CommandRunner deviceId={deviceId} deviceName={device.name} />
+            <CommandRunner deviceId={deviceId} deviceName={device.name} platform={device.info?.platform} />
           </div>
         )}
 

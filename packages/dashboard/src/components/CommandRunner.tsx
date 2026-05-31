@@ -17,20 +17,32 @@ interface CommandResult {
 interface Props {
   deviceId: string
   deviceName: string
+  platform?: 'windows' | 'linux' | 'macos'
 }
 
-const QUICK_COMMANDS = [
-  { label: 'المعالج', cmd: 'top -bn1 | head -20' },
+const QUICK_LINUX = [
+  { label: 'المعالج',  cmd: 'top -bn1 | head -20' },
   { label: 'الذاكرة', cmd: 'free -h' },
-  { label: 'القرص', cmd: 'df -h' },
-  { label: 'الشبكة', cmd: 'ss -tulpn' },
-  { label: 'العمليات', cmd: 'ps aux --sort=-%cpu | head -15' },
+  { label: 'القرص',   cmd: 'df -h' },
+  { label: 'الشبكة',  cmd: 'ss -tulpn' },
+  { label: 'العمليات',cmd: 'ps aux --sort=-%cpu | head -15' },
   { label: 'السجلات', cmd: 'journalctl -n 50 --no-pager' },
-  { label: 'uptime', cmd: 'uptime && uname -a' },
-  { label: 'IP', cmd: 'ip addr show' },
+  { label: 'uptime',  cmd: 'uptime && uname -a' },
+  { label: 'IP',      cmd: 'ip addr show' },
 ]
 
-export function CommandRunner({ deviceId, deviceName }: Props) {
+const QUICK_WINDOWS = [
+  { label: 'المعالج',  cmd: 'wmic cpu get name,loadpercentage /format:list' },
+  { label: 'الذاكرة', cmd: 'wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /format:list' },
+  { label: 'القرص',   cmd: 'wmic logicaldisk get caption,size,freespace /format:list' },
+  { label: 'الشبكة',  cmd: 'netstat -an' },
+  { label: 'العمليات',cmd: 'tasklist /v' },
+  { label: 'السجلات', cmd: 'wevtutil qe System /c:20 /f:text /rd:true' },
+  { label: 'uptime',  cmd: 'net statistics workstation' },
+  { label: 'IP',      cmd: 'ipconfig' },
+]
+
+export function CommandRunner({ deviceId, deviceName, platform }: Props) {
   const [input, setInput] = useState('')
   const [history, setHistory] = useState<CommandResult[]>([])
   const [running, setRunning] = useState(false)
@@ -38,6 +50,9 @@ export function CommandRunner({ deviceId, deviceName }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const cmdHistory = history.map(h => h.command).reverse()
+
+  const isWindows = platform === 'windows'
+  const QUICK_COMMANDS = isWindows ? QUICK_WINDOWS : QUICK_LINUX
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -112,6 +127,11 @@ export function CommandRunner({ deviceId, deviceName }: Props) {
           </div>
           <Terminal size={12} className="text-brand-teal ml-1.5" />
           <span className="text-xs text-slate-400 font-mono">{deviceName} — Agent Commands</span>
+          {isWindows && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/20 font-mono">
+              Windows
+            </span>
+          )}
         </div>
         {history.length > 0 && (
           <button
@@ -144,6 +164,9 @@ export function CommandRunner({ deviceId, deviceName }: Props) {
             <Terminal size={28} />
             <p>اكتب أمراً أدناه أو اختر من الاختصارات</p>
             <p className="text-[10px] text-slate-700">الأوامر تُنفَّذ عبر Agent — بدون SSH</p>
+            {isWindows && (
+              <p className="text-[10px] text-blue-700">أوامر Windows (cmd.exe) جاهزة</p>
+            )}
           </div>
         )}
 
@@ -201,7 +224,9 @@ export function CommandRunner({ deviceId, deviceName }: Props) {
       {/* Input */}
       <div className="px-4 py-3 border-t border-slate-700/50 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-brand-teal text-xs font-mono flex-shrink-0">$</span>
+          <span className="text-brand-teal text-xs font-mono flex-shrink-0">
+            {isWindows ? '>' : '$'}
+          </span>
           <input
             ref={inputRef}
             type="text"
@@ -209,7 +234,7 @@ export function CommandRunner({ deviceId, deviceName }: Props) {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}
             disabled={running}
-            placeholder="أدخل الأمر هنا... (↑↓ للتاريخ)"
+            placeholder={isWindows ? 'أدخل أمر Windows هنا... (↑↓ للتاريخ)' : 'أدخل الأمر هنا... (↑↓ للتاريخ)'}
             className="flex-1 bg-transparent text-slate-100 text-xs font-mono placeholder-slate-700 focus:outline-none"
             dir="ltr"
             spellCheck={false}
