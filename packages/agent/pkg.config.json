@@ -1,0 +1,10 @@
+{
+  "pkg": {
+    "assets": [
+      "node_modules/ssh2/**/*",
+      "node_modules/cpu-stat/**/*"
+    ],
+    "targets": ["node18-win-x64"],
+    "outputPath": "../../releases/agent-headless"
+  }
+}
