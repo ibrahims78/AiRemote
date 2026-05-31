@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import {
   Settings, Server, Bot, Bell, Save, Check, Eye, EyeOff,
-  RefreshCw, Info, Sun, Moon, Globe, Copy, Wifi, WifiOff, Loader
+  RefreshCw, Info, Sun, Moon, Globe, Copy, Wifi, WifiOff, Loader, Download
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useUIStore } from '../store/uiStore'
 import { useT } from '../lib/i18n'
 import { toast } from '../store/toastStore'
 import { clsx } from 'clsx'
+import { AgentDownloads } from '../components/AgentDownloads'
 
 interface AISettings {
   aiProvider: 'openai' | 'gemini' | 'ollama'
@@ -389,9 +390,14 @@ export function SettingsPage() {
             </div>
           </Section>
 
+          {/* Agent Downloads */}
+          <Section icon={Download} color="text-brand-blue" title={isAr ? 'تنزيل الـ Agent' : 'Download Agent'}>
+            <AgentDownloads isAr={isAr} />
+          </Section>
+
           {/* Version info */}
           <div className="text-center text-xs text-slate-700 py-2">
-            AiRemote v1.0.0 — Open Source | <span className="text-slate-600">MIT License</span>
+            AiRemote v1.4.0 — Open Source | <span className="text-slate-600">MIT License</span>
           </div>
         </div>
       )}

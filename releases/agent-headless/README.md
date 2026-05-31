@@ -1,61 +1,118 @@
-# AiRemote Agent — Headless (CLI / Windows Service)
+# AiRemote Agent — Headless (Portable Binary)
 
-نسخة بدون واجهة رسومية، مثالية للتشغيل كـ خدمة في الخلفية أو على الـ servers.
+<div align="center">
 
-| الملف | الإصدار | الحجم |
-|-------|---------|-------|
-| `AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe` | **v1.4.0** | ~38 MB (يُبنى من المصدر) |
+![Version](https://img.shields.io/badge/Version-v1.4.0-blue)
+![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)
+![Linux](https://img.shields.io/badge/Linux-x64-FCC624?logo=linux&logoColor=black)
 
-## المميزات
-- لا يحتاج Node.js مثبتًا على الجهاز
-- يعمل في الخلفية كـ Windows Service
-- إعداد عبر متغيرات بيئة أو ملف `.env`
-- تصفح الملفات، رفع/تنزيل، Terminal PTY، SSH Tunnel
+**ملف تنفيذي مستقل — لا يحتاج Node.js مثبتًا**
 
-## الاستخدام — CMD
+</div>
 
+---
+
+## 📥 الملفات المتاحة
+
+| الملف | المنصة | الحجم |
+|-------|--------|-------|
+| `AiRemote-Agent-v1.4.0-win-x64.exe` | Windows 64-bit | ~36 MB |
+| `AiRemote-Agent-v1.4.0-linux-x64` | Linux 64-bit | ~45 MB |
+
+---
+
+## 🚀 التشغيل السريع
+
+### Windows
 ```cmd
 set SERVER_URL=wss://your-server.replit.app/ws
-set AGENT_TOKEN=YOUR-DEVICE-TOKEN
-AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe
+set DEVICE_TOKEN=YOUR-DEVICE-TOKEN
+AiRemote-Agent-v1.4.0-win-x64.exe
 ```
 
-## أو ملف .env (في نفس مجلد الـ exe)
-
-```
+أو عبر ملف `.env` (في نفس مجلد الـ exe):
+```env
 SERVER_URL=wss://your-server.replit.app/ws
-AGENT_TOKEN=YOUR-DEVICE-TOKEN
+DEVICE_TOKEN=YOUR-DEVICE-TOKEN
 ```
 ثم شغّل الـ exe مباشرة.
 
-## تشغيل كـ Windows Service (NSSM)
+### Linux
+```bash
+chmod +x AiRemote-Agent-v1.4.0-linux-x64
+
+SERVER_URL=wss://your-server.replit.app/ws \
+DEVICE_TOKEN=YOUR-DEVICE-TOKEN \
+./AiRemote-Agent-v1.4.0-linux-x64
+```
+
+---
+
+## 🛡️ التشغيل كـ Windows Service (NSSM)
 
 ```cmd
-nssm install AiRemote "C:\path\to\AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe"
-nssm set AiRemote AppEnvironmentExtra "SERVER_URL=wss://your-server.replit.app/ws" "AGENT_TOKEN=YOUR-TOKEN"
+nssm install AiRemote "C:\path\to\AiRemote-Agent-v1.4.0-win-x64.exe"
+nssm set AiRemote AppEnvironmentExtra "SERVER_URL=wss://your-server.replit.app/ws" "DEVICE_TOKEN=YOUR-TOKEN"
 nssm start AiRemote
 ```
 
-## بناء من المصدر
+> تحميل NSSM مجانًا من: https://nssm.cc
+
+---
+
+## 🛡️ التشغيل كـ Linux Service (systemd)
 
 ```bash
-# يتطلب pkg مثبتًا: npm install -g pkg
-cd packages/agent
-pnpm build:headless
-# الناتج: releases/agent-headless/AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe
+sudo nano /etc/systemd/system/airemote-agent.service
 ```
+
+```ini
+[Unit]
+Description=AiRemote Agent v1.4.0
+After=network.target
+
+[Service]
+ExecStart=/opt/airemote/AiRemote-Agent-v1.4.0-linux-x64
+Environment="SERVER_URL=wss://your-server.replit.app/ws"
+Environment="DEVICE_TOKEN=YOUR-DEVICE-TOKEN"
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now airemote-agent
+sudo journalctl -u airemote-agent -f  # متابعة السجلات
+```
+
+---
+
+## ✨ المميزات
+
+| الميزة | الوصف |
+|--------|-------|
+| 🔌 **اتصال تلقائي** | يتصل بالخادم ويُعيد الاتصال تلقائيًا عند الانقطاع |
+| 📊 **إحصائيات النظام** | CPU / RAM / Disk / Network في الوقت الفعلي |
+| 📁 **تصفح الملفات** | رفع / تنزيل / حذف / إعادة تسمية عبر لوحة التحكم |
+| 💻 **Terminal PTY** | طرفية تفاعلية كاملة بدون `node-pty` |
+| 🔐 **SSH Tunnel** | نفق SSH من خلال الخادم |
+| ⚡ **أوامر AI** | تنفيذ أوامر الذكاء الاصطناعي على الجهاز |
+| 🔄 **إعادة الاتصال** | Exponential backoff تلقائي (2s → 30s) |
 
 ---
 
 ## ما الجديد في v1.4.0
 
-### ميزات جديدة
 - ✅ **تصفح الملفات** من الـ Dashboard بدون SSH
 - ✅ **رفع وتنزيل الملفات** عبر اتصال الوكيل
-- ✅ **دعم Windows كامل** — يعرض الأقراص (C:, D:, ...) عند المسار /
-- ✅ **Terminal PTY** — نفق نصي مستقر بدون node-pty
-
-### إصلاحات الاستقرار
-- ✅ **إصلاح إحصائيات الشبكة** — قراءة صحيحة لـ `/proc/net/dev` على جميع توزيعات Linux؛ أول استدعاء لا يُظهر أرقامًا خيالية
-- ✅ **إصلاح SSH Terminal** — ترميز صحيح لجميع الأحرف؛ لا تراكم لـ event listeners عند إعادة الاتصال
-- ✅ **إصلاح تبويب الملفات** — `lstat` بدل `stat`، و `Promise.allSettled` لمنع التجمّد مع symlinks معطوبة
+- ✅ **دعم Windows كامل** — يعرض الأقراص (C:, D:, ...) عند المسار `/`
+- ✅ **Terminal PTY** — نفق نصي مستقر بدون `node-pty`
+- ✅ **تنزيل مباشر** — أزرار تنزيل في لوحة التحكم
+- ✅ إحصائيات الشبكة — إصلاح قراءة `/proc/net/dev` على Linux
+- ✅ SSH Terminal — ترميز Unicode / عربي صحيح
+- ✅ تبويب الملفات — `lstat` + `Promise.allSettled` لمنع التجمّد

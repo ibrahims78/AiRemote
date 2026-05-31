@@ -18,6 +18,7 @@ import { settingsRoutes } from './routes/settings'
 import { auditRoutes } from './routes/audit'
 import { alertRoutes } from './routes/alerts'
 import { credentialRoutes } from './routes/credentials'
+import { downloadRoutes } from './routes/downloads'
 import { wsHandler } from './ws/handler'
 import { handleSshWebSocket } from './ws/sshHandler'
 import { handlePtyWebSocket } from './ws/ptyHandler'
@@ -90,6 +91,7 @@ export async function buildServer() {
   await app.register(auditRoutes,      { prefix: '/api/audit' })
   await app.register(alertRoutes,      { prefix: '/api/alerts' })
   await app.register(credentialRoutes, { prefix: '/api/credentials' })
+  await app.register(downloadRoutes,   { prefix: '/api/downloads' })
 
   // ── WebSocket routes ──────────────────────────────────────────────────────
   // /ws  — accepts both agents (device-token auth via first message) and

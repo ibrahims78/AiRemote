@@ -1,97 +1,166 @@
 # AiRemote Agent — Releases
 
-## أحدث الملفات المتاحة
+<div align="center">
 
-| الملف | الإصدار | الوصف |
-|-------|---------|-------|
-| `agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe` | v1.4.0 | واجهة رسومية كاملة (يُبنى من المصدر) |
-| `agent-headless/AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe` | v1.4.0 | بدون واجهة — يعمل كـ service |
-| `agent-script/agent-v1.4.0.js` | v1.4.0 | يتطلب Node.js 18+ |
+![AiRemote](https://img.shields.io/badge/AiRemote-v1.4.0-blue?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=for-the-badge)
 
-## النسخ المتاحة
+**منصة الوصول عن بُعد + AI Agent مفتوحة المصدر**
 
-| النسخة | المجلد | الوصف |
-|--------|--------|-------|
-| 🖥 Desktop (GUI) | `agent-windows/` | واجهة رسومية + SSH + موارد الجهاز |
-| ⚙ Headless (CLI) | `agent-headless/` | بدون واجهة، يعمل كـ Windows Service |
-| 📜 Script (Node.js) | `agent-script/` | يتطلب Node.js 18+ — أسهل للمطورين |
+</div>
 
 ---
 
-## ما الجديد في v1.4.0
+## 📦 الإصدارات المتاحة — v1.4.0
 
-### تصفح الملفات عبر الوكيل
-- ✅ **تبويب Files في الـ Dashboard** — تصفح، رفع، تنزيل، حذف، إعادة تسمية بدون SSH
-- ✅ **دعم Windows كامل** — يعرض الأقراص (C:, D:, ...) عند المسار /
-- ✅ **Terminal PTY محسّن** — نفق نصي مستقر بدون node-pty
+| النسخة | الملف | الحجم | المنصة | الوصف |
+|--------|-------|-------|--------|-------|
+| 🖥️ **Windows EXE** | `agent-headless/AiRemote-Agent-v1.4.0-win-x64.exe` | ~36 MB | Windows x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
+| 🐧 **Linux Binary** | `agent-headless/AiRemote-Agent-v1.4.0-linux-x64` | ~45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
+| 📜 **Node.js Script** | `agent-script/agent-v1.4.0.js` | ~500 KB | أي نظام | يتطلب Node.js 18+ |
+| 📦 **Script ZIP** | `agent-script/agent-script-v1.4.0.zip` | ~500 KB | أي نظام | Script + start.bat + start.sh |
 
-### إصلاحات الاستقرار (v1.4.0 patch)
-- ✅ **إصلاح قراءة الشبكة** — parsing صحيح لـ `/proc/net/dev` على جميع توزيعات Linux؛ أول استدعاء لا يُظهر أرقامًا خيالية
-- ✅ **إصلاح SSH Terminal** — ترميز Unicode/عربي صحيح في الطرفية؛ لا تراكم لـ listeners عند إعادة الاتصال
-- ✅ **إصلاح تبويب الملفات** — يستخدم `lstat` و `Promise.allSettled` لتجنب التجمّد مع symlinks معطوبة
+> 💡 **الموصى به للمبتدئين:** نسخة EXE لـ Windows أو Binary لـ Linux — تعمل مباشرة بدون أي متطلبات إضافية.
 
 ---
 
-## بناء نسخة Windows Desktop (exe)
+## 🚀 التشغيل السريع
 
-### من المصدر على Windows أو macOS
-```bash
-cd packages/agent-desktop
-npm install
-npx electron-builder --win --x64 --config.win.target=portable
-# الناتج: releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe
+### Windows (EXE)
+```cmd
+:: 1. انسخ عنوان الخادم من لوحة التحكم > الإعدادات
+:: 2. شغّل الأمر:
+set SERVER_URL=wss://your-server.replit.app/ws
+set DEVICE_TOKEN=توكن-جهازك-من-لوحة-التحكم
+AiRemote-Agent-v1.4.0-win-x64.exe
 ```
 
-### من monorepo (pnpm)
+### Linux / macOS (Binary)
 ```bash
+# 1. أعط صلاحية التنفيذ
+chmod +x AiRemote-Agent-v1.4.0-linux-x64
+
+# 2. شغّل مع متغيرات البيئة
+SERVER_URL=wss://your-server.replit.app/ws \
+DEVICE_TOKEN=توكن-جهازك \
+./AiRemote-Agent-v1.4.0-linux-x64
+```
+
+### Node.js Script (أي نظام)
+```bash
+# يتطلب Node.js 18+
+npm install  # المرة الأولى فقط
+DEVICE_TOKEN=توكن-جهازك node agent-v1.4.0.js
+```
+
+---
+
+## ⚙️ متغيرات البيئة
+
+| المتغير | مطلوب | الوصف | المثال |
+|---------|-------|-------|--------|
+| `SERVER_URL` | ✅ | عنوان خادم AiRemote (WebSocket) | `wss://my-server.replit.app/ws` |
+| `DEVICE_TOKEN` | ✅ | توكن الجهاز من لوحة التحكم | `abc123...` |
+| `AGENT_NAME` | اختياري | اسم مخصص للجهاز | `My Server` |
+| `LOG_LEVEL` | اختياري | مستوى السجلات: `info` / `debug` / `error` | `info` |
+
+### كيف أحصل على `DEVICE_TOKEN`؟
+1. افتح لوحة التحكم → **الأجهزة**
+2. انقر **إضافة جهاز** → اكتب اسمًا
+3. انسخ التوكن المُنشأ تلقائيًا
+
+### كيف أحصل على `SERVER_URL`؟
+- الإعدادات → **معلومات الخادم** → انسخ **عنوان WebSocket**
+- يبدأ دائمًا بـ `wss://` (إنتاج) أو `ws://` (تطوير)
+
+---
+
+## 🛡️ التشغيل كـ Service (تلقائي عند بدء الجهاز)
+
+### Windows — NSSM
+```cmd
+:: تحميل NSSM من https://nssm.cc
+nssm install AiRemote "C:\path\to\AiRemote-Agent-v1.4.0-win-x64.exe"
+nssm set AiRemote AppEnvironmentExtra ^
+  "SERVER_URL=wss://your-server.replit.app/ws" ^
+  "DEVICE_TOKEN=توكن-جهازك"
+nssm start AiRemote
+```
+
+### Linux — systemd
+```ini
+# /etc/systemd/system/airemote-agent.service
+[Unit]
+Description=AiRemote Agent
+After=network.target
+
+[Service]
+ExecStart=/opt/airemote/AiRemote-Agent-v1.4.0-linux-x64
+Environment="SERVER_URL=wss://your-server.replit.app/ws"
+Environment="DEVICE_TOKEN=توكن-جهازك"
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now airemote-agent
+sudo systemctl status airemote-agent
+```
+
+---
+
+## 🔨 بناء من المصدر
+
+### بناء الـ Portable Binaries (Windows EXE + Linux Binary)
+```bash
+# من مجلد المشروع الرئيسي
 pnpm install
-pnpm --filter airemote-agent-desktop build:portable
-# الناتج: releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe
+cd packages/agent
+node_modules/.bin/pkg ../../releases/agent-script/agent-v1.4.0.js \
+  --targets node18-win-x64,node18-linux-x64 \
+  --output ../../releases/agent-headless/AiRemote-Agent-v1.4.0 \
+  --compress GZip
 ```
 
-### GitHub Actions (التلقائي الموصى به)
-```yaml
-# .github/workflows/build-agent.yml
-name: Build Agent
-on:
-  push:
-    tags: ['agent-v*']
-jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - run: npm install
-        working-directory: packages/agent-desktop
-      - run: npx electron-builder --win --x64 --config.win.target=portable
-        working-directory: packages/agent-desktop
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AiRemote-Agent-v1.4.0-Windows
-          path: releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe
-```
-
----
-
-## رفع GitHub Release
-
+### بناء Agent Script (JavaScript Bundle)
 ```bash
-gh release create v1.4.0 \
-  "agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe" \
-  "agent-headless/AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe" \
-  "agent-script/agent-v1.4.0.js" \
-  --title "AiRemote Agent v1.4.0" \
-  --notes "File browser via agent (no SSH), PTY terminal, network stats fix, SSH terminal Unicode fix, Files tab hang fix."
+cd packages/agent
+pnpm build:script   # ينتج: releases/agent-script/agent-v1.4.0.js
 ```
 
 ---
 
-## تاريخ الإصدارات
+## 📋 تاريخ الإصدارات
 
-| الإصدار | التاريخ | الأهم |
-|---------|---------|-------|
-| v1.4.0 | 2026-05 | تصفح الملفات، PTY محسّن، إصلاحات الشبكة/SSH/الملفات |
-| v1.3.0 | 2026-05 | مؤشر اتصال احترافي، SSH banner، شريط تفاصيل الجلسة |
-| v1.1.0 | 2025 | قسم مفتاح SSH، IP العام، سجل مرن، قابلية الطي |
+### v1.4.0 — 2026-05 *(الحالي)*
+**ميزات جديدة:**
+- ✅ **تصفح الملفات** — تصفح / رفع / تنزيل / حذف بدون SSH
+- ✅ **دعم Windows الكامل** — يعرض الأقراص (C: D: ...) عند المسار `/`
+- ✅ **Terminal PTY** — نفق نصي مستقر بدون `node-pty`
+- ✅ **تنزيل مباشر** — أزرار تنزيل في لوحة التحكم (الإعدادات)
+
+**إصلاحات:**
+- ✅ إحصائيات الشبكة — قراءة صحيحة لـ `/proc/net/dev` على جميع توزيعات Linux
+- ✅ SSH Terminal — ترميز Unicode / عربي صحيح؛ لا تراكم لـ listeners
+- ✅ تبويب الملفات — `lstat` + `Promise.allSettled` لمنع التجمّد مع symlinks
+
+### v1.3.0 — 2026-05
+- مؤشر اتصال احترافي
+- SSH banner قابل للتخصيص
+- شريط تفاصيل الجلسة المحسّن
+
+### v1.1.0 — 2025
+- قسم مفتاح SSH
+- IP العام التلقائي
+- سجل مرن
+- قابلية الطي في الواجهة
+
+---
+
+## 📄 الترخيص
+
+MIT License — مفتوح المصدر بالكامل.

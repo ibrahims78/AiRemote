@@ -1,63 +1,142 @@
-# AiRemote Agent — Script (Node.js)
+# AiRemote Agent — Script Edition (Node.js)
 
-نسخة خفيفة تعمل مباشرة مع Node.js — مثالية للمطورين والـ headless servers.
+<div align="center">
 
-| الملف | الإصدار | الوصف |
-|-------|---------|-------|
-| `agent-v1.4.0.js` | **v1.4.0** | أحدث إصدار — يدعم تصفح الملفات + إصلاحات الاستقرار |
+![Version](https://img.shields.io/badge/Version-v1.4.0-blue)
+![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 
-## المتطلبات
-- Node.js 18 أو أحدث: https://nodejs.org
+**سكريبت JavaScript مُجمَّع — يعمل على أي نظام يدعم Node.js**
 
-## الاستخدام السريع
+</div>
 
-```bash
-# 1. ثبّت المتطلبات
-npm install
+---
 
-# 2. شغّل الوكيل
-SERVER_URL=wss://your-server/ws AGENT_TOKEN=your-token node agent-v1.4.0.js
-```
+## 📥 الملفات
 
-## Windows (cmd)
+| الملف | الوصف |
+|-------|-------|
+| `agent-v1.4.0.js` | السكريبت المُجمَّع (bundle كامل) |
+| `agent-script-v1.4.0.zip` | حزمة كاملة (script + start.bat + start.sh) |
+| `start.bat` | سكريبت تشغيل Windows |
+| `start.sh` | سكريبت تشغيل Linux / macOS |
+| `package.json` | تعريف الحزمة والمتطلبات |
+
+---
+
+## 🚀 التشغيل السريع
+
+### Windows
 ```cmd
-set SERVER_URL=wss://your-server/ws
-set AGENT_TOKEN=your-token
+:: 1. تثبيت المتطلبات (مرة واحدة)
 npm install
+
+:: 2. تعيين متغيرات البيئة وتشغيل
+set SERVER_URL=wss://your-server.replit.app/ws
+set DEVICE_TOKEN=YOUR-DEVICE-TOKEN
 node agent-v1.4.0.js
 ```
 
-## أو باستخدام ملف .env
-انسخ `.env.example` إلى `.env` وعدّل القيم:
-```
-SERVER_URL=wss://your-server.replit.app/ws
-AGENT_TOKEN=your-device-token-here
-```
-ثم شغّل: `node agent-v1.4.0.js`
-
-## Linux / macOS (script)
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-## Windows (bat)
+أو استخدم سكريبت التشغيل المُرفق:
 ```cmd
+set DEVICE_TOKEN=YOUR-DEVICE-TOKEN
 start.bat
 ```
+
+### Linux / macOS
+```bash
+# 1. تثبيت المتطلبات (مرة واحدة)
+npm install
+
+# 2. تشغيل
+SERVER_URL=wss://your-server.replit.app/ws \
+DEVICE_TOKEN=YOUR-DEVICE-TOKEN \
+node agent-v1.4.0.js
+```
+
+أو استخدم سكريبت التشغيل المُرفق:
+```bash
+DEVICE_TOKEN=YOUR-DEVICE-TOKEN ./start.sh
+```
+
+### ملف `.env` (الأسهل)
+أنشئ ملف `.env` في نفس المجلد:
+```env
+SERVER_URL=wss://your-server.replit.app/ws
+DEVICE_TOKEN=YOUR-DEVICE-TOKEN
+```
+ثم شغّل:
+```bash
+node agent-v1.4.0.js
+```
+
+---
+
+## ⚙️ متطلبات التشغيل
+
+- **Node.js** 18.0.0 أو أحدث
+- اتصال بالإنترنت للتواصل مع الخادم
+
+للتحقق من إصدار Node.js:
+```bash
+node --version   # يجب أن يكون v18 أو أعلى
+```
+
+---
+
+## 🛡️ التشغيل كـ Service
+
+### Linux — systemd
+```bash
+sudo nano /etc/systemd/system/airemote-agent.service
+```
+```ini
+[Unit]
+Description=AiRemote Agent (Script)
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/airemote
+ExecStart=/usr/bin/node /opt/airemote/agent-v1.4.0.js
+Environment="SERVER_URL=wss://your-server.replit.app/ws"
+Environment="DEVICE_TOKEN=YOUR-DEVICE-TOKEN"
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now airemote-agent
+```
+
+### Windows — PM2
+```cmd
+npm install -g pm2
+pm2 start agent-v1.4.0.js --name airemote-agent
+pm2 startup
+pm2 save
+```
+
+---
+
+## ✨ المميزات
+
+- 🔌 اتصال تلقائي + إعادة اتصال ذكية (Exponential backoff)
+- 📊 إحصائيات النظام في الوقت الفعلي (CPU / RAM / Disk / Network)
+- 📁 تصفح الملفات + رفع / تنزيل / حذف
+- 💻 Terminal PTY تفاعلي
+- 🔐 SSH Tunnel عبر الخادم
+- ⚡ تنفيذ أوامر AI
 
 ---
 
 ## ما الجديد في v1.4.0
 
-### ميزات جديدة
-- ✅ **تصفح الملفات عبر الوكيل** — لا يحتاج SSH أو port forwarding
-- ✅ **دعم Windows** — يعرض الأقراص (C:, D:, ...) عند المسار /
-- ✅ **رفع وتنزيل الملفات** مباشرة عبر اتصال الوكيل
-- ✅ **عمليات كاملة**: قائمة، حذف، إعادة تسمية، إنشاء مجلد، رفع، تنزيل
-- ✅ **Terminal PTY** — نفق نصي مستقر بدون مكتبات إضافية
-
-### إصلاحات الاستقرار
-- ✅ **إصلاح إحصائيات الشبكة** — قراءة صحيحة لـ `/proc/net/dev` على جميع توزيعات Linux (كانت تُظهر أرقامًا خيالية في أول استدعاء أو 0 دائمًا)
-- ✅ **إصلاح SSH Terminal** — ترميز صحيح لجميع الأحرف (عربي، Unicode، مسافة خاصة)؛ لا تراكم لـ event listeners عند إعادة الاتصال
-- ✅ **إصلاح تبويب الملفات** — استخدام `lstat` بدل `stat` لتجنب التجمّد مع symlinks أو network mounts معطوبة؛ استخدام `Promise.allSettled` حتى يكمل الطلب حتى لو فشل stat ملف واحد
+- ✅ تصفح الملفات من الـ Dashboard بدون SSH
+- ✅ رفع وتنزيل الملفات عبر اتصال الوكيل
+- ✅ دعم Windows الكامل — يعرض الأقراص (C:, D:, ...)
+- ✅ Terminal PTY مستقر بدون `node-pty`
+- ✅ إصلاح إحصائيات الشبكة على Linux
+- ✅ إصلاح ترميز SSH Terminal (Unicode / عربي)
