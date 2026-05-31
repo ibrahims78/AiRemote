@@ -10,6 +10,11 @@ export type WSMessageType =
   | 'agent:ssh_data'
   | 'agent:ssh_closed'
   | 'agent:ssh_error'
+  | 'agent:ssh_info'
+  | 'agent:pty_opened'
+  | 'agent:pty_data'
+  | 'agent:pty_closed'
+  | 'agent:pty_error'
   | 'server:registered'
   | 'server:command'
   | 'server:error'
@@ -17,6 +22,10 @@ export type WSMessageType =
   | 'server:ssh_data'
   | 'server:ssh_resize'
   | 'server:ssh_close'
+  | 'server:pty_open'
+  | 'server:pty_data'
+  | 'server:pty_resize'
+  | 'server:pty_close'
   | 'client:subscribe'
   | 'client:command'
   | 'client:ai_chat'
@@ -29,11 +38,26 @@ export interface WSMessage<T = unknown> {
   timestamp: number
 }
 
+export interface AgentCapabilities {
+  pty: boolean
+  sshAvailable: boolean
+  sshPort?: number
+  sshUsername?: string
+  shell?: string
+}
+
 export interface AgentRegisterPayload {
   token: string
   info: DeviceInfo
   stats: DeviceStats
   tunnelLayer: TunnelLayer
+  capabilities?: AgentCapabilities
+  sshInfo?: {
+    available: boolean
+    host?: string
+    port?: number
+    username?: string
+  }
 }
 
 export interface AgentHeartbeatPayload {
@@ -41,6 +65,7 @@ export interface AgentHeartbeatPayload {
   stats: DeviceStats
   tunnelLayer: TunnelLayer
   timestamp: number
+  capabilities?: AgentCapabilities
 }
 
 export interface ServerCommandPayload {
@@ -64,6 +89,7 @@ export interface BroadcastDeviceUpdatePayload {
   status: DeviceStatus
   tunnelLayer?: TunnelLayer
   info?: DeviceInfo
+  capabilities?: AgentCapabilities
 }
 
 export interface BroadcastStatsUpdatePayload {
@@ -95,4 +121,22 @@ export interface SshResizePayload {
 
 export interface SshClosePayload {
   sessionId: string
+}
+
+export interface ServerPtyOpenPayload {
+  sessionId: string
+  rows?: number
+  cols?: number
+  shell?: 'cmd' | 'powershell' | 'bash' | 'sh' | 'zsh' | 'auto'
+}
+
+export interface PtyDataPayload {
+  sessionId: string
+  data: string
+}
+
+export interface PtyResizePayload {
+  sessionId: string
+  rows: number
+  cols: number
 }

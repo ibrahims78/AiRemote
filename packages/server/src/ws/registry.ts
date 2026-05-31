@@ -1,11 +1,12 @@
 import type { WebSocket } from 'ws'
-import type { DeviceStats } from '@airemote/shared'
+import type { DeviceStats, AgentCapabilities } from '@airemote/shared'
 
 interface ConnectedDevice {
   deviceId: string
   socket: WebSocket
   stats?: DeviceStats
   connectedAt: Date
+  capabilities: AgentCapabilities
 }
 
 interface ConnectedClient {
@@ -23,13 +24,42 @@ interface SshTunnelSession {
   connectTimeout?: NodeJS.Timeout
 }
 
-class DeviceRegistry {
-  private devices = new Map<string, ConnectedDevice>()
-  private clients = new Map<WebSocket, ConnectedClient>()
-  private sshSessions = new Map<string, SshTunnelSession>()
+interface PtySession {
+  dashboardSocket: WebSocket
+  deviceId: string
+  userId?: string
+  startedAt: number
+  connectTimeout?: NodeJS.Timeout
+}
 
-  registerDevice(deviceId: string, socket: WebSocket, stats?: DeviceStats): void {
-    this.devices.set(deviceId, { deviceId, socket, stats, connectedAt: new Date() })
+class DeviceRegistry {
+  private devices     = new Map<string, ConnectedDevice>()
+  private clients     = new Map<WebSocket, ConnectedClient>()
+  private sshSessions = new Map<string, SshTunnelSession>()
+  private ptySessions = new Map<string, PtySession>()
+
+  // ── Device management ────────────────────────────────────────────────────
+
+  registerDevice(deviceId: string, socket: WebSocket, stats?: DeviceStats, capabilities?: Partial<AgentCapabilities>): void {
+    this.devices.set(deviceId, {
+      deviceId,
+      socket,
+      stats,
+      connectedAt: new Date(),
+      capabilities: {
+        pty:          true,
+        sshAvailable: capabilities?.sshAvailable ?? false,
+        sshPort:      capabilities?.sshPort,
+        sshUsername:  capabilities?.sshUsername,
+        shell:        capabilities?.shell,
+        ...capabilities
+      }
+    })
+  }
+
+  updateDeviceCapabilities(deviceId: string, caps: Partial<AgentCapabilities>): void {
+    const dev = this.devices.get(deviceId)
+    if (dev) dev.capabilities = { ...dev.capabilities, ...caps }
   }
 
   disconnectDevice(deviceId: string): void {
@@ -45,6 +75,10 @@ class DeviceRegistry {
     return this.devices.has(deviceId)
   }
 
+  getDeviceCapabilities(deviceId: string): AgentCapabilities {
+    return this.devices.get(deviceId)?.capabilities ?? { pty: false, sshAvailable: false }
+  }
+
   getOnlineDeviceIds(): string[] {
     return Array.from(this.devices.keys())
   }
@@ -56,6 +90,8 @@ class DeviceRegistry {
       this.broadcastStatsUpdate(deviceId, stats)
     }
   }
+
+  // ── Client management ────────────────────────────────────────────────────
 
   addClient(userId: string, socket: WebSocket): void {
     this.clients.set(socket, { userId, socket, subscribedDevices: new Set() })
@@ -79,6 +115,8 @@ class DeviceRegistry {
     }
   }
 
+  // ── Messaging ────────────────────────────────────────────────────────────
+
   sendToDevice(deviceId: string, message: object): boolean {
     const device = this.devices.get(deviceId)
     if (!device || device.socket.readyState !== 1) return false
@@ -90,10 +128,10 @@ class DeviceRegistry {
     }
   }
 
-  broadcastDeviceStatus(deviceId: string, status: string, tunnelLayer?: string): void {
+  broadcastDeviceStatus(deviceId: string, status: string, tunnelLayer?: string, capabilities?: AgentCapabilities): void {
     const msg = JSON.stringify({
       type: 'broadcast:device_update',
-      payload: { deviceId, status, tunnelLayer },
+      payload: { deviceId, status, tunnelLayer, capabilities },
       timestamp: Date.now()
     })
     for (const [, client] of this.clients) {
@@ -136,7 +174,7 @@ class DeviceRegistry {
     return undefined
   }
 
-  // ── SSH Tunnel Session Management ─────────────────────────────────────────
+  // ── SSH Tunnel Session Management ────────────────────────────────────────
 
   addSshSession(
     sessionId: string,
@@ -185,10 +223,59 @@ class DeviceRegistry {
     return undefined
   }
 
+  // ── PTY Session Management ───────────────────────────────────────────────
+
+  addPtySession(
+    sessionId: string,
+    dashboardSocket: WebSocket,
+    deviceId: string,
+    userId?: string
+  ): void {
+    this.ptySessions.set(sessionId, {
+      dashboardSocket,
+      deviceId,
+      userId,
+      startedAt: Date.now()
+    })
+  }
+
+  getPtySession(sessionId: string): PtySession | undefined {
+    return this.ptySessions.get(sessionId)
+  }
+
+  removePtySession(sessionId: string): PtySession | undefined {
+    const s = this.ptySessions.get(sessionId)
+    if (s?.connectTimeout) clearTimeout(s.connectTimeout)
+    this.ptySessions.delete(sessionId)
+    return s
+  }
+
+  setPtyConnectTimeout(sessionId: string, timer: NodeJS.Timeout): void {
+    const s = this.ptySessions.get(sessionId)
+    if (s) s.connectTimeout = timer
+  }
+
+  clearPtyConnectTimeout(sessionId: string): void {
+    const s = this.ptySessions.get(sessionId)
+    if (s?.connectTimeout) {
+      clearTimeout(s.connectTimeout)
+      s.connectTimeout = undefined
+    }
+  }
+
+  getPtySessionIdByDashboardSocket(socket: WebSocket): string | undefined {
+    for (const [sessionId, s] of this.ptySessions) {
+      if (s.dashboardSocket === socket) return sessionId
+    }
+    return undefined
+  }
+
   getStats() {
     return {
-      onlineDevices: this.devices.size,
-      connectedClients: this.clients.size
+      onlineDevices:    this.devices.size,
+      connectedClients: this.clients.size,
+      sshSessions:      this.sshSessions.size,
+      ptySessions:      this.ptySessions.size
     }
   }
 }

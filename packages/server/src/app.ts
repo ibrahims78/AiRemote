@@ -19,6 +19,7 @@ import { alertRoutes } from './routes/alerts'
 import { credentialRoutes } from './routes/credentials'
 import { wsHandler } from './ws/handler'
 import { handleSshWebSocket } from './ws/sshHandler'
+import { handlePtyWebSocket } from './ws/ptyHandler'
 import { requireAuthWs } from './middleware/auth'
 
 export async function buildServer() {
@@ -59,7 +60,7 @@ export async function buildServer() {
     app.log.warn('⚠️  JWT_SECRET is not set — using insecure dev default. Set JWT_SECRET in .env for production!')
   }
 
-  // ── Global rate limit (generous — auth routes have stricter limits) ───────
+  // ── Global rate limit ────────────────────────────────────────────────────
   await app.register(rateLimit, {
     global: true,
     max: 300,
@@ -72,7 +73,7 @@ export async function buildServer() {
   // ── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({
     status: 'ok',
-    version: '1.0.0',
+    version: '1.2.0',
     time: new Date().toISOString()
   }))
 
@@ -89,12 +90,14 @@ export async function buildServer() {
   await app.register(credentialRoutes, { prefix: '/api/credentials' })
 
   // ── WebSocket routes ──────────────────────────────────────────────────────
-  // /ws accepts both agents (device-token auth via first message) and
-  // dashboard clients (JWT via ?token= query param verified inside wsHandler).
-  // /ssh still requires a valid JWT upfront.
+  // /ws  — accepts both agents (device-token auth via first message) and
+  //         dashboard clients (JWT via ?token= query param)
+  // /ssh — SSH tunnel; requires JWT upfront
+  // /pty — Direct PTY shell; requires JWT upfront (v1.2.0)
   await app.register(async function (fastify) {
     fastify.get('/ws',  { websocket: true }, wsHandler)
     fastify.get('/ssh', { websocket: true, preHandler: [requireAuthWs] }, handleSshWebSocket)
+    fastify.get('/pty', { websocket: true, preHandler: [requireAuthWs] }, handlePtyWebSocket)
   })
 
   return app

@@ -21,9 +21,11 @@ export async function handleAgentMessage(
   clientIp: string
 ): Promise<{ deviceId: string } | null> {
   switch (message.type) {
+
+    // ── Registration ─────────────────────────────────────────────────────────
     case 'agent:register': {
       const payload = message.payload as AgentRegisterPayload
-      const device = await getDeviceByToken(payload.token)
+      const device  = await getDeviceByToken(payload.token)
 
       if (!device) {
         socket.send(JSON.stringify({
@@ -35,7 +37,16 @@ export async function handleAgentMessage(
         return null
       }
 
-      deviceRegistry.registerDevice(device.id, socket, payload.stats)
+      // Extract capabilities from registration payload
+      const caps = {
+        pty:          true,   // all v1.2.0+ agents support PTY
+        sshAvailable: payload.sshInfo?.available ?? payload.capabilities?.sshAvailable ?? false,
+        sshPort:      payload.sshInfo?.port      ?? payload.capabilities?.sshPort,
+        sshUsername:  payload.sshInfo?.username  ?? payload.capabilities?.sshUsername,
+        shell:        payload.capabilities?.shell
+      }
+
+      deviceRegistry.registerDevice(device.id, socket, payload.stats, caps)
       await updateDeviceStatus(device.id, 'online', payload.tunnelLayer)
       await updateDeviceInfo(device.id, payload.info)
 
@@ -44,13 +55,15 @@ export async function handleAgentMessage(
         payload: { deviceId: device.id, message: 'Connected successfully' },
         timestamp: Date.now()
       }))
-      deviceRegistry.broadcastDeviceStatus(device.id, 'online')
+
+      deviceRegistry.broadcastDeviceStatus(device.id, 'online', payload.tunnelLayer, caps)
       fireDeviceOnlineAlert(device.id).catch(() => {})
 
-      console.log(`✅ Agent registered: ${device.name} (${device.id}) from ${clientIp}`)
+      console.log(`✅ Agent registered: ${device.name} (${device.id}) v${payload.info?.agentVersion || '?'} from ${clientIp}`)
       return { deviceId: device.id }
     }
 
+    // ── Heartbeat ─────────────────────────────────────────────────────────────
     case 'agent:heartbeat': {
       const payload = message.payload as AgentHeartbeatPayload
 
@@ -66,6 +79,10 @@ export async function handleAgentMessage(
 
       await updateDeviceSeen(payload.deviceId)
       deviceRegistry.updateDeviceStats(payload.deviceId, payload.stats)
+
+      if (payload.capabilities) {
+        deviceRegistry.updateDeviceCapabilities(payload.deviceId, payload.capabilities)
+      }
 
       const count = (heartbeatCount.get(payload.deviceId) ?? 0) + 1
       heartbeatCount.set(payload.deviceId, count)
@@ -94,6 +111,7 @@ export async function handleAgentMessage(
       return { deviceId: payload.deviceId }
     }
 
+    // ── Command result ────────────────────────────────────────────────────────
     case 'agent:command_result': {
       const payload = message.payload as AgentCommandResultPayload
       const pending = pendingCommands.get(payload.commandId)
@@ -105,8 +123,30 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── SSH Tunnel messages (agent → server → dashboard) ─────────────────────
+    // ── SSH capability update (from agent SSH settings) ───────────────────────
+    case 'agent:ssh_info': {
+      const p = message.payload as {
+        deviceId: string
+        sshHost?: string
+        sshPort?: number
+        sshUsername?: string
+        sshAuthType?: string
+      }
+      const registeredId = deviceRegistry.getDeviceIdBySocket(socket)
+      const targetId = p.deviceId || registeredId
+      if (targetId) {
+        deviceRegistry.updateDeviceCapabilities(targetId, {
+          sshAvailable: !!(p.sshHost || p.sshUsername),
+          sshPort:      p.sshPort,
+          sshUsername:  p.sshUsername
+        })
+        const caps = deviceRegistry.getDeviceCapabilities(targetId)
+        deviceRegistry.broadcastDeviceStatus(targetId, 'online', undefined, caps)
+      }
+      return null
+    }
 
+    // ── SSH Tunnel: agent → server → dashboard ────────────────────────────────
     case 'agent:ssh_opened': {
       const { sessionId } = message.payload as { sessionId: string }
       deviceRegistry.clearSshConnectTimeout(sessionId)
@@ -144,6 +184,51 @@ export async function handleAgentMessage(
         session.dashboardSocket.send(JSON.stringify({ type: 'ssh:error', payload: { message: errMsg } }))
       }
       deviceRegistry.removeSshSession(sessionId)
+      return null
+    }
+
+    // ── PTY: agent → server → dashboard ──────────────────────────────────────
+    case 'agent:pty_opened': {
+      const { sessionId } = message.payload as { sessionId: string }
+      deviceRegistry.clearPtyConnectTimeout(sessionId)
+      const session = deviceRegistry.getPtySession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({
+          type: 'pty:connected',
+          payload: { sessionId, message: 'Shell ready' }
+        }))
+      }
+      return null
+    }
+
+    case 'agent:pty_data': {
+      const { sessionId, data } = message.payload as { sessionId: string; data: string }
+      const session = deviceRegistry.getPtySession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({ type: 'pty:data', payload: { data } }))
+      }
+      return null
+    }
+
+    case 'agent:pty_closed': {
+      const { sessionId } = message.payload as { sessionId: string }
+      deviceRegistry.clearPtyConnectTimeout(sessionId)
+      const session = deviceRegistry.getPtySession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({ type: 'pty:closed', payload: {} }))
+      }
+      deviceRegistry.removePtySession(sessionId)
+      return null
+    }
+
+    case 'agent:pty_error': {
+      const { sessionId, message: errMsg } = message.payload as { sessionId: string; message: string }
+      deviceRegistry.clearPtyConnectTimeout(sessionId)
+      const session = deviceRegistry.getPtySession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({ type: 'pty:error', payload: { message: errMsg } }))
+      }
+      deviceRegistry.removePtySession(sessionId)
       return null
     }
 

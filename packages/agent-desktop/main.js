@@ -7,7 +7,7 @@ const fs     = require('fs')
 const https  = require('https')
 const net    = require('net')
 const crypto = require('crypto')
-const { exec } = require('child_process')
+const { exec, spawn } = require('child_process')
 const WebSocket  = require('ws')
 
 // ─── Single Instance Lock ──────────────────────────────────────────────────
@@ -24,6 +24,7 @@ const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
 const SSH_KEYS_FILE  = path.join(app.getPath('userData'), 'airemote-ssh-keys.json')
 const LOG_MAX        = 300
+const AGENT_VERSION  = '1.2.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null
@@ -41,6 +42,10 @@ let quitting       = false
 let lastStats      = null
 let cachedPublicIp = ''
 let boundsTimer    = null
+let sshAvailable   = false
+
+/** @type {Map<string, import('child_process').ChildProcess>} */
+const ptyProcs = new Map()
 
 // ─── Config ───────────────────────────────────────────────────────────────
 function defaultConfig() {
@@ -154,7 +159,7 @@ function getDeviceInfo() {
     osVersion:    `${os.type()} ${os.release()}`,
     ipLocal:      getIpLocal(),
     ipPublic:     cachedPublicIp,
-    agentVersion: '1.1.0'
+    agentVersion: AGENT_VERSION
   }
 }
 
@@ -223,6 +228,8 @@ function startAgent() {
 function stopAgent() {
   if (agentState === 'stopped') return
   clearTimers()
+  for (const [, proc] of ptyProcs) { try { proc.kill() } catch {} }
+  ptyProcs.clear()
   if (ws) { try { ws.close() } catch {} ws = null }
   deviceId     = null
   sessionStart = null
@@ -250,9 +257,11 @@ function doConnect() {
     reconnectDelay = RECONNECT_BASE
     addLog('info', '✅ اتصل بالخادم — جاري التسجيل...')
     try {
-      const info  = getDeviceInfo()
-      const stats = await getStats()
+      const info   = getDeviceInfo()
+      const stats  = await getStats()
       const sshCfg = config.ssh || {}
+      sshAvailable = !!(sshCfg.host || sshCfg.username) || await checkSshPort('127.0.0.1', 22)
+      const shell  = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
       send({
         type: 'agent:register',
         payload: {
@@ -260,8 +269,9 @@ function doConnect() {
           info,
           stats,
           tunnelLayer: 'relay',
+          capabilities: { pty: true, sshAvailable, shell },
           sshInfo: {
-            available: !!(sshCfg.host || sshCfg.username),
+            available: sshAvailable,
             host:      sshCfg.host || info.ipLocal,
             port:      sshCfg.port || 22,
             username:  sshCfg.username
@@ -270,6 +280,7 @@ function doConnect() {
         timestamp: Date.now()
       })
       startHeartbeat()
+      addLog('info', `🖥 PTY Shell: مفعّل | SSH: ${sshAvailable ? 'متاح' : 'غير مكتشف'} | v${AGENT_VERSION}`)
     } catch (e) {
       addLog('error', `خطأ في التسجيل: ${e.message}`)
     }
@@ -319,10 +330,105 @@ function handleMsg(msg) {
         win.webContents.send('ssh-state', { active, sessionId, username, method })
       }
       addLog('info', active
-        ? `🔐 SSH: جلسة نشطة${username ? ' — ' + username : ''}${sessionId ? ' [' + sessionId.slice(0, 8) + ']' : ''}${method ? ' (' + method + ')' : ''} — الخادم متصل بهذا الجهاز`
+        ? `🔐 SSH: جلسة نشطة${username ? ' — ' + username : ''}${sessionId ? ' [' + sessionId.slice(0, 8) + ']' : ''}${method ? ' (' + method + ')' : ''}`
         : `🔒 SSH: انتهت جلسة الخادم`)
       break
     }
+    case 'server:pty_open':
+      handlePtyOpen(msg.payload)
+      break
+    case 'server:pty_data':
+      handlePtyData(msg.payload)
+      break
+    case 'server:pty_resize':
+      handlePtyResize(msg.payload)
+      break
+    case 'server:pty_close':
+      handlePtyClose(msg.payload)
+      break
+  }
+}
+
+// ─── SSH port check ────────────────────────────────────────────────────────
+function checkSshPort(host, port) {
+  return new Promise(resolve => {
+    const sock = new net.Socket()
+    sock.setTimeout(3000)
+    sock.connect(port, host, () => { sock.destroy(); resolve(true) })
+    sock.on('error',   () => { sock.destroy(); resolve(false) })
+    sock.on('timeout', () => { sock.destroy(); resolve(false) })
+  })
+}
+
+// ─── PTY (Direct Shell) ───────────────────────────────────────────────────
+function resolveShell(hint) {
+  if (process.platform === 'win32') {
+    if (hint === 'cmd') return { cmd: 'cmd.exe', args: [] }
+    return { cmd: 'powershell.exe', args: ['-NoLogo', '-NoProfile'] }
+  }
+  if (hint === 'bash') return { cmd: '/bin/bash', args: ['--login'] }
+  if (hint === 'sh')   return { cmd: '/bin/sh',   args: [] }
+  if (hint === 'zsh')  return { cmd: '/bin/zsh',  args: ['--login'] }
+  return { cmd: process.env.SHELL || '/bin/bash', args: ['--login'] }
+}
+
+function handlePtyOpen(payload) {
+  const { sessionId, rows = 24, cols = 80, shell: hint = 'auto' } = payload
+  addLog('info', `🖥 PTY فُتح (${sessionId.slice(0, 8)})`)
+  const { cmd, args } = resolveShell(hint)
+  try {
+    const proc = spawn(cmd, args, {
+      env: { ...process.env, TERM: 'xterm-256color', COLUMNS: String(cols), LINES: String(rows), COLORTERM: 'truecolor' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: false,
+      windowsHide: false
+    })
+    ptyProcs.set(sessionId, proc)
+    send({ type: 'agent:pty_opened', payload: { sessionId }, timestamp: Date.now() })
+    if (win && !win.isDestroyed()) win.webContents.send('pty-state', { active: true, sessionId })
+
+    proc.stdout.on('data', data => {
+      send({ type: 'agent:pty_data', payload: { sessionId, data: data.toString('base64') }, timestamp: Date.now() })
+    })
+    proc.stderr.on('data', data => {
+      send({ type: 'agent:pty_data', payload: { sessionId, data: data.toString('base64') }, timestamp: Date.now() })
+    })
+    proc.on('close', () => {
+      send({ type: 'agent:pty_closed', payload: { sessionId }, timestamp: Date.now() })
+      ptyProcs.delete(sessionId)
+      if (win && !win.isDestroyed()) win.webContents.send('pty-state', { active: false, sessionId })
+      addLog('info', `🖥 PTY أُغلق (${sessionId.slice(0, 8)})`)
+    })
+    proc.on('error', err => {
+      send({ type: 'agent:pty_error', payload: { sessionId, message: err.message }, timestamp: Date.now() })
+      ptyProcs.delete(sessionId)
+      addLog('error', `PTY error: ${err.message}`)
+    })
+  } catch (e) {
+    send({ type: 'agent:pty_error', payload: { sessionId, message: `فشل تشغيل Shell: ${e.message}` }, timestamp: Date.now() })
+    addLog('error', `PTY spawn failed: ${e.message}`)
+  }
+}
+
+function handlePtyData(payload) {
+  const proc = ptyProcs.get(payload.sessionId)
+  if (proc?.stdin?.writable) {
+    proc.stdin.write(Buffer.from(payload.data, 'base64'))
+  }
+}
+
+function handlePtyResize(payload) {
+  if (process.platform !== 'win32') {
+    const proc = ptyProcs.get(payload.sessionId)
+    if (proc) { try { proc.kill('SIGWINCH') } catch {} }
+  }
+}
+
+function handlePtyClose(payload) {
+  const proc = ptyProcs.get(payload.sessionId)
+  if (proc) {
+    try { proc.kill() } catch {}
+    ptyProcs.delete(payload.sessionId)
   }
 }
 
@@ -354,7 +460,10 @@ async function startHeartbeat() {
       const stats = await getStats()
       send({
         type: 'agent:heartbeat',
-        payload: { deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now() },
+        payload: {
+          deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now(),
+          capabilities: { pty: true, sshAvailable }
+        },
         timestamp: Date.now()
       })
       if (win && !win.isDestroyed()) win.webContents.send('stats', stats)

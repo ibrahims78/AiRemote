@@ -1,6 +1,6 @@
 {
   "name": "airemote-agent-headless",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "main": "agent.js",
   "bin": "agent.js",
   "pkg": {

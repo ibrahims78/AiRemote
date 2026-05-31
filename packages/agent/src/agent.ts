@@ -1,18 +1,26 @@
 import WebSocket from 'ws'
 import { v4 as uuidv4 } from 'uuid'
 import { Client as SSH2Client } from 'ssh2'
+import { spawn, ChildProcess } from 'child_process'
+import * as net from 'net'
 import { getDeviceInfo } from './system/info'
 import { getDeviceStats } from './system/stats'
 import { executeCommand } from './system/executor'
 import type { WSMessage, AgentRegisterPayload, ServerCommandPayload } from '@airemote/shared'
 
+const AGENT_VERSION     = '1.2.0'
 const HEARTBEAT_INTERVAL = 10000
 const RECONNECT_BASE_DELAY = 2000
-const RECONNECT_MAX_DELAY = 30000
+const RECONNECT_MAX_DELAY  = 30000
 
 interface SshTunnel {
   client: SSH2Client
   stream: NodeJS.ReadWriteStream | null
+}
+
+interface PtyProcess {
+  proc: ChildProcess
+  sessionId: string
 }
 
 export class AgentService {
@@ -23,6 +31,7 @@ export class AgentService {
   private reconnectDelay = RECONNECT_BASE_DELAY
   private running = false
   private sshTunnels = new Map<string, SshTunnel>()
+  private ptyProcs   = new Map<string, PtyProcess>()
 
   constructor(
     private readonly serverUrl: string,
@@ -32,7 +41,7 @@ export class AgentService {
   start(): void {
     this.running = true
     this.connect()
-    console.log(`🚀 AiRemote Agent starting...`)
+    console.log(`🚀 AiRemote Agent v${AGENT_VERSION} starting...`)
     console.log(`📡 Server: ${this.serverUrl}`)
   }
 
@@ -44,10 +53,11 @@ export class AgentService {
       try { tunnel.client.end() } catch {}
     }
     this.sshTunnels.clear()
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
+    for (const [, p] of this.ptyProcs) {
+      try { p.proc.kill() } catch {}
     }
+    this.ptyProcs.clear()
+    if (this.ws) { this.ws.close(); this.ws = null }
     console.log('🛑 Agent stopped')
   }
 
@@ -65,14 +75,18 @@ export class AgentService {
     console.log('✅ Connected to server')
     this.reconnectDelay = RECONNECT_BASE_DELAY
 
-    const info = await getDeviceInfo()
+    const info  = await getDeviceInfo()
     const stats = await getDeviceStats()
+    const sshAvailable = await this.checkSshAvailable('127.0.0.1', 22)
+    const shell = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
 
     const payload: AgentRegisterPayload = {
       token: this.token,
-      info,
+      info:  { ...info, agentVersion: AGENT_VERSION },
       stats,
-      tunnelLayer: 'relay'
+      tunnelLayer: 'relay',
+      capabilities: { pty: true, sshAvailable, shell },
+      sshInfo: { available: sshAvailable, port: 22 }
     }
 
     this.send({ type: 'agent:register', payload, timestamp: Date.now() })
@@ -90,37 +104,26 @@ export class AgentService {
           console.log(`✅ Registered as device: ${this.deviceId}`)
           break
         }
-
         case 'server:command': {
           const p = message.payload as ServerCommandPayload
           this.handleCommand(p)
           break
         }
-
         case 'server:ssh_open': {
           const p = message.payload as {
-            sessionId: string
-            host: string
-            port: number
-            username: string
-            password?: string
-            privateKey?: string
-            rows?: number
-            cols?: number
+            sessionId: string; host: string; port: number
+            username: string; password?: string; privateKey?: string
+            rows?: number; cols?: number
           }
           this.handleSshOpen(p)
           break
         }
-
         case 'server:ssh_data': {
           const p = message.payload as { sessionId: string; data: string }
           const tunnel = this.sshTunnels.get(p.sessionId)
-          if (tunnel?.stream) {
-            tunnel.stream.write(Buffer.from(p.data, 'base64'))
-          }
+          if (tunnel?.stream) tunnel.stream.write(Buffer.from(p.data, 'base64'))
           break
         }
-
         case 'server:ssh_resize': {
           const p = message.payload as { sessionId: string; rows: number; cols: number }
           const tunnel = this.sshTunnels.get(p.sessionId)
@@ -130,13 +133,40 @@ export class AgentService {
           }
           break
         }
-
         case 'server:ssh_close': {
           const p = message.payload as { sessionId: string }
           this.closeSshTunnel(p.sessionId)
           break
         }
-
+        case 'server:pty_open': {
+          const p = message.payload as {
+            sessionId: string; rows?: number; cols?: number; shell?: string
+          }
+          this.handlePtyOpen(p)
+          break
+        }
+        case 'server:pty_data': {
+          const p = message.payload as { sessionId: string; data: string }
+          const pty = this.ptyProcs.get(p.sessionId)
+          if (pty?.proc.stdin?.writable) {
+            pty.proc.stdin.write(Buffer.from(p.data, 'base64'))
+          }
+          break
+        }
+        case 'server:pty_resize': {
+          // SIGWINCH on Unix; on Windows this has no effect without node-pty
+          const p = message.payload as { sessionId: string; rows: number; cols: number }
+          const pty = this.ptyProcs.get(p.sessionId)
+          if (pty && process.platform !== 'win32') {
+            try { pty.proc.kill('SIGWINCH') } catch {}
+          }
+          break
+        }
+        case 'server:pty_close': {
+          const p = message.payload as { sessionId: string }
+          this.closePty(p.sessionId)
+          break
+        }
         case 'server:error': {
           const p = message.payload as { message: string }
           console.error(`❌ Server error: ${p.message}`)
@@ -148,18 +178,110 @@ export class AgentService {
     }
   }
 
+  // ── PTY (Direct Shell) ───────────────────────────────────────────────────
+
+  private handlePtyOpen(p: { sessionId: string; rows?: number; cols?: number; shell?: string }): void {
+    const { sessionId, rows = 24, cols = 80, shell: shellHint = 'auto' } = p
+    console.log(`🖥️  PTY request (session ${sessionId})`)
+
+    const { cmd, args } = this.resolveShell(shellHint)
+
+    try {
+      const proc = spawn(cmd, args, {
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          COLUMNS: String(cols),
+          LINES: String(rows),
+          COLORTERM: 'truecolor'
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: false,
+        windowsHide: false
+      })
+
+      this.ptyProcs.set(sessionId, { proc, sessionId })
+
+      this.send({
+        type: 'agent:pty_opened',
+        payload: { sessionId },
+        timestamp: Date.now()
+      })
+
+      proc.stdout?.on('data', (data: Buffer) => {
+        this.send({
+          type: 'agent:pty_data',
+          payload: { sessionId, data: data.toString('base64') },
+          timestamp: Date.now()
+        })
+      })
+
+      proc.stderr?.on('data', (data: Buffer) => {
+        this.send({
+          type: 'agent:pty_data',
+          payload: { sessionId, data: data.toString('base64') },
+          timestamp: Date.now()
+        })
+      })
+
+      proc.on('close', () => {
+        this.send({
+          type: 'agent:pty_closed',
+          payload: { sessionId },
+          timestamp: Date.now()
+        })
+        this.ptyProcs.delete(sessionId)
+        console.log(`🖥️  PTY closed: session ${sessionId}`)
+      })
+
+      proc.on('error', (err) => {
+        this.send({
+          type: 'agent:pty_error',
+          payload: { sessionId, message: err.message },
+          timestamp: Date.now()
+        })
+        this.ptyProcs.delete(sessionId)
+      })
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.send({
+        type: 'agent:pty_error',
+        payload: { sessionId, message: `Failed to spawn shell: ${msg}` },
+        timestamp: Date.now()
+      })
+    }
+  }
+
+  private resolveShell(hint: string): { cmd: string; args: string[] } {
+    if (process.platform === 'win32') {
+      if (hint === 'cmd')  return { cmd: 'cmd.exe',        args: [] }
+      return { cmd: 'powershell.exe', args: ['-NoLogo', '-NoProfile'] }
+    }
+    if (hint === 'bash')  return { cmd: '/bin/bash',  args: ['--login'] }
+    if (hint === 'sh')    return { cmd: '/bin/sh',    args: [] }
+    if (hint === 'zsh')   return { cmd: '/bin/zsh',   args: ['--login'] }
+    const shell = process.env.SHELL || '/bin/bash'
+    return { cmd: shell, args: ['--login'] }
+  }
+
+  private closePty(sessionId: string): void {
+    const pty = this.ptyProcs.get(sessionId)
+    if (pty) {
+      try { pty.proc.kill() } catch {}
+      this.ptyProcs.delete(sessionId)
+    }
+  }
+
+  // ── SSH Tunnel ────────────────────────────────────────────────────────────
+
   private handleSshOpen(p: {
-    sessionId: string
-    host: string
-    port: number
-    username: string
-    password?: string
-    privateKey?: string
-    rows?: number
-    cols?: number
+    sessionId: string; host: string; port: number
+    username: string; password?: string; privateKey?: string
+    rows?: number; cols?: number
   }): void {
     const { sessionId, host, port, username, password, privateKey, rows, cols } = p
-    console.log(`🔒 SSH tunnel request: ${username}@${host}:${port} (session ${sessionId})`)
+    console.log(`🔒 SSH tunnel: ${username}@${host}:${port} (${sessionId})`)
 
     const client = new SSH2Client()
 
@@ -168,92 +290,47 @@ export class AgentService {
         { term: 'xterm-256color', rows: rows || 24, cols: cols || 80 },
         (err, stream) => {
           if (err) {
-            this.send({
-              type: 'agent:ssh_error',
-              payload: { sessionId, message: err.message },
-              timestamp: Date.now()
-            })
+            this.send({ type: 'agent:ssh_error', payload: { sessionId, message: err.message }, timestamp: Date.now() })
             client.end()
             return
           }
-
-          const tunnel: SshTunnel = { client, stream }
-          this.sshTunnels.set(sessionId, tunnel)
-
-          this.send({
-            type: 'agent:ssh_opened',
-            payload: { sessionId },
-            timestamp: Date.now()
-          })
+          this.sshTunnels.set(sessionId, { client, stream })
+          this.send({ type: 'agent:ssh_opened', payload: { sessionId }, timestamp: Date.now() })
 
           stream.on('data', (data: Buffer) => {
-            this.send({
-              type: 'agent:ssh_data',
-              payload: { sessionId, data: data.toString('base64') },
-              timestamp: Date.now()
-            })
+            this.send({ type: 'agent:ssh_data', payload: { sessionId, data: data.toString('base64') }, timestamp: Date.now() })
           })
-
           stream.stderr.on('data', (data: Buffer) => {
-            this.send({
-              type: 'agent:ssh_data',
-              payload: { sessionId, data: data.toString('base64') },
-              timestamp: Date.now()
-            })
+            this.send({ type: 'agent:ssh_data', payload: { sessionId, data: data.toString('base64') }, timestamp: Date.now() })
           })
-
           stream.on('close', () => {
-            this.send({
-              type: 'agent:ssh_closed',
-              payload: { sessionId },
-              timestamp: Date.now()
-            })
+            this.send({ type: 'agent:ssh_closed', payload: { sessionId }, timestamp: Date.now() })
             this.sshTunnels.delete(sessionId)
             client.end()
-            console.log(`🔒 SSH tunnel closed: session ${sessionId}`)
           })
         }
       )
     })
 
     client.on('error', (err) => {
-      console.error(`❌ SSH error for session ${sessionId}: ${err.message}`)
-      this.send({
-        type: 'agent:ssh_error',
-        payload: { sessionId, message: err.message },
-        timestamp: Date.now()
-      })
+      this.send({ type: 'agent:ssh_error', payload: { sessionId, message: err.message }, timestamp: Date.now() })
       this.sshTunnels.delete(sessionId)
     })
 
-    // Hard abort if the overall connect takes longer than 15 s (covers TCP-level hangs)
     const abortTimer = setTimeout(() => {
       if (!this.sshTunnels.has(sessionId)) {
         try { client.end() } catch {}
-        this.send({
-          type: 'agent:ssh_error',
-          payload: { sessionId, message: `Connection timed out after 15s — is SSH running on ${host}:${port}?` },
-          timestamp: Date.now()
-        })
+        this.send({ type: 'agent:ssh_error', payload: { sessionId, message: `Connection timed out after 15s` }, timestamp: Date.now() })
       }
     }, 15_000)
-
     client.once('ready', () => clearTimeout(abortTimer))
     client.once('error', () => clearTimeout(abortTimer))
 
     const connectConfig: Record<string, unknown> = {
-      host,
-      port,
-      username,
-      readyTimeout: 12000,
-      keepaliveInterval: 5000,
-      keepaliveCountMax: 3
+      host, port, username, readyTimeout: 12000, keepaliveInterval: 5000, keepaliveCountMax: 3
     }
-    if (privateKey) {
-      connectConfig.privateKey = Buffer.from(privateKey, 'base64')
-    } else if (password) {
-      connectConfig.password = password
-    }
+    if (privateKey) connectConfig.privateKey = Buffer.from(privateKey, 'base64')
+    else if (password) connectConfig.password = password
 
     client.connect(connectConfig as Parameters<typeof client.connect>[0])
   }
@@ -264,8 +341,19 @@ export class AgentService {
       try { tunnel.stream?.end() } catch {}
       try { tunnel.client.end() } catch {}
       this.sshTunnels.delete(sessionId)
-      console.log(`🔒 SSH tunnel closed by server: session ${sessionId}`)
     }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private checkSshAvailable(host: string, port: number): Promise<boolean> {
+    return new Promise(resolve => {
+      const sock = new net.Socket()
+      sock.setTimeout(3000)
+      sock.connect(port, host, () => { sock.destroy(); resolve(true) })
+      sock.on('error', () => { sock.destroy(); resolve(false) })
+      sock.on('timeout', () => { sock.destroy(); resolve(false) })
+    })
   }
 
   private onClose(): void {
@@ -286,10 +374,8 @@ export class AgentService {
       type: 'agent:command_result',
       payload: {
         commandId: payload.commandId,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode,
-        duration: result.duration
+        stdout: result.stdout, stderr: result.stderr,
+        exitCode: result.exitCode, duration: result.duration
       },
       timestamp: Date.now()
     })
@@ -302,10 +388,9 @@ export class AgentService {
       this.send({
         type: 'agent:heartbeat',
         payload: {
-          deviceId: this.deviceId,
-          stats,
-          tunnelLayer: 'relay',
-          timestamp: Date.now()
+          deviceId: this.deviceId, stats, tunnelLayer: 'relay',
+          timestamp: Date.now(),
+          capabilities: { pty: true, sshAvailable: false }
         },
         timestamp: Date.now()
       })
@@ -315,20 +400,16 @@ export class AgentService {
   private scheduleReconnect(): void {
     if (!this.running) return
     console.log(`🔄 Reconnecting in ${this.reconnectDelay / 1000}s...`)
-    this.reconnectTimer = setTimeout(() => {
-      this.connect()
-    }, this.reconnectDelay)
+    this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay)
     this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, RECONNECT_MAX_DELAY)
   }
 
   private clearTimers(): void {
     if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null }
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null }
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer);  this.reconnectTimer = null }
   }
 
   private send(message: WSMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message))
-    }
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(message))
   }
 }

@@ -8,6 +8,7 @@ import {
 import { clsx } from 'clsx'
 import { useDeviceStore } from '../store/deviceStore'
 import { SSHTerminal } from '../components/SSHTerminal'
+import { PTYTerminal } from '../components/PTYTerminal'
 import { MonitoringCharts } from '../components/MonitoringCharts'
 import { FileManager } from '../components/FileManager'
 import { AiChatPanel } from '../components/AiChatPanel'
@@ -339,7 +340,7 @@ export function DeviceWorkspacePage() {
   }, [deviceId])
 
   useEffect(() => {
-    if (tab !== 'terminal' && tab !== 'files') return
+    if (tab !== 'files') return
     ;(async () => {
       const connected = await tryAutoConnect()
       if (!connected) setShowConnForm(true)
@@ -470,42 +471,9 @@ export function DeviceWorkspacePage() {
           </div>
         )}
 
-        {tab === 'terminal' && (
-          <div className="h-full flex flex-col gap-4 p-5" style={{ minHeight: '500px' }}>
-            {autoConnecting && (
-              <div className="flex items-center gap-3 text-sm text-slate-400 glass rounded-xl px-4 py-3 max-w-md">
-                <Loader2 size={14} className="text-brand-blue animate-spin flex-shrink-0" />
-                جاري الاتصال التلقائي...
-              </div>
-            )}
-            {showConnForm && !autoConnecting && (
-              <ConnectionForm
-                device={device}
-                onConnect={handleConnect}
-                savedCredentials={savedCredentials}
-                onUseCredential={handleUseCredential}
-              />
-            )}
-            {!showConnForm && !autoConnecting && (
-              <>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {sshConfig && (
-                    <span className="text-xs text-slate-400 font-mono bg-navy-800 px-3 py-1.5 rounded-lg border border-slate-700/50">
-                      {sshConfig.username}@{sshConfig.host}:{sshConfig.port}
-                    </span>
-                  )}
-                  <button
-                    onClick={() => { setSshConfig(null); setShowConnForm(true) }}
-                    className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                  >
-                    {t('disconnect')}
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0">
-                  <SSHTerminal config={sshConfig} deviceId={deviceId} />
-                </div>
-              </>
-            )}
+        {tab === 'terminal' && deviceId && (
+          <div className="h-full p-5">
+            <PTYTerminal deviceId={deviceId} deviceName={device.name} />
           </div>
         )}
 
