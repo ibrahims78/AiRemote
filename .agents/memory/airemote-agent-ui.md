@@ -32,11 +32,14 @@ description: Agent-desktop renderer architecture — collapsible sections, IP bu
 - **Fix**: Both `req.on('error')` and `req.on('timeout')` must send the IPC event before resolving
 - **Renderer fallback**: 9-second timeout clears loading animation if no event received
 
-## Build Process
-- Cannot build Windows .exe in Replit Linux sandbox: electron-builder tries to download Electron v28 (~108MB) from GitHub — always times out
-- `wine` command is also blocked (bad system call in Nix sandbox)
-- **Workaround for releases**: create source zip with Python's `zipfile` module, then instruct user to build on Windows/macOS or use GitHub Actions `windows-latest` runner
-- GitHub Actions workflow: `npx electron-builder --win --x64 --config.win.target=portable` on `windows-latest`
+## Build Process (Working Method for Replit)
+1. Download Electron Windows binary manually: `curl -L -o ~/.cache/electron/electron-v28.3.3-win32-x64.zip "https://github.com/electron/electron/releases/download/v28.3.3/electron-v28.3.3-win32-x64.zip"` (~103MB)
+2. Extract with Python zipfile → creates `releases/agent-windows/win-unpacked/`
+3. Copy app files (main.js, preload.js, package.json, renderer/, node_modules/ws) → `win-unpacked/resources/app/`
+4. Write NSIS script `build.nsi` with: `SilentInstall silent`, `SetCompressor /SOLID lzma`, `File /r "win-unpacked\*.*"`, `ExecShell "" "$INSTDIR\electron.exe"`
+5. Build exe: `nix-shell -p nsis --run "makensis build.nsi"` from `releases/agent-windows/` → produces ~76MB valid PE exe
+- `wine` is blocked (bad system call). `electron-builder` hangs at NSIS step. Native `makensis` from nix-shell is the working solution.
+- The NSIS `File /r` directive needs `win-unpacked\*.*` not just `win-unpacked\` for recursive inclusion
 
 ## Sections Structure (index.html v1.3.0)
 - `#titlebar` → `.title-status` pill with `.title-dot`, `#title-state-lbl`, `#title-sep`, `#title-host`

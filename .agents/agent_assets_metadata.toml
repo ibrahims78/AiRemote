@@ -54,3 +54,9 @@ id = "_O4kgaZZg-dbCOLEc-GUa"
 uri = "file://ROADMAP.md"
 type = "text"
 title = "AiRemote — خارطة الطريق الاحترافية"
+
+[[outputs]]
+id = "tn4GfFOU4MpaO6Lxx3rSp"
+uri = "file://releases/agent-windows/AiRemote-Agent-v1.3.0-Windows-x64.zip"
+type = "unspecified"
+title = "AiRemote Agent v1.3.0 — Windows x64 (.exe داخل الـ zip)"
