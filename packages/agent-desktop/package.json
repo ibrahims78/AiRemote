@@ -23,7 +23,7 @@
     "copyright": "Copyright © 2025 AiRemote",
     "artifactName": "AiRemote-Agent-v${version}-Windows-x64.exe",
     "directories": {
-      "output": "../../../releases/agent-windows"
+      "output": "../../releases/agent-windows"
     },
     "files": [
       "main.js",
