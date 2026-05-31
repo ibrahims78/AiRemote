@@ -31,6 +31,10 @@ args = "AiRemote Server"
 task = "workflow.run"
 args = "AiRemote Dashboard"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "AiRemote Agent (Dev)"
+
 [[workflows.workflow]]
 name = "AiRemote Server"
 author = "agent"
@@ -54,6 +58,17 @@ outputType = "webview"
 task = "shell.exec"
 args = "cd packages/dashboard && pnpm dev"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "AiRemote Agent (Dev)"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd packages/agent && SERVER_URL=ws://localhost:3001/ws DEVICE_TOKEN=756be3ba-fa6f-40f4-894c-ca668e744ce5-f31801de-2c10-4beb-b2f0-e9009551f17f pnpm dev"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [userenv]
 
