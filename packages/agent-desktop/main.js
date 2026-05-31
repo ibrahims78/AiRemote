@@ -386,12 +386,19 @@ async function handleFsRequest(payload) {
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })
         const entries = await fsPromises.readdir(osp, { withFileTypes: true })
-        const items = await Promise.all(entries.map(async e => {
-          try {
-            const st = await fsPromises.stat(require('path').join(osp, e.name))
-            return { name: e.name, path: require('path').join(osp, e.name), type: e.isDirectory() ? 'directory' : 'file', size: st.size, modified: st.mtime.toISOString() }
-          } catch { return { name: e.name, path: require('path').join(osp, e.name), type: e.isDirectory() ? 'directory' : 'file', size: 0 } }
+        const settled = await Promise.allSettled(entries.map(async e => {
+          const full = require('path').join(osp, e.name)
+          const st = await Promise.race([
+            fsPromises.lstat(full),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('stat timeout')), 3000))
+          ])
+          return { name: e.name, path: full, type: e.isDirectory() || st.isDirectory() ? 'directory' : 'file', size: st.size, modified: st.mtime.toISOString() }
         }))
+        const items = settled.map((r, i) => {
+          if (r.status === 'fulfilled') return r.value
+          const full = require('path').join(osp, entries[i].name)
+          return { name: entries[i].name, path: full, type: entries[i].isDirectory() ? 'directory' : 'file', size: 0 }
+        })
         respond({ items })
         break
       }

@@ -3965,7 +3965,7 @@ async function executeCommand(command) {
 }
 
 // src/agent.ts
-var AGENT_VERSION = "1.2.0";
+var AGENT_VERSION = "1.4.0";
 var HEARTBEAT_INTERVAL = 1e4;
 var RECONNECT_BASE_DELAY = 2e3;
 var RECONNECT_MAX_DELAY = 3e4;
@@ -3979,8 +3979,9 @@ var AgentService = class {
     this.reconnectTimer = null;
     this.reconnectDelay = RECONNECT_BASE_DELAY;
     this.running = false;
-    this.sshTunnels = /* @__PURE__ */ new Map();
-    this.ptyProcs = /* @__PURE__ */ new Map();
+    this.sshTunnels  = /* @__PURE__ */ new Map();
+    this.ptyProcs    = /* @__PURE__ */ new Map();
+    this.sshDetected = false;
   }
   start() {
     this.running = true;
@@ -4030,6 +4031,7 @@ var AgentService = class {
     const info = await getDeviceInfo();
     const stats = await getDeviceStats();
     const sshAvailable = await this.checkSshAvailable("127.0.0.1", 22);
+    this.sshDetected   = sshAvailable;
     const shell = process.platform === "win32" ? "powershell" : process.env.SHELL || "/bin/bash";
     const payload = {
       token: this.token,
@@ -4292,7 +4294,7 @@ var AgentService = class {
                 isDirectory: e.isDirectory() || statResult.isDirectory(),
                 size: statResult.size,
                 modified: statResult.mtime.toISOString(),
-                permissions: (statResult.mode & 511).toString(8)
+                permissions: (Number(statResult.mode) & 511).toString(8)
               };
             }));
             result = settled.map((r, i) => {
@@ -4445,7 +4447,7 @@ var AgentService = class {
           stats,
           tunnelLayer: "relay",
           timestamp: Date.now(),
-          capabilities: { pty: true, sshAvailable: false }
+          capabilities: { pty: true, sshAvailable: this.sshDetected }
         },
         timestamp: Date.now()
       });

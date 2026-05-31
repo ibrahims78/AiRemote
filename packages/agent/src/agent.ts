@@ -10,7 +10,7 @@ import { getDeviceStats } from './system/stats'
 import { executeCommand } from './system/executor'
 import type { WSMessage, AgentRegisterPayload, ServerCommandPayload } from '@airemote/shared'
 
-const AGENT_VERSION     = '1.2.0'
+const AGENT_VERSION     = '1.4.0'
 const HEARTBEAT_INTERVAL = 10000
 const RECONNECT_BASE_DELAY = 2000
 const RECONNECT_MAX_DELAY  = 30000
@@ -32,8 +32,9 @@ export class AgentService {
   private reconnectTimer: NodeJS.Timeout | null = null
   private reconnectDelay = RECONNECT_BASE_DELAY
   private running = false
-  private sshTunnels = new Map<string, SshTunnel>()
-  private ptyProcs   = new Map<string, PtyProcess>()
+  private sshTunnels  = new Map<string, SshTunnel>()
+  private ptyProcs    = new Map<string, PtyProcess>()
+  private sshDetected = false
 
   constructor(
     private readonly serverUrl: string,
@@ -80,6 +81,7 @@ export class AgentService {
     const info  = await getDeviceInfo()
     const stats = await getDeviceStats()
     const sshAvailable = await this.checkSshAvailable('127.0.0.1', 22)
+    this.sshDetected   = sshAvailable
     const shell = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
 
     const payload: AgentRegisterPayload = {
@@ -372,7 +374,7 @@ export class AgentService {
                 isDirectory: e.isDirectory() || statResult.isDirectory(),
                 size: statResult.size,
                 modified: statResult.mtime.toISOString(),
-                permissions: (statResult.mode & 0o777).toString(8)
+                permissions: (Number(statResult.mode) & 0o777).toString(8)
               }
             }))
             result = settled.map((r, i) => {
@@ -515,7 +517,7 @@ export class AgentService {
         payload: {
           deviceId: this.deviceId, stats, tunnelLayer: 'relay',
           timestamp: Date.now(),
-          capabilities: { pty: true, sshAvailable: false }
+          capabilities: { pty: true, sshAvailable: this.sshDetected }
         },
         timestamp: Date.now()
       })
