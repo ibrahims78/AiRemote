@@ -482,22 +482,32 @@ export class AgentService {
   }
 
   private async listWindowsDrives(): Promise<unknown[]> {
-    const drives: unknown[] = []
-    for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+    const checkDrive = async (letter: string): Promise<unknown | null> => {
       const drivePath = letter + ':\\'
       try {
-        await fs.access(drivePath)
-        drives.push({
+        await Promise.race([
+          fs.access(drivePath),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 1500)
+          )
+        ])
+        return {
           name: letter + ':',
           path: '/' + letter + ':',
           isDirectory: true,
           size: 0,
           modified: new Date().toISOString(),
           permissions: '755'
-        })
-      } catch {}
+        }
+      } catch {
+        return null
+      }
     }
-    return drives
+
+    const results = await Promise.all(
+      'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(checkDrive)
+    )
+    return results.filter(Boolean)
   }
 
   private closeSshTunnel(sessionId: string): void {

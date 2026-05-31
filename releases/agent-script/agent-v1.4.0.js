@@ -25,6 +25,410 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/package.json
+var require_package = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/package.json"(exports2, module2) {
+    module2.exports = {
+      name: "dotenv",
+      version: "16.6.1",
+      description: "Loads environment variables from .env file",
+      main: "lib/main.js",
+      types: "lib/main.d.ts",
+      exports: {
+        ".": {
+          types: "./lib/main.d.ts",
+          require: "./lib/main.js",
+          default: "./lib/main.js"
+        },
+        "./config": "./config.js",
+        "./config.js": "./config.js",
+        "./lib/env-options": "./lib/env-options.js",
+        "./lib/env-options.js": "./lib/env-options.js",
+        "./lib/cli-options": "./lib/cli-options.js",
+        "./lib/cli-options.js": "./lib/cli-options.js",
+        "./package.json": "./package.json"
+      },
+      scripts: {
+        "dts-check": "tsc --project tests/types/tsconfig.json",
+        lint: "standard",
+        pretest: "npm run lint && npm run dts-check",
+        test: "tap run --allow-empty-coverage --disable-coverage --timeout=60000",
+        "test:coverage": "tap run --show-full-coverage --timeout=60000 --coverage-report=text --coverage-report=lcov",
+        prerelease: "npm test",
+        release: "standard-version"
+      },
+      repository: {
+        type: "git",
+        url: "git://github.com/motdotla/dotenv.git"
+      },
+      homepage: "https://github.com/motdotla/dotenv#readme",
+      funding: "https://dotenvx.com",
+      keywords: [
+        "dotenv",
+        "env",
+        ".env",
+        "environment",
+        "variables",
+        "config",
+        "settings"
+      ],
+      readmeFilename: "README.md",
+      license: "BSD-2-Clause",
+      devDependencies: {
+        "@types/node": "^18.11.3",
+        decache: "^4.6.2",
+        sinon: "^14.0.1",
+        standard: "^17.0.0",
+        "standard-version": "^9.5.0",
+        tap: "^19.2.0",
+        typescript: "^4.8.4"
+      },
+      engines: {
+        node: ">=12"
+      },
+      browser: {
+        fs: false
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/main.js
+var require_main = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/main.js"(exports2, module2) {
+    var fs3 = require("fs");
+    var path2 = require("path");
+    var os3 = require("os");
+    var crypto = require("crypto");
+    var packageJson = require_package();
+    var version = packageJson.version;
+    var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+    function parse(src) {
+      const obj = {};
+      let lines = src.toString();
+      lines = lines.replace(/\r\n?/mg, "\n");
+      let match;
+      while ((match = LINE.exec(lines)) != null) {
+        const key = match[1];
+        let value = match[2] || "";
+        value = value.trim();
+        const maybeQuote = value[0];
+        value = value.replace(/^(['"`])([\s\S]*)\1$/mg, "$2");
+        if (maybeQuote === '"') {
+          value = value.replace(/\\n/g, "\n");
+          value = value.replace(/\\r/g, "\r");
+        }
+        obj[key] = value;
+      }
+      return obj;
+    }
+    function _parseVault(options) {
+      options = options || {};
+      const vaultPath = _vaultPath(options);
+      options.path = vaultPath;
+      const result = DotenvModule.configDotenv(options);
+      if (!result.parsed) {
+        const err = new Error(`MISSING_DATA: Cannot parse ${vaultPath} for an unknown reason`);
+        err.code = "MISSING_DATA";
+        throw err;
+      }
+      const keys = _dotenvKey(options).split(",");
+      const length = keys.length;
+      let decrypted;
+      for (let i = 0; i < length; i++) {
+        try {
+          const key = keys[i].trim();
+          const attrs = _instructions(result, key);
+          decrypted = DotenvModule.decrypt(attrs.ciphertext, attrs.key);
+          break;
+        } catch (error) {
+          if (i + 1 >= length) {
+            throw error;
+          }
+        }
+      }
+      return DotenvModule.parse(decrypted);
+    }
+    function _warn(message) {
+      console.log(`[dotenv@${version}][WARN] ${message}`);
+    }
+    function _debug(message) {
+      console.log(`[dotenv@${version}][DEBUG] ${message}`);
+    }
+    function _log(message) {
+      console.log(`[dotenv@${version}] ${message}`);
+    }
+    function _dotenvKey(options) {
+      if (options && options.DOTENV_KEY && options.DOTENV_KEY.length > 0) {
+        return options.DOTENV_KEY;
+      }
+      if (process.env.DOTENV_KEY && process.env.DOTENV_KEY.length > 0) {
+        return process.env.DOTENV_KEY;
+      }
+      return "";
+    }
+    function _instructions(result, dotenvKey) {
+      let uri;
+      try {
+        uri = new URL(dotenvKey);
+      } catch (error) {
+        if (error.code === "ERR_INVALID_URL") {
+          const err = new Error("INVALID_DOTENV_KEY: Wrong format. Must be in valid uri format like dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development");
+          err.code = "INVALID_DOTENV_KEY";
+          throw err;
+        }
+        throw error;
+      }
+      const key = uri.password;
+      if (!key) {
+        const err = new Error("INVALID_DOTENV_KEY: Missing key part");
+        err.code = "INVALID_DOTENV_KEY";
+        throw err;
+      }
+      const environment = uri.searchParams.get("environment");
+      if (!environment) {
+        const err = new Error("INVALID_DOTENV_KEY: Missing environment part");
+        err.code = "INVALID_DOTENV_KEY";
+        throw err;
+      }
+      const environmentKey = `DOTENV_VAULT_${environment.toUpperCase()}`;
+      const ciphertext = result.parsed[environmentKey];
+      if (!ciphertext) {
+        const err = new Error(`NOT_FOUND_DOTENV_ENVIRONMENT: Cannot locate environment ${environmentKey} in your .env.vault file.`);
+        err.code = "NOT_FOUND_DOTENV_ENVIRONMENT";
+        throw err;
+      }
+      return { ciphertext, key };
+    }
+    function _vaultPath(options) {
+      let possibleVaultPath = null;
+      if (options && options.path && options.path.length > 0) {
+        if (Array.isArray(options.path)) {
+          for (const filepath of options.path) {
+            if (fs3.existsSync(filepath)) {
+              possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
+            }
+          }
+        } else {
+          possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
+        }
+      } else {
+        possibleVaultPath = path2.resolve(process.cwd(), ".env.vault");
+      }
+      if (fs3.existsSync(possibleVaultPath)) {
+        return possibleVaultPath;
+      }
+      return null;
+    }
+    function _resolveHome(envPath) {
+      return envPath[0] === "~" ? path2.join(os3.homedir(), envPath.slice(1)) : envPath;
+    }
+    function _configVault(options) {
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (debug || !quiet) {
+        _log("Loading env from encrypted .env.vault");
+      }
+      const parsed = DotenvModule._parseVault(options);
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsed, options);
+      return { parsed };
+    }
+    function configDotenv(options) {
+      const dotenvPath = path2.resolve(process.cwd(), ".env");
+      let encoding = "utf8";
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (options && options.encoding) {
+        encoding = options.encoding;
+      } else {
+        if (debug) {
+          _debug("No encoding is specified. UTF-8 is used by default");
+        }
+      }
+      let optionPaths = [dotenvPath];
+      if (options && options.path) {
+        if (!Array.isArray(options.path)) {
+          optionPaths = [_resolveHome(options.path)];
+        } else {
+          optionPaths = [];
+          for (const filepath of options.path) {
+            optionPaths.push(_resolveHome(filepath));
+          }
+        }
+      }
+      let lastError;
+      const parsedAll = {};
+      for (const path3 of optionPaths) {
+        try {
+          const parsed = DotenvModule.parse(fs3.readFileSync(path3, { encoding }));
+          DotenvModule.populate(parsedAll, parsed, options);
+        } catch (e) {
+          if (debug) {
+            _debug(`Failed to load ${path3} ${e.message}`);
+          }
+          lastError = e;
+        }
+      }
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsedAll, options);
+      if (debug || !quiet) {
+        const keysCount = Object.keys(parsedAll).length;
+        const shortPaths = [];
+        for (const filePath of optionPaths) {
+          try {
+            const relative = path2.relative(process.cwd(), filePath);
+            shortPaths.push(relative);
+          } catch (e) {
+            if (debug) {
+              _debug(`Failed to load ${filePath} ${e.message}`);
+            }
+            lastError = e;
+          }
+        }
+        _log(`injecting env (${keysCount}) from ${shortPaths.join(",")}`);
+      }
+      if (lastError) {
+        return { parsed: parsedAll, error: lastError };
+      } else {
+        return { parsed: parsedAll };
+      }
+    }
+    function config(options) {
+      if (_dotenvKey(options).length === 0) {
+        return DotenvModule.configDotenv(options);
+      }
+      const vaultPath = _vaultPath(options);
+      if (!vaultPath) {
+        _warn(`You set DOTENV_KEY but you are missing a .env.vault file at ${vaultPath}. Did you forget to build it?`);
+        return DotenvModule.configDotenv(options);
+      }
+      return DotenvModule._configVault(options);
+    }
+    function decrypt(encrypted, keyStr) {
+      const key = Buffer.from(keyStr.slice(-64), "hex");
+      let ciphertext = Buffer.from(encrypted, "base64");
+      const nonce = ciphertext.subarray(0, 12);
+      const authTag = ciphertext.subarray(-16);
+      ciphertext = ciphertext.subarray(12, -16);
+      try {
+        const aesgcm = crypto.createDecipheriv("aes-256-gcm", key, nonce);
+        aesgcm.setAuthTag(authTag);
+        return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
+      } catch (error) {
+        const isRange = error instanceof RangeError;
+        const invalidKeyLength = error.message === "Invalid key length";
+        const decryptionFailed = error.message === "Unsupported state or unable to authenticate data";
+        if (isRange || invalidKeyLength) {
+          const err = new Error("INVALID_DOTENV_KEY: It must be 64 characters long (or more)");
+          err.code = "INVALID_DOTENV_KEY";
+          throw err;
+        } else if (decryptionFailed) {
+          const err = new Error("DECRYPTION_FAILED: Please check your DOTENV_KEY");
+          err.code = "DECRYPTION_FAILED";
+          throw err;
+        } else {
+          throw error;
+        }
+      }
+    }
+    function populate(processEnv, parsed, options = {}) {
+      const debug = Boolean(options && options.debug);
+      const override = Boolean(options && options.override);
+      if (typeof parsed !== "object") {
+        const err = new Error("OBJECT_REQUIRED: Please check the processEnv argument being passed to populate");
+        err.code = "OBJECT_REQUIRED";
+        throw err;
+      }
+      for (const key of Object.keys(parsed)) {
+        if (Object.prototype.hasOwnProperty.call(processEnv, key)) {
+          if (override === true) {
+            processEnv[key] = parsed[key];
+          }
+          if (debug) {
+            if (override === true) {
+              _debug(`"${key}" is already defined and WAS overwritten`);
+            } else {
+              _debug(`"${key}" is already defined and was NOT overwritten`);
+            }
+          }
+        } else {
+          processEnv[key] = parsed[key];
+        }
+      }
+    }
+    var DotenvModule = {
+      configDotenv,
+      _configVault,
+      _parseVault,
+      config,
+      decrypt,
+      parse,
+      populate
+    };
+    module2.exports.configDotenv = DotenvModule.configDotenv;
+    module2.exports._configVault = DotenvModule._configVault;
+    module2.exports._parseVault = DotenvModule._parseVault;
+    module2.exports.config = DotenvModule.config;
+    module2.exports.decrypt = DotenvModule.decrypt;
+    module2.exports.parse = DotenvModule.parse;
+    module2.exports.populate = DotenvModule.populate;
+    module2.exports = DotenvModule;
+  }
+});
+
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/env-options.js
+var require_env_options = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/env-options.js"(exports2, module2) {
+    var options = {};
+    if (process.env.DOTENV_CONFIG_ENCODING != null) {
+      options.encoding = process.env.DOTENV_CONFIG_ENCODING;
+    }
+    if (process.env.DOTENV_CONFIG_PATH != null) {
+      options.path = process.env.DOTENV_CONFIG_PATH;
+    }
+    if (process.env.DOTENV_CONFIG_QUIET != null) {
+      options.quiet = process.env.DOTENV_CONFIG_QUIET;
+    }
+    if (process.env.DOTENV_CONFIG_DEBUG != null) {
+      options.debug = process.env.DOTENV_CONFIG_DEBUG;
+    }
+    if (process.env.DOTENV_CONFIG_OVERRIDE != null) {
+      options.override = process.env.DOTENV_CONFIG_OVERRIDE;
+    }
+    if (process.env.DOTENV_CONFIG_DOTENV_KEY != null) {
+      options.DOTENV_KEY = process.env.DOTENV_CONFIG_DOTENV_KEY;
+    }
+    module2.exports = options;
+  }
+});
+
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/cli-options.js
+var require_cli_options = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/cli-options.js"(exports2, module2) {
+    var re = /^dotenv_config_(encoding|path|quiet|debug|override|DOTENV_KEY)=(.+)$/;
+    module2.exports = function optionMatcher(args) {
+      const options = args.reduce(function(acc, cur) {
+        const matches = cur.match(re);
+        if (matches) {
+          acc[matches[1]] = matches[2];
+        }
+        return acc;
+      }, {});
+      if (!("quiet" in options)) {
+        options.quiet = "true";
+      }
+      return options;
+    };
+  }
+});
+
 // ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
   "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js"(exports2, module2) {
@@ -2275,7 +2679,7 @@ var require_websocket = __commonJS({
     var tls = require("tls");
     var { randomBytes, createHash } = require("crypto");
     var { Duplex, Readable } = require("stream");
-    var { URL } = require("url");
+    var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
@@ -2776,11 +3180,11 @@ var require_websocket = __commonJS({
         );
       }
       let parsedUrl;
-      if (address instanceof URL) {
+      if (address instanceof URL2) {
         parsedUrl = address;
       } else {
         try {
-          parsedUrl = new URL(address);
+          parsedUrl = new URL2(address);
         } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
@@ -2917,7 +3321,7 @@ var require_websocket = __commonJS({
           req.abort();
           let addr;
           try {
-            addr = new URL(location, address);
+            addr = new URL2(location, address);
           } catch (e) {
             const err = new SyntaxError(`Invalid URL: ${location}`);
             emitErrorAndClose(websocket, err);
@@ -3704,8 +4108,16 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// src/index.ts
-var import_config = require("dotenv/config");
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/config.js
+(function() {
+  require_main().config(
+    Object.assign(
+      {},
+      require_env_options(),
+      require_cli_options()(process.argv)
+    )
+  );
+})();
 
 // ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -3979,8 +4391,8 @@ var AgentService = class {
     this.reconnectTimer = null;
     this.reconnectDelay = RECONNECT_BASE_DELAY;
     this.running = false;
-    this.sshTunnels  = /* @__PURE__ */ new Map();
-    this.ptyProcs    = /* @__PURE__ */ new Map();
+    this.sshTunnels = /* @__PURE__ */ new Map();
+    this.ptyProcs = /* @__PURE__ */ new Map();
     this.sshDetected = false;
   }
   start() {
@@ -4031,7 +4443,7 @@ var AgentService = class {
     const info = await getDeviceInfo();
     const stats = await getDeviceStats();
     const sshAvailable = await this.checkSshAvailable("127.0.0.1", 22);
-    this.sshDetected   = sshAvailable;
+    this.sshDetected = sshAvailable;
     const shell = process.platform === "win32" ? "powershell" : process.env.SHELL || "/bin/bash";
     const payload = {
       token: this.token,
@@ -4272,71 +4684,88 @@ var AgentService = class {
   // ── File System (via Agent) ───────────────────────────────────────────────
   async handleFsRequest(p) {
     const { opId, op } = p;
+    console.log(`\u{1F4C2} FS request: op=${op} path=${p.path}`);
+    const OVERALL_TIMEOUT_MS = 8e3;
+    const READDIR_TIMEOUT_MS = 5e3;
+    const STAT_TIMEOUT_MS = 2e3;
+    const withTimeout = (promise, ms, label) => Promise.race([
+      promise,
+      new Promise(
+        (_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      )
+    ]);
     try {
       let result;
       const osPath = this.toOsPath(p.path);
-      switch (op) {
-        case "list": {
-          if (p.path === "/" && process.platform === "win32") {
-            result = await this.listWindowsDrives();
-          } else {
-            const entries = await import_promises.default.readdir(osPath, { withFileTypes: true });
+      const doOp = async () => {
+        switch (op) {
+          case "list": {
+            if (p.path === "/" && process.platform === "win32") {
+              return this.listWindowsDrives();
+            }
+            const entries = await withTimeout(
+              import_promises.default.readdir(osPath, { withFileTypes: true }),
+              READDIR_TIMEOUT_MS,
+              `readdir(${osPath})`
+            );
             const settled = await Promise.allSettled(entries.map(async (e) => {
               const fullPath = import_path.default.join(osPath, e.name);
               const webPath = (p.path === "/" ? "" : p.path) + "/" + e.name;
-              const statResult = await Promise.race([
-                import_promises.default.lstat(fullPath),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("stat timeout")), 3e3))
-              ]);
-              return {
-                name: e.name,
-                path: webPath,
-                isDirectory: e.isDirectory() || statResult.isDirectory(),
-                size: statResult.size,
-                modified: statResult.mtime.toISOString(),
-                permissions: (Number(statResult.mode) & 511).toString(8)
-              };
+              let size = 0, modified = (/* @__PURE__ */ new Date()).toISOString(), permissions = "---";
+              let isDir = e.isDirectory();
+              try {
+                const stat = await withTimeout(
+                  import_promises.default.lstat(fullPath),
+                  STAT_TIMEOUT_MS,
+                  `lstat(${fullPath})`
+                );
+                size = stat.size;
+                modified = stat.mtime.toISOString();
+                permissions = (Number(stat.mode) & 511).toString(8);
+                isDir = isDir || stat.isDirectory();
+              } catch {
+              }
+              return { name: e.name, path: webPath, isDirectory: isDir, size, modified, permissions };
             }));
-            result = settled.map((r, i) => {
-              if (r.status === "fulfilled") return r.value;
-              const e = entries[i];
-              const webPath = (p.path === "/" ? "" : p.path) + "/" + e.name;
-              return { name: e.name, path: webPath, isDirectory: e.isDirectory(), size: 0, modified: new Date().toISOString(), permissions: "---" };
-            });
+            return settled.filter((r) => r.status === "fulfilled").map((r) => r.value);
           }
-          break;
+          case "read": {
+            const buf = await withTimeout(import_promises.default.readFile(osPath), OVERALL_TIMEOUT_MS, `readFile(${osPath})`);
+            return buf.toString("base64");
+          }
+          case "write": {
+            const dir = import_path.default.dirname(osPath);
+            await import_promises.default.mkdir(dir, { recursive: true });
+            await withTimeout(
+              import_promises.default.writeFile(osPath, Buffer.from(p.data || "", "base64")),
+              OVERALL_TIMEOUT_MS,
+              `writeFile(${osPath})`
+            );
+            return { ok: true };
+          }
+          case "delete": {
+            await withTimeout(
+              import_promises.default.rm(osPath, { recursive: true, force: true }),
+              OVERALL_TIMEOUT_MS,
+              `rm(${osPath})`
+            );
+            return { ok: true };
+          }
+          case "rename": {
+            const newOsPath = this.toOsPath(p.newPath || "");
+            await withTimeout(import_promises.default.rename(osPath, newOsPath), OVERALL_TIMEOUT_MS, `rename`);
+            return { ok: true };
+          }
+          case "mkdir": {
+            await withTimeout(import_promises.default.mkdir(osPath, { recursive: true }), OVERALL_TIMEOUT_MS, `mkdir(${osPath})`);
+            return { ok: true };
+          }
+          default:
+            throw new Error(`\u0639\u0645\u0644\u064A\u0629 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641\u0629: ${op}`);
         }
-        case "read": {
-          const buf = await import_promises.default.readFile(osPath);
-          result = buf.toString("base64");
-          break;
-        }
-        case "write": {
-          const dir = import_path.default.dirname(osPath);
-          await import_promises.default.mkdir(dir, { recursive: true });
-          await import_promises.default.writeFile(osPath, Buffer.from(p.data || "", "base64"));
-          result = { ok: true };
-          break;
-        }
-        case "delete": {
-          await import_promises.default.rm(osPath, { recursive: true, force: true });
-          result = { ok: true };
-          break;
-        }
-        case "rename": {
-          const newOsPath = this.toOsPath(p.newPath || "");
-          await import_promises.default.rename(osPath, newOsPath);
-          result = { ok: true };
-          break;
-        }
-        case "mkdir": {
-          await import_promises.default.mkdir(osPath, { recursive: true });
-          result = { ok: true };
-          break;
-        }
-        default:
-          throw new Error(`\u0639\u0645\u0644\u064A\u0629 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641\u0629: ${op}`);
-      }
+      };
+      result = await withTimeout(doOp(), OVERALL_TIMEOUT_MS + 1e3, `fs:${op}`);
+      console.log(`\u2705 FS result: op=${op} path=${p.path}`);
       this.send({
         type: "agent:fs_result",
         payload: { opId, data: result },
@@ -4344,6 +4773,7 @@ var AgentService = class {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\u274C FS error: op=${op} path=${p.path} \u2014 ${msg}`);
       this.send({
         type: "agent:fs_result",
         payload: { opId, error: msg },
@@ -4361,23 +4791,31 @@ var AgentService = class {
     return webPath;
   }
   async listWindowsDrives() {
-    const drives = [];
-    for (const letter of "CDEFGHIJKLMNOPQRSTUVWXYZ") {
+    const checkDrive = async (letter) => {
       const drivePath = letter + ":\\";
       try {
-        await import_promises.default.access(drivePath);
-        drives.push({
+        await Promise.race([
+          import_promises.default.access(drivePath),
+          new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("timeout")), 1500)
+          )
+        ]);
+        return {
           name: letter + ":",
           path: "/" + letter + ":",
           isDirectory: true,
           size: 0,
           modified: (/* @__PURE__ */ new Date()).toISOString(),
           permissions: "755"
-        });
+        };
       } catch {
+        return null;
       }
-    }
-    return drives;
+    };
+    const results = await Promise.all(
+      "CDEFGHIJKLMNOPQRSTUVWXYZ".split("").map(checkDrive)
+    );
+    return results.filter(Boolean);
   }
   closeSshTunnel(sessionId) {
     const tunnel = this.sshTunnels.get(sessionId);
