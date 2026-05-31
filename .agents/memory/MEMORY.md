@@ -8,3 +8,4 @@
 - [AiRemote Agent Desktop UI](airemote-agent-ui.md) — Collapsible sections (.coll-sec/collapsed); IP bug: main.js error/timeout must send public-ip IPC; build: packaging runs but portable needs --prepackaged flag
 - [AiRemote Phase 3 Complete](airemote-phase3.md) — All 11 roadmap features done; otplib v13 API, tags double-parse bug, ALTER TABLE migrations, @fastify/rate-limit@8
 - [AiRemote PTY Terminal](airemote-pty.md) — v1.2.0: PTY via child_process.spawn (no node-pty); /pty WS endpoint; shared must be rebuilt before server; pkg binary at releases/agent-headless/
+- [AiRemote Agent-proxied FS](airemote-agent-fs.md) — Files tab uses server:fs_request/agent:fs_result over WS; no SSH needed; Windows drives listed at path=/

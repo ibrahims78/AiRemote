@@ -12,6 +12,7 @@ import { deviceRoutes } from './routes/devices'
 import { sessionRoutes } from './routes/sessions'
 import { userRoutes } from './routes/users'
 import { sftpRoutes } from './routes/sftp'
+import { fsRoutes } from './routes/fs'
 import { aiRoutes } from './routes/ai'
 import { settingsRoutes } from './routes/settings'
 import { auditRoutes } from './routes/audit'
@@ -83,6 +84,7 @@ export async function buildServer() {
   await app.register(sessionRoutes,    { prefix: '/api/sessions' })
   await app.register(userRoutes,       { prefix: '/api/users' })
   await app.register(sftpRoutes,       { prefix: '/api/sftp' })
+  await app.register(fsRoutes,         { prefix: '/api/devices' })
   await app.register(aiRoutes,         { prefix: '/api/ai' })
   await app.register(settingsRoutes,   { prefix: '/api/settings' })
   await app.register(auditRoutes,      { prefix: '/api/audit' })

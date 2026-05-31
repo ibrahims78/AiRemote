@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Folder, File, ArrowLeft, Download, Upload,
   Home, RefreshCw, ChevronRight, HardDrive,
@@ -6,14 +6,6 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { api } from '../lib/api'
-
-interface SFTPConfig {
-  host: string
-  port: number
-  username: string
-  password?: string
-  privateKey?: string
-}
 
 interface FileEntry {
   name: string
@@ -25,7 +17,8 @@ interface FileEntry {
 }
 
 interface Props {
-  config: SFTPConfig | null
+  deviceId: string
+  deviceName: string
 }
 
 function formatSize(bytes: number): string {
@@ -36,12 +29,11 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-export function FileManager({ config }: Props) {
+export function FileManager({ deviceId, deviceName }: Props) {
   const [path, setPath] = useState('/')
   const [files, setFiles] = useState<FileEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [connected, setConnected] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null)
   const [deletingFile, setDeletingFile] = useState<string | null>(null)
@@ -49,41 +41,31 @@ export function FileManager({ config }: Props) {
   const [renameValue, setRenameValue] = useState('')
   const [showMkdir, setShowMkdir] = useState(false)
   const [mkdirName, setMkdirName] = useState('')
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const uploadRef = useRef<HTMLInputElement>(null)
 
   const pathParts = path.split('/').filter(Boolean)
 
-  function buildPayload(extra: Record<string, unknown> = {}) {
-    if (!config) return {}
-    return { host: config.host, port: config.port, username: config.username, password: config.password, privateKey: config.privateKey, ...extra }
-  }
+  useEffect(() => {
+    loadDir('/')
+  }, [deviceId])
 
   async function loadDir(p: string) {
-    if (!config) return
     setLoading(true)
     setError('')
-    setSelectedFiles(new Set())
     try {
-      const res = await api.post('/api/sftp/list', buildPayload({ path: p }))
+      const res = await api.get(`/api/devices/${deviceId}/fs/list`, { params: { path: p } })
       const sorted = (res.data as FileEntry[]).sort((a, b) => {
         if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name)
         return a.isDirectory ? -1 : 1
       })
       setFiles(sorted)
       setPath(p)
-      setConnected(true)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } }
-      setError(err.response?.data?.error || 'فشل الاتصال')
+      setError(err.response?.data?.error || 'فشل تحميل المجلد')
     } finally {
       setLoading(false)
     }
-  }
-
-  async function navigateTo(entry: FileEntry) {
-    if (!entry.isDirectory) return
-    await loadDir(entry.path)
   }
 
   async function goUp() {
@@ -94,10 +76,13 @@ export function FileManager({ config }: Props) {
   }
 
   async function downloadFile(entry: FileEntry) {
-    if (!config || entry.isDirectory) return
+    if (entry.isDirectory) return
     setDownloadingFile(entry.name)
     try {
-      const res = await api.post('/api/sftp/download', buildPayload({ path: entry.path }), { responseType: 'blob' })
+      const res = await api.get(`/api/devices/${deviceId}/fs/download`, {
+        params: { path: entry.path },
+        responseType: 'blob'
+      })
       const url = URL.createObjectURL(res.data as Blob)
       const a = document.createElement('a')
       a.href = url
@@ -112,11 +97,10 @@ export function FileManager({ config }: Props) {
   }
 
   async function deleteFile(entry: FileEntry) {
-    if (!config) return
     if (!confirm(`هل أنت متأكد من حذف "${entry.name}"؟`)) return
     setDeletingFile(entry.name)
     try {
-      await api.post('/api/sftp/delete', buildPayload({ path: entry.path, isDirectory: entry.isDirectory }))
+      await api.post(`/api/devices/${deviceId}/fs/delete`, { path: entry.path })
       setFiles(prev => prev.filter(f => f.path !== entry.path))
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } }
@@ -126,20 +110,15 @@ export function FileManager({ config }: Props) {
     }
   }
 
-  async function startRename(entry: FileEntry) {
-    setRenamingFile(entry.path)
-    setRenameValue(entry.name)
-  }
-
   async function confirmRename(entry: FileEntry) {
-    if (!config || !renameValue.trim() || renameValue === entry.name) {
+    if (!renameValue.trim() || renameValue === entry.name) {
       setRenamingFile(null)
       return
     }
     const parentPath = path.endsWith('/') ? path : path + '/'
     const newPath = parentPath + renameValue.trim()
     try {
-      await api.post('/api/sftp/rename', buildPayload({ oldPath: entry.path, newPath }))
+      await api.post(`/api/devices/${deviceId}/fs/rename`, { oldPath: entry.path, newPath })
       await loadDir(path)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } }
@@ -151,19 +130,16 @@ export function FileManager({ config }: Props) {
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file || !config) return
+    if (!file) return
     setUploading(true)
     setError('')
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('host', config.host)
-      formData.append('port', String(config.port))
-      formData.append('username', config.username)
-      if (config.password) formData.append('password', config.password)
-      if (config.privateKey) formData.append('privateKey', config.privateKey)
       formData.append('path', path)
-      await api.post('/api/sftp/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      await api.post(`/api/devices/${deviceId}/fs/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
       await loadDir(path)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } }
@@ -175,10 +151,10 @@ export function FileManager({ config }: Props) {
   }
 
   async function handleMkdir() {
-    if (!config || !mkdirName.trim()) return
+    if (!mkdirName.trim()) return
     const newDirPath = (path.endsWith('/') ? path : path + '/') + mkdirName.trim()
     try {
-      await api.post('/api/sftp/mkdir', buildPayload({ path: newDirPath }))
+      await api.post(`/api/devices/${deviceId}/fs/mkdir`, { path: newDirPath })
       setShowMkdir(false)
       setMkdirName('')
       await loadDir(path)
@@ -188,40 +164,8 @@ export function FileManager({ config }: Props) {
     }
   }
 
-  if (!config) {
-    return (
-      <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
-        <div className="text-center">
-          <HardDrive size={28} className="mx-auto mb-2 text-slate-600" />
-          أدخل بيانات الاتصال أولاً
-        </div>
-      </div>
-    )
-  }
-
-  if (!connected) {
-    return (
-      <div className="flex items-center justify-center h-48 flex-col gap-3">
-        <button
-          onClick={() => loadDir('/')}
-          disabled={loading}
-          className="flex items-center gap-2 bg-brand-blue hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
-        >
-          {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <HardDrive size={15} />}
-          الاتصال بـ SFTP
-        </button>
-        {error && (
-          <div className="flex items-center gap-2 text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
-            <AlertCircle size={13} />
-            {error}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-[#0a0f1e] rounded-xl border border-slate-700/50 overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-1 p-2.5 bg-navy-800 border-b border-slate-700/50 flex-shrink-0">
         <button onClick={() => loadDir('/')} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded" title="الرئيسية">
@@ -236,16 +180,18 @@ export function FileManager({ config }: Props) {
 
         {/* Breadcrumb */}
         <div className="flex items-center gap-0.5 text-xs text-slate-400 flex-1 overflow-hidden mx-1">
-          <span className="text-slate-600">/</span>
+          <button onClick={() => loadDir('/')} className="text-slate-600 hover:text-white transition-colors">
+            <HardDrive size={12} />
+          </button>
           {pathParts.map((part, i) => (
             <span key={i} className="flex items-center gap-0.5">
+              <ChevronRight size={10} className="text-slate-700 flex-shrink-0" />
               <button
                 onClick={() => loadDir('/' + pathParts.slice(0, i + 1).join('/'))}
                 className="hover:text-white transition-colors truncate max-w-[80px] px-0.5"
               >
                 {part}
               </button>
-              {i < pathParts.length - 1 && <ChevronRight size={10} className="text-slate-600 flex-shrink-0" />}
             </span>
           ))}
         </div>
@@ -279,7 +225,10 @@ export function FileManager({ config }: Props) {
             type="text"
             value={mkdirName}
             onChange={e => setMkdirName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleMkdir(); if (e.key === 'Escape') { setShowMkdir(false); setMkdirName('') } }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleMkdir()
+              if (e.key === 'Escape') { setShowMkdir(false); setMkdirName('') }
+            }}
             placeholder="اسم المجلد الجديد"
             className="flex-1 bg-navy-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-brand-teal"
           />
@@ -337,7 +286,7 @@ export function FileManager({ config }: Props) {
                       f.isDirectory ? 'hover:bg-slate-700/20 cursor-pointer' : 'hover:bg-slate-700/10',
                       isDeleting && 'opacity-40'
                     )}
-                    onDoubleClick={() => f.isDirectory && navigateTo(f)}
+                    onDoubleClick={() => f.isDirectory && loadDir(f.path)}
                   >
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-2">
@@ -396,7 +345,7 @@ export function FileManager({ config }: Props) {
                           </button>
                         )}
                         <button
-                          onClick={() => startRename(f)}
+                          onClick={() => { setRenamingFile(f.path); setRenameValue(f.name) }}
                           className="p-1 text-slate-600 hover:text-yellow-400 transition-colors rounded"
                           title="إعادة تسمية"
                         >
@@ -428,7 +377,7 @@ export function FileManager({ config }: Props) {
         <span>{files.length} عنصر</span>
         <span>{files.filter(f => f.isDirectory).length} مجلد</span>
         <span>{files.filter(f => !f.isDirectory).length} ملف</span>
-        <span className="mr-auto font-mono">{config.username}@{config.host}:{config.port}</span>
+        <span className="mr-auto font-mono text-slate-700">{deviceName} · عبر الوكيل</span>
       </div>
     </div>
   )

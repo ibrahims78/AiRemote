@@ -1,4 +1,5 @@
 import type { WebSocket } from 'ws'
+import { v4 as uuidv4 } from 'uuid'
 import { deviceRegistry } from './registry'
 import { getDeviceByToken, updateDeviceStatus, updateDeviceInfo, updateDeviceSeen } from '../db/devices'
 import type {
@@ -9,6 +10,12 @@ import { evaluateAlerts, fireDeviceOfflineAlert, fireDeviceOnlineAlert } from '.
 
 const pendingCommands = new Map<string, {
   resolve: (result: AgentCommandResultPayload) => void
+  timeout: NodeJS.Timeout
+}>()
+
+const pendingFsOps = new Map<string, {
+  resolve: (data: unknown) => void
+  reject:  (err: Error) => void
   timeout: NodeJS.Timeout
 }>()
 
@@ -119,6 +126,19 @@ export async function handleAgentMessage(
         clearTimeout(pending.timeout)
         pending.resolve(payload)
         pendingCommands.delete(payload.commandId)
+      }
+      return null
+    }
+
+    // ── FS result ─────────────────────────────────────────────────────────────
+    case 'agent:fs_result': {
+      const p = message.payload as { opId: string; data?: unknown; error?: string }
+      const pending = pendingFsOps.get(p.opId)
+      if (pending) {
+        clearTimeout(pending.timeout)
+        pendingFsOps.delete(p.opId)
+        if (p.error) pending.reject(new Error(p.error))
+        else pending.resolve(p.data)
       }
       return null
     }
@@ -235,6 +255,29 @@ export async function handleAgentMessage(
     default:
       return null
   }
+}
+
+export function sendFsRequest(
+  deviceId: string,
+  op: string,
+  path: string,
+  extra: Record<string, unknown> = {},
+  timeoutMs = 30000
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const opId = uuidv4()
+    const sent = deviceRegistry.sendToDevice(deviceId, {
+      type: 'server:fs_request',
+      payload: { opId, op, path, ...extra },
+      timestamp: Date.now()
+    })
+    if (!sent) { reject(new Error('الجهاز غير متصل')); return }
+    const timeout = setTimeout(() => {
+      pendingFsOps.delete(opId)
+      reject(new Error('انتهت مهلة العملية'))
+    }, timeoutMs)
+    pendingFsOps.set(opId, { resolve, reject, timeout })
+  })
 }
 
 export function sendCommandToAgent(

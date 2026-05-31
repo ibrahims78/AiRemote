@@ -3,6 +3,8 @@ import { v4 as uuidv4 } from 'uuid'
 import { Client as SSH2Client } from 'ssh2'
 import { spawn, ChildProcess } from 'child_process'
 import * as net from 'net'
+import fs from 'fs/promises'
+import path from 'path'
 import { getDeviceInfo } from './system/info'
 import { getDeviceStats } from './system/stats'
 import { executeCommand } from './system/executor'
@@ -165,6 +167,11 @@ export class AgentService {
         case 'server:pty_close': {
           const p = message.payload as { sessionId: string }
           this.closePty(p.sessionId)
+          break
+        }
+        case 'server:fs_request': {
+          const p = message.payload as { opId: string; op: string; path: string; newPath?: string; data?: string }
+          this.handleFsRequest(p)
           break
         }
         case 'server:error': {
@@ -333,6 +340,122 @@ export class AgentService {
     else if (password) connectConfig.password = password
 
     client.connect(connectConfig as Parameters<typeof client.connect>[0])
+  }
+
+  // ── File System (via Agent) ───────────────────────────────────────────────
+
+  private async handleFsRequest(p: {
+    opId: string; op: string; path: string; newPath?: string; data?: string
+  }): Promise<void> {
+    const { opId, op } = p
+    try {
+      let result: unknown
+      const osPath = this.toOsPath(p.path)
+
+      switch (op) {
+        case 'list': {
+          if (p.path === '/' && process.platform === 'win32') {
+            result = await this.listWindowsDrives()
+          } else {
+            const entries = await fs.readdir(osPath, { withFileTypes: true })
+            result = await Promise.all(entries.map(async (e) => {
+              const fullPath = path.join(osPath, e.name)
+              const webPath = (p.path === '/' ? '' : p.path) + '/' + e.name
+              try {
+                const stat = await fs.stat(fullPath)
+                return {
+                  name: e.name,
+                  path: webPath,
+                  isDirectory: e.isDirectory(),
+                  size: stat.size,
+                  modified: stat.mtime.toISOString(),
+                  permissions: (stat.mode & 0o777).toString(8)
+                }
+              } catch {
+                return {
+                  name: e.name, path: webPath,
+                  isDirectory: e.isDirectory(), size: 0,
+                  modified: new Date().toISOString(), permissions: '---'
+                }
+              }
+            }))
+          }
+          break
+        }
+        case 'read': {
+          const buf = await fs.readFile(osPath)
+          result = buf.toString('base64')
+          break
+        }
+        case 'write': {
+          const dir = path.dirname(osPath)
+          await fs.mkdir(dir, { recursive: true })
+          await fs.writeFile(osPath, Buffer.from(p.data || '', 'base64'))
+          result = { ok: true }
+          break
+        }
+        case 'delete': {
+          await fs.rm(osPath, { recursive: true, force: true })
+          result = { ok: true }
+          break
+        }
+        case 'rename': {
+          const newOsPath = this.toOsPath(p.newPath || '')
+          await fs.rename(osPath, newOsPath)
+          result = { ok: true }
+          break
+        }
+        case 'mkdir': {
+          await fs.mkdir(osPath, { recursive: true })
+          result = { ok: true }
+          break
+        }
+        default:
+          throw new Error(`عملية غير معروفة: ${op}`)
+      }
+
+      this.send({
+        type: 'agent:fs_result',
+        payload: { opId, data: result },
+        timestamp: Date.now()
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.send({
+        type: 'agent:fs_result',
+        payload: { opId, error: msg },
+        timestamp: Date.now()
+      })
+    }
+  }
+
+  private toOsPath(webPath: string): string {
+    if (process.platform !== 'win32') return webPath
+    if (webPath === '/') return '/'
+    const m = webPath.match(/^\/([A-Za-z]:[\\/].*)$/)
+    if (m) return m[1].replace(/\//g, '\\')
+    const drive = webPath.match(/^\/([A-Za-z]:)$/)
+    if (drive) return drive[1] + '\\'
+    return webPath
+  }
+
+  private async listWindowsDrives(): Promise<unknown[]> {
+    const drives: unknown[] = []
+    for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
+      const drivePath = letter + ':\\'
+      try {
+        await fs.access(drivePath)
+        drives.push({
+          name: letter + ':',
+          path: '/' + letter + ':',
+          isDirectory: true,
+          size: 0,
+          modified: new Date().toISOString(),
+          permissions: '755'
+        })
+      } catch {}
+    }
+    return drives
   }
 
   private closeSshTunnel(sessionId: string): void {

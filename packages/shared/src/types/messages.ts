@@ -26,6 +26,8 @@ export type WSMessageType =
   | 'server:pty_data'
   | 'server:pty_resize'
   | 'server:pty_close'
+  | 'server:fs_request'
+  | 'agent:fs_result'
   | 'client:subscribe'
   | 'client:command'
   | 'client:ai_chat'
