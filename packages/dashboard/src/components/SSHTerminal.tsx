@@ -29,12 +29,14 @@ function getFreshToken(): string {
 }
 
 export function SSHTerminal({ config, deviceId, onClose }: Props) {
-  const termRef        = useRef<HTMLDivElement>(null)
-  const termInstance   = useRef<Terminal | null>(null)
-  const fitAddon       = useRef<FitAddon | null>(null)
-  const wsRef          = useRef<WebSocket | null>(null)
-  const connectingRef  = useRef(false)
-  const configRef      = useRef<SSHConfig | null>(null)
+  const termRef           = useRef<HTMLDivElement>(null)
+  const termInstance      = useRef<Terminal | null>(null)
+  const fitAddon          = useRef<FitAddon | null>(null)
+  const wsRef             = useRef<WebSocket | null>(null)
+  const connectingRef     = useRef(false)
+  const configRef         = useRef<SSHConfig | null>(null)
+  const dataDisposableRef   = useRef<{ dispose(): void } | null>(null)
+  const resizeDisposableRef = useRef<{ dispose(): void } | null>(null)
 
   const [status,    setStatus]    = useState<'idle' | 'connecting' | 'connected' | 'error' | 'closed'>('idle')
   const [errorMsg,  setErrorMsg]  = useState('')
@@ -88,6 +90,10 @@ export function SSHTerminal({ config, deviceId, onClose }: Props) {
     if (connectingRef.current) return
     connectingRef.current = true
 
+    // Detach old data/resize listeners before reconnecting
+    dataDisposableRef.current?.dispose();   dataDisposableRef.current   = null
+    resizeDisposableRef.current?.dispose(); resizeDisposableRef.current = null
+
     // Close any existing connection first
     if (wsRef.current) {
       wsRef.current.onclose = null
@@ -124,14 +130,17 @@ export function SSHTerminal({ config, deviceId, onClose }: Props) {
         if (msg.type === 'ssh:connected') {
           setStatus('connected')
           term.writeln('\x1b[32m  ✓ متصل بنجاح!\x1b[0m\r\n')
-          term.onData((data) => {
+
+          dataDisposableRef.current = term.onData((data) => {
             if (ws.readyState === WebSocket.OPEN)
-              ws.send(JSON.stringify({ type: 'ssh:data', payload: { data: btoa(data) } }))
+              ws.send(JSON.stringify({ type: 'ssh:data', payload: { data: btoa(unescape(encodeURIComponent(data))) } }))
           })
-          term.onResize(({ rows, cols }) => {
+
+          resizeDisposableRef.current = term.onResize(({ rows, cols }) => {
             if (ws.readyState === WebSocket.OPEN)
               ws.send(JSON.stringify({ type: 'ssh:resize', payload: { rows, cols } }))
           })
+
           fitAddon.current?.fit()
         }
 

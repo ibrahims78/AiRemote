@@ -3758,6 +3758,7 @@ var import_os2 = __toESM(require("os"));
 var import_fs = __toESM(require("fs"));
 var import_child_process = require("child_process");
 var lastNetworkBytes = { rx: 0, tx: 0, time: Date.now() };
+var networkInitialized = false;
 async function getDeviceStats() {
   const cpuPercent = await getCpuUsage();
   const memInfo = getMemoryInfo();
@@ -3850,11 +3851,15 @@ function readRawNetworkBytes() {
       const lines = content.trim().split("\n").slice(2);
       let rx = 0, tx = 0;
       for (const line of lines) {
-        const parts = line.trim().split(/\s+/);
-        const iface = parts[0].replace(":", "");
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const colonPos = trimmed.indexOf(":");
+        if (colonPos === -1) continue;
+        const iface = trimmed.slice(0, colonPos).trim();
         if (iface === "lo") continue;
-        rx += parseInt(parts[1]) || 0;
-        tx += parseInt(parts[9]) || 0;
+        const nums = trimmed.slice(colonPos + 1).trim().split(/\s+/).map(Number);
+        rx += nums[0] || 0;
+        tx += nums[8] || 0;
       }
       return { rx, tx };
     }
@@ -3880,10 +3885,15 @@ function readRawNetworkBytes() {
 function getNetworkInfo() {
   const now = Date.now();
   const bytes = readRawNetworkBytes();
+  if (!networkInitialized) {
+    networkInitialized = true;
+    lastNetworkBytes = { rx: bytes.rx, tx: bytes.tx, time: now };
+    return { downKbps: 0, upKbps: 0 };
+  }
   const elapsed = (now - lastNetworkBytes.time) / 1e3;
   let downKbps = 0;
   let upKbps = 0;
-  if (elapsed > 0 && (bytes.rx !== 0 || bytes.tx !== 0)) {
+  if (elapsed > 0 && bytes.rx >= lastNetworkBytes.rx && bytes.tx >= lastNetworkBytes.tx) {
     const rxDiff = bytes.rx - lastNetworkBytes.rx;
     const txDiff = bytes.tx - lastNetworkBytes.tx;
     downKbps = Math.max(0, Math.round(rxDiff / elapsed / 1024));
@@ -4269,30 +4279,28 @@ var AgentService = class {
             result = await this.listWindowsDrives();
           } else {
             const entries = await import_promises.default.readdir(osPath, { withFileTypes: true });
-            result = await Promise.all(entries.map(async (e) => {
+            const settled = await Promise.allSettled(entries.map(async (e) => {
               const fullPath = import_path.default.join(osPath, e.name);
               const webPath = (p.path === "/" ? "" : p.path) + "/" + e.name;
-              try {
-                const stat = await import_promises.default.stat(fullPath);
-                return {
-                  name: e.name,
-                  path: webPath,
-                  isDirectory: e.isDirectory(),
-                  size: stat.size,
-                  modified: stat.mtime.toISOString(),
-                  permissions: (stat.mode & 511).toString(8)
-                };
-              } catch {
-                return {
-                  name: e.name,
-                  path: webPath,
-                  isDirectory: e.isDirectory(),
-                  size: 0,
-                  modified: (/* @__PURE__ */ new Date()).toISOString(),
-                  permissions: "---"
-                };
-              }
+              const statResult = await Promise.race([
+                import_promises.default.lstat(fullPath),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("stat timeout")), 3e3))
+              ]);
+              return {
+                name: e.name,
+                path: webPath,
+                isDirectory: e.isDirectory() || statResult.isDirectory(),
+                size: statResult.size,
+                modified: statResult.mtime.toISOString(),
+                permissions: (statResult.mode & 511).toString(8)
+              };
             }));
+            result = settled.map((r, i) => {
+              if (r.status === "fulfilled") return r.value;
+              const e = entries[i];
+              const webPath = (p.path === "/" ? "" : p.path) + "/" + e.name;
+              return { name: e.name, path: webPath, isDirectory: e.isDirectory(), size: 0, modified: new Date().toISOString(), permissions: "---" };
+            });
           }
           break;
         }

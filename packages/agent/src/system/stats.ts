@@ -4,6 +4,7 @@ import { execSync } from 'child_process'
 import type { DeviceStats } from '@airemote/shared'
 
 let lastNetworkBytes = { rx: 0, tx: 0, time: Date.now() }
+let networkInitialized = false
 
 export async function getDeviceStats(): Promise<DeviceStats> {
   const cpuPercent = await getCpuUsage()
@@ -107,15 +108,22 @@ function readRawNetworkBytes(): { rx: number; tx: number } {
   try {
     if (process.platform === 'linux') {
       // /proc/net/dev columns: iface rx_bytes rx_pkts ... tx_bytes (col 9) tx_pkts ...
+      // Some kernels write "eth0:12345" (no space), others write "eth0: 12345" (with space)
       const content = fs.readFileSync('/proc/net/dev', 'utf8')
       const lines   = content.trim().split('\n').slice(2)
       let rx = 0, tx = 0
       for (const line of lines) {
-        const parts = line.trim().split(/\s+/)
-        const iface = parts[0].replace(':', '')
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        const colonPos = trimmed.indexOf(':')
+        if (colonPos === -1) continue
+        const iface = trimmed.slice(0, colonPos).trim()
         if (iface === 'lo') continue
-        rx += parseInt(parts[1])  || 0
-        tx += parseInt(parts[9])  || 0
+        // Everything after the colon are the numeric values
+        const nums = trimmed.slice(colonPos + 1).trim().split(/\s+/).map(Number)
+        // nums[0]=rx_bytes, nums[1]=rx_pkts, ...nums[8]=tx_bytes
+        rx += nums[0] || 0
+        tx += nums[8] || 0
       }
       return { rx, tx }
     }
@@ -141,14 +149,21 @@ function readRawNetworkBytes(): { rx: number; tx: number } {
 }
 
 function getNetworkInfo(): { downKbps: number; upKbps: number } {
-  const now    = Date.now()
-  const bytes  = readRawNetworkBytes()
-  const elapsed = (now - lastNetworkBytes.time) / 1000
+  const now   = Date.now()
+  const bytes = readRawNetworkBytes()
 
+  // First call: just record baseline and return 0 (avoid giant diff from cumulative bytes)
+  if (!networkInitialized) {
+    networkInitialized = true
+    lastNetworkBytes = { rx: bytes.rx, tx: bytes.tx, time: now }
+    return { downKbps: 0, upKbps: 0 }
+  }
+
+  const elapsed = (now - lastNetworkBytes.time) / 1000
   let downKbps = 0
   let upKbps   = 0
 
-  if (elapsed > 0 && (bytes.rx !== 0 || bytes.tx !== 0)) {
+  if (elapsed > 0 && bytes.rx >= lastNetworkBytes.rx && bytes.tx >= lastNetworkBytes.tx) {
     const rxDiff = bytes.rx - lastNetworkBytes.rx
     const txDiff = bytes.tx - lastNetworkBytes.tx
     downKbps = Math.max(0, Math.round(rxDiff / elapsed / 1024))

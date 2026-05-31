@@ -38,8 +38,8 @@ export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
   const fitAddon      = useRef<FitAddon | null>(null)
   const wsRef         = useRef<WebSocket | null>(null)
   const connectingRef = useRef(false)
-  const dataHandlerRef   = useRef<((data: string) => void) | null>(null)
-  const resizeHandlerRef = useRef<((size: { rows: number; cols: number }) => void) | null>(null)
+  const dataDisposableRef   = useRef<{ dispose(): void } | null>(null)
+  const resizeDisposableRef = useRef<{ dispose(): void } | null>(null)
 
   const [status,     setStatus]     = useState<Status>('idle')
   const [errorMsg,   setErrorMsg]   = useState('')
@@ -108,8 +108,8 @@ export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
     }
 
     // Detach old listeners
-    if (dataHandlerRef.current)   { termInstance.current?.offData?.(dataHandlerRef.current);   dataHandlerRef.current   = null }
-    if (resizeHandlerRef.current) { termInstance.current?.offResize?.(resizeHandlerRef.current); resizeHandlerRef.current = null }
+    dataDisposableRef.current?.dispose();   dataDisposableRef.current   = null
+    resizeDisposableRef.current?.dispose(); resizeDisposableRef.current = null
 
     const term = termInstance.current
     setStatus('connecting')
@@ -145,20 +145,16 @@ export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
           term.writeln('\x1b[32m  ✓ Shell جاهز!\x1b[0m\r\n')
 
           // Keyboard → server
-          const dataHandler = (data: string) => {
+          dataDisposableRef.current = term.onData((data) => {
             if (ws.readyState === WebSocket.OPEN)
               ws.send(JSON.stringify({ type: 'pty:data', payload: { data: btoa(unescape(encodeURIComponent(data))) } }))
-          }
-          dataHandlerRef.current = dataHandler
-          term.onData(dataHandler)
+          })
 
           // Resize → server
-          const resizeHandler = ({ rows, cols }: { rows: number; cols: number }) => {
+          resizeDisposableRef.current = term.onResize(({ rows, cols }) => {
             if (ws.readyState === WebSocket.OPEN)
               ws.send(JSON.stringify({ type: 'pty:resize', payload: { rows, cols } }))
-          }
-          resizeHandlerRef.current = resizeHandler
-          term.onResize(resizeHandler)
+          })
 
           fitAddon.current?.fit()
         }

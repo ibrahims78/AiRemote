@@ -358,27 +358,29 @@ export class AgentService {
             result = await this.listWindowsDrives()
           } else {
             const entries = await fs.readdir(osPath, { withFileTypes: true })
-            result = await Promise.all(entries.map(async (e) => {
+            const settled = await Promise.allSettled(entries.map(async (e) => {
               const fullPath = path.join(osPath, e.name)
               const webPath = (p.path === '/' ? '' : p.path) + '/' + e.name
-              try {
-                const stat = await fs.stat(fullPath)
-                return {
-                  name: e.name,
-                  path: webPath,
-                  isDirectory: e.isDirectory(),
-                  size: stat.size,
-                  modified: stat.mtime.toISOString(),
-                  permissions: (stat.mode & 0o777).toString(8)
-                }
-              } catch {
-                return {
-                  name: e.name, path: webPath,
-                  isDirectory: e.isDirectory(), size: 0,
-                  modified: new Date().toISOString(), permissions: '---'
-                }
+              // Use lstat (never follows symlinks) to avoid hangs on broken mounts
+              const statResult = await Promise.race([
+                fs.lstat(fullPath),
+                new Promise<null>((_, reject) => setTimeout(() => reject(new Error('stat timeout')), 3000))
+              ]) as Awaited<ReturnType<typeof fs.lstat>>
+              return {
+                name: e.name,
+                path: webPath,
+                isDirectory: e.isDirectory() || statResult.isDirectory(),
+                size: statResult.size,
+                modified: statResult.mtime.toISOString(),
+                permissions: (statResult.mode & 0o777).toString(8)
               }
             }))
+            result = settled.map((r, i) => {
+              if (r.status === 'fulfilled') return r.value
+              const e = entries[i]
+              const webPath = (p.path === '/' ? '' : p.path) + '/' + e.name
+              return { name: e.name, path: webPath, isDirectory: e.isDirectory(), size: 0, modified: new Date().toISOString(), permissions: '---' }
+            })
           }
           break
         }
