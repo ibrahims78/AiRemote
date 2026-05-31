@@ -16,18 +16,28 @@
 
 | النسخة | الملف | الحجم | المنصة | الوصف |
 |--------|-------|-------|--------|-------|
-| 🖥️ **Windows EXE** | `agent-headless/AiRemote-Agent-v1.4.0-win-x64.exe` | ~36 MB | Windows x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
+| 🪟 **Windows GUI** | `agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.zip` | ~103 MB | Windows x64 | تطبيق سطح مكتب + System Tray — فُك الضغط وشغّل |
+| 🖥️ **Windows CLI** | `agent-headless/AiRemote-Agent-v1.4.0-win-x64.exe` | ~36 MB | Windows x64 | ملف تنفيذي مستقل — سطر أوامر، لا يحتاج Node.js |
 | 🐧 **Linux Binary** | `agent-headless/AiRemote-Agent-v1.4.0-linux-x64` | ~45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
-| 📜 **Node.js Script** | `agent-script/agent-v1.4.0.js` | ~500 KB | أي نظام | يتطلب Node.js 18+ |
-| 📦 **Script ZIP** | `agent-script/agent-script-v1.4.0.zip` | ~500 KB | أي نظام | Script + start.bat + start.sh |
+| 📜 **Node.js Script** | `agent-script/agent-v1.4.0.js` | ~168 KB | أي نظام | يتطلب Node.js 18+ |
+| 📦 **Script ZIP** | `agent-script/agent-script-v1.4.0.zip` | ~168 KB | أي نظام | Script + start.bat + start.sh |
 
-> 💡 **الموصى به للمبتدئين:** نسخة EXE لـ Windows أو Binary لـ Linux — تعمل مباشرة بدون أي متطلبات إضافية.
+> 💡 **للمبتدئين على Windows:** نسخة GUI (واجهة رسومية) — فُك الضغط وشغّل مباشرة.
+> 💡 **للخوادم وسطر الأوامر:** نسخة CLI لـ Windows أو Binary لـ Linux.
 
 ---
 
 ## 🚀 التشغيل السريع
 
-### Windows (EXE)
+### 🪟 Windows GUI (تطبيق سطح المكتب)
+```
+1. فُك الضغط عن AiRemote-Agent-v1.4.0-Windows-x64.zip
+2. شغّل "AiRemote Agent.exe"
+3. أدخل عنوان الخادم والـ Token من واجهة التطبيق
+4. اضغط "تشغيل" — يظهر الـ Agent في System Tray
+```
+
+### 🖥️ Windows CLI (سطر الأوامر)
 ```cmd
 :: 1. انسخ عنوان الخادم من لوحة التحكم > الإعدادات
 :: 2. شغّل الأمر:

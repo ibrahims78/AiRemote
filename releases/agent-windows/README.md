@@ -1,58 +1,116 @@
-# AiRemote Agent — Desktop (Windows GUI)
+# AiRemote Agent — Windows Desktop (GUI)
 
-نسخة سطح المكتب مع واجهة رسومية كاملة.
+تطبيق سطح مكتب Windows كامل مع System Tray. مبني بـ Electron — لا يحتاج Node.js.
 
-| الملف | الإصدار | الحجم |
-|-------|---------|-------|
-| `AiRemote-Agent-v1.4.0-Windows-x64.exe` | **v1.4.0** | ~67 MB (يُبنى من المصدر) |
+A full **Windows GUI desktop application** with System Tray integration. Built with Electron — no Node.js required.
 
-## المميزات
-- واجهة رسومية احترافية
-- تبويبات: الاتصال، SSH، الموارد، السجل
-- مراقبة موارد الجهاز (CPU / RAM / Disk / Network)
-- سجل أحداث مباشر مع تصدير `.txt`
-- الإخفاء في شريط المهام (System Tray)
-- دعم عربي/إنجليزي + وضع مظلم/فاتح
-- شريط تفاصيل الجلسة: hostname + وقت الجلسة + شارة PTY
+---
 
-## الاستخدام
-1. شغّل الـ exe مباشرة (بدون تثبيت)
-2. أدخل **Server URL** و **Device Token** من الـ Dashboard
-3. اضغط **تشغيل**
+## 📦 الملفات / Files
 
-## بناء من المصدر
+| الملف / File | الحجم / Size | الوصف / Description |
+|---|---|---|
+| `AiRemote-Agent-v1.4.0-Windows-x64.zip` | ~103 MB | Full desktop app — extract ZIP and run |
+| `win-unpacked/` | — | Raw unpacked Electron build |
+
+---
+
+## 🚀 التشغيل السريع / Quick Start
+
+**العربية:**
+1. حمّل `AiRemote-Agent-v1.4.0-Windows-x64.zip`
+2. فُك الضغط إلى أي مجلد (مثل `C:\AiRemote\`)
+3. شغّل `AiRemote Agent.exe`
+4. أدخل **عنوان الخادم** (WebSocket) و **Device Token** من الـ Dashboard
+5. اضغط **تشغيل** — يتصل الـ Agent ويظهر في شريط المهام (System Tray)
+
+**English:**
+1. Download `AiRemote-Agent-v1.4.0-Windows-x64.zip`
+2. Extract to any folder (e.g. `C:\AiRemote\`)
+3. Run `AiRemote Agent.exe`
+4. Enter your **Server URL** (WebSocket) and **Device Token** from the dashboard
+5. Click **Start** — the agent connects and appears in the System Tray
+
+---
+
+## ✨ المميزات / Features
+
+| الميزة | Description |
+|--------|-------------|
+| **System Tray** | يعمل في الخلفية — انقر بالزر الأيمن لفتح/إغلاق |
+| **Auto-Start** | إعادة الاتصال تلقائياً عند فتح البرنامج |
+| **PTY Terminal** | PowerShell / CMD كامل من الـ Dashboard |
+| **File Browser** | تصفح ورفع وتنزيل الملفات |
+| **SSH Access** | إعدادات SSH للاتصال من الخادم |
+| **Device Stats** | CPU / RAM / Disk في الوقت الفعلي |
+| **Arabic / English** | واجهة ثنائية اللغة مع RTL |
+| **Dark / Light Theme** | تبديل من شريط العنوان |
+
+---
+
+## 🔧 التشغيل التلقائي مع Windows / Auto-Start
+
+```
+Win + R  →  shell:startup
+```
+أنشئ اختصاراً لـ `AiRemote Agent.exe` في هذا المجلد.
+
+أو عبر Registry:
+```
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+Name: AiRemoteAgent
+Value: "C:\AiRemote\AiRemote Agent.exe"
+```
+
+---
+
+## 🔨 بناء من المصدر / Build from Source
 
 ```bash
 cd packages/agent-desktop
-npm install
-npx electron-builder --win --x64 --config.win.target=portable
-# الناتج: releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe
+pnpm install
+CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --dir
+# ثم:
+python3 -c "
+import zipfile, os
+src = '../../releases/agent-windows/win-unpacked'
+dst = '../../releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.zip'
+with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for r, d, files in os.walk(src):
+        for f in files:
+            fp = os.path.join(r, f)
+            zf.write(fp, os.path.relpath(fp, src))
+print('Done:', os.path.getsize(dst), 'bytes')
+"
 ```
 
-### من monorepo (pnpm)
-```bash
-pnpm install
-pnpm --filter airemote-agent-desktop build:portable
-```
+---
+
+## 📋 المتطلبات / Requirements
+
+- Windows 10 / 11 (64-bit)
+- لا يحتاج Node.js — Electron مدمج / No additional runtime — Electron is bundled
+- اتصال شبكة بخادم AiRemote / Network access to your AiRemote server
 
 ---
 
 ## ما الجديد في v1.4.0
 
-### ميزات جديدة
-- ✅ **تصفح الملفات** من الـ Dashboard بدون SSH
-- ✅ **رفع وتنزيل الملفات** عبر اتصال الوكيل
-- ✅ **Terminal PTY** — نفق نصي مستقر
+| الميزة | الوصف |
+|--------|-------|
+| تصفح الملفات | من الـ Dashboard بدون SSH |
+| رفع وتنزيل الملفات | عبر اتصال الوكيل |
+| Terminal PTY | نفق نصي مستقر عبر PowerShell/CMD |
 
-### إصلاحات الاستقرار
-- ✅ **إصلاح إحصائيات الشبكة** — قراءة صحيحة على جميع توزيعات Linux؛ أول استدعاء لا يُظهر أرقامًا خيالية
-- ✅ **إصلاح SSH Terminal** — ترميز صحيح لجميع الأحرف (عربي، Unicode)
-- ✅ **إصلاح تبويب الملفات** — يمنع التجمّد مع symlinks ومسارات النظام الخاصة
+---
 
-## تاريخ الإصدارات
+## 🔗 الإصدارات الأخرى / Other Releases
 
-| الإصدار | التاريخ | الأهم |
-|---------|---------|-------|
-| v1.4.0 | 2026-05 | تصفح الملفات، PTY، إصلاحات استقرار |
-| v1.3.0 | 2026-05 | مؤشر اتصال احترافي، SSH banner، شريط تفاصيل الجلسة |
-| v1.1.0 | 2025 | قسم مفتاح SSH، IP العام، سجل مرن |
+| Platform | Type | File |
+|----------|------|------|
+| Windows | CLI Headless | `../agent-headless/AiRemote-Agent-v1.4.0-win-x64.exe` |
+| Linux | CLI Headless | `../agent-headless/AiRemote-Agent-v1.4.0-linux-x64` |
+| Any | Node.js Script | `../agent-script/agent-v1.4.0.js` |
+| Any | Script ZIP | `../agent-script/agent-script-v1.4.0.zip` |
+
+See [releases/README.md](../README.md) for the full release matrix.
