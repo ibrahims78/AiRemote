@@ -64,6 +64,7 @@ NODE_ENV = "development"
 LOG_LEVEL = "info"
 DB_PATH = "./data/airemote.db"
 DASHBOARD_URL = "true"
+JWT_SECRET = "d974b67917e5d3dc59f11c95d08f878b6bcd1434d9d20a26910eb20243d4e7992a3e8ce5058ad904f5a5402043788f63d93368f3ee05d30171a28ab7ee0efc2b"
 
 [nix]
 channel = "stable-25_05"
