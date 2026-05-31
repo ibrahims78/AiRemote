@@ -1,12 +1,12 @@
 # AiRemote Agent — Releases
 
-## الملفات المتاحة
+## أحدث الملفات المتاحة
 
 | الملف | الإصدار | الوصف |
 |-------|---------|-------|
-| `agent-windows/AiRemote-Agent-v1.3.0-source.zip` | v1.3.0 | مصدر البناء (يتطلب electron-builder على Windows/macOS/CI) |
-| `agent-headless/AiRemote-Agent-Headless-v1.1.0-Windows-x64.exe` | v1.1.0 | بدون واجهة — يعمل كـ service |
-| `agent-script/AiRemote-Agent-Script-v1.1.0.zip` | v1.1.0 | يتطلب Node.js 18+ |
+| `agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe` | v1.4.0 | واجهة رسومية كاملة (يُبنى من المصدر) |
+| `agent-headless/AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe` | v1.4.0 | بدون واجهة — يعمل كـ service |
+| `agent-script/agent-v1.4.0.js` | v1.4.0 | يتطلب Node.js 18+ |
 
 ## النسخ المتاحة
 
@@ -14,54 +14,50 @@
 |--------|--------|-------|
 | 🖥 Desktop (GUI) | `agent-windows/` | واجهة رسومية + SSH + موارد الجهاز |
 | ⚙ Headless (CLI) | `agent-headless/` | بدون واجهة، يعمل كـ Windows Service |
-| 📜 Script (Node.js) | `agent-script/` | يتطلب Node.js 18+ |
+| 📜 Script (Node.js) | `agent-script/` | يتطلب Node.js 18+ — أسهل للمطورين |
 
 ---
 
-## ما الجديد في v1.3.0
+## ما الجديد في v1.4.0
 
-### مؤشر الاتصال الاحترافي
-- ✅ **شريط تفاصيل الاتصال** — يظهر أسفل بطاقة الحالة عند الاتصال: اسم الخادم · وقت الجلسة · شارة PTY
-- ✅ **Titlebar محسّن** — يعرض hostname الخادم بجانب الحالة عند الاتصال/الاتصال
-- ✅ **تلوين ديناميكي للـ status pill** — أخضر/أصفر/أحمر حسب الحالة
-- ✅ **عداد وقت الجلسة** — يتزايد كل ثانية في شريط التفاصيل
-- ✅ **شارة PTY نشط** — تُظهر أن النفق النصي مفعّل
+### تصفح الملفات عبر الوكيل
+- ✅ **تبويب Files في الـ Dashboard** — تصفح، رفع، تنزيل، حذف، إعادة تسمية بدون SSH
+- ✅ **دعم Windows كامل** — يعرض الأقراص (C:, D:, ...) عند المسار /
+- ✅ **Terminal PTY محسّن** — نفق نصي مستقر بدون node-pty
 
-### تبويب SSH محسّن
-- ✅ **Banner توضيحي** — شرح واضح أن SSH يُنشَأ من الخادم ولا يتطلب فتح منافذ
-- ✅ **حالة SSH الحية** — شريط حالة ديناميكي يعكس اتصالات الخادم مباشرةً
-- ✅ **مفاتيح SSH** — توليد + عرض المفتاح العام/الخاص + نسخ بضغطة واحدة
-
-### تحسينات عامة
-- ✅ **زر Reconnect** في تبويب Connection للاتصال السريع
-- ✅ **تصدير السجل** — `.txt` بالتاريخ
-- ✅ **ترجمات كاملة** عربي/إنجليزي لجميع الميزات
-- ✅ **رفع الإصدار**: `package.json` + `AGENT_VERSION` → `1.3.0`
+### إصلاحات الاستقرار (v1.4.0 patch)
+- ✅ **إصلاح قراءة الشبكة** — parsing صحيح لـ `/proc/net/dev` على جميع توزيعات Linux؛ أول استدعاء لا يُظهر أرقامًا خيالية
+- ✅ **إصلاح SSH Terminal** — ترميز Unicode/عربي صحيح في الطرفية؛ لا تراكم لـ listeners عند إعادة الاتصال
+- ✅ **إصلاح تبويب الملفات** — يستخدم `lstat` و `Promise.allSettled` لتجنب التجمّد مع symlinks معطوبة
 
 ---
 
-## بناء نسخة Windows (exe)
+## بناء نسخة Windows Desktop (exe)
 
-### من المصدر — على Windows أو macOS
-
+### من المصدر على Windows أو macOS
 ```bash
-# فك ضغط AiRemote-Agent-v1.3.0-source.zip ثم:
-cd AiRemote-Agent-v1.3.0
+cd packages/agent-desktop
 npm install
 npx electron-builder --win --x64 --config.win.target=portable
-# الناتج: dist/AiRemote-Agent-v1.3.0-Windows-x64.exe
+# الناتج: releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe
+```
+
+### من monorepo (pnpm)
+```bash
+pnpm install
+pnpm --filter airemote-agent-desktop build:portable
+# الناتج: releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe
 ```
 
 ### GitHub Actions (التلقائي الموصى به)
-
 ```yaml
-# .github/workflows/build-agent-windows.yml
-name: Build Windows Agent
+# .github/workflows/build-agent.yml
+name: Build Agent
 on:
   push:
     tags: ['agent-v*']
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,16 +69,8 @@ jobs:
         working-directory: packages/agent-desktop
       - uses: actions/upload-artifact@v4
         with:
-          name: AiRemote-Agent-v1.3.0-Windows
-          path: releases/agent-windows/*.exe
-```
-
-### من monorepo (pnpm)
-
-```bash
-pnpm install
-pnpm --filter airemote-agent-desktop build:portable
-# الناتج: releases/agent-windows/AiRemote-Agent-v1.3.0-Windows-x64.exe
+          name: AiRemote-Agent-v1.4.0-Windows
+          path: releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe
 ```
 
 ---
@@ -90,12 +78,12 @@ pnpm --filter airemote-agent-desktop build:portable
 ## رفع GitHub Release
 
 ```bash
-gh release create v1.3.0 \
-  "agent-windows/AiRemote-Agent-v1.3.0-Windows-x64.exe" \
-  "agent-headless/AiRemote-Agent-Headless-v1.1.0-Windows-x64.exe" \
-  "agent-script/AiRemote-Agent-Script-v1.1.0.zip" \
-  --title "AiRemote Agent v1.3.0" \
-  --notes "Professional connection status strip, enhanced SSH tab with info banner, session uptime counter, titlebar hostname display."
+gh release create v1.4.0 \
+  "agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.exe" \
+  "agent-headless/AiRemote-Agent-Headless-v1.4.0-Windows-x64.exe" \
+  "agent-script/agent-v1.4.0.js" \
+  --title "AiRemote Agent v1.4.0" \
+  --notes "File browser via agent (no SSH), PTY terminal, network stats fix, SSH terminal Unicode fix, Files tab hang fix."
 ```
 
 ---
@@ -104,5 +92,6 @@ gh release create v1.3.0 \
 
 | الإصدار | التاريخ | الأهم |
 |---------|---------|-------|
+| v1.4.0 | 2026-05 | تصفح الملفات، PTY محسّن، إصلاحات الشبكة/SSH/الملفات |
 | v1.3.0 | 2026-05 | مؤشر اتصال احترافي، SSH banner، شريط تفاصيل الجلسة |
 | v1.1.0 | 2025 | قسم مفتاح SSH، IP العام، سجل مرن، قابلية الطي |
