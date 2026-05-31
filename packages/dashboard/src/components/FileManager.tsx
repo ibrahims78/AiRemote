@@ -53,7 +53,10 @@ export function FileManager({ deviceId, deviceName }: Props) {
     setLoading(true)
     setError('')
     try {
-      const res = await api.get(`/api/devices/${deviceId}/fs/list`, { params: { path: p } })
+      const res = await api.get(`/api/devices/${deviceId}/fs/list`, {
+        params: { path: p },
+        timeout: 15000
+      })
       const sorted = (res.data as FileEntry[]).sort((a, b) => {
         if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name)
         return a.isDirectory ? -1 : 1
@@ -61,8 +64,20 @@ export function FileManager({ deviceId, deviceName }: Props) {
       setFiles(sorted)
       setPath(p)
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: string } } }
-      setError(err.response?.data?.error || 'فشل تحميل المجلد')
+      const err = e as { response?: { data?: { error?: string } }; code?: string; message?: string }
+      const serverMsg = err.response?.data?.error || ''
+      if (
+        err.code === 'ECONNABORTED' ||
+        serverMsg.includes('مهلة') ||
+        serverMsg.includes('timeout') ||
+        serverMsg.includes('منقطع')
+      ) {
+        setError('لم يستجب الأيجنت — تأكد من تشغيل الأيجنت على الجهاز والاتصال بالخادم')
+      } else if (err.response?.data?.error?.includes('غير متصل') || err.response?.status === 503) {
+        setError('الجهاز غير متصل — شغّل الأيجنت على الجهاز أولاً')
+      } else {
+        setError(serverMsg || err.message || 'فشل تحميل المجلد')
+      }
     } finally {
       setLoading(false)
     }

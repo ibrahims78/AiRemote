@@ -350,73 +350,110 @@ export class AgentService {
     opId: string; op: string; path: string; newPath?: string; data?: string
   }): Promise<void> {
     const { opId, op } = p
+    console.log(`📂 FS request: op=${op} path=${p.path}`)
+
+    // Overall operation timeout — prevents hanging fs ops from blocking forever
+    const OVERALL_TIMEOUT_MS = 8000
+    const READDIR_TIMEOUT_MS = 5000
+    const STAT_TIMEOUT_MS    = 2000
+
+    const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+      Promise.race([
+        promise,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+        )
+      ])
+
     try {
       let result: unknown
       const osPath = this.toOsPath(p.path)
 
-      switch (op) {
-        case 'list': {
-          if (p.path === '/' && process.platform === 'win32') {
-            result = await this.listWindowsDrives()
-          } else {
-            const entries = await fs.readdir(osPath, { withFileTypes: true })
+      const doOp = async (): Promise<unknown> => {
+        switch (op) {
+          case 'list': {
+            if (p.path === '/' && process.platform === 'win32') {
+              return this.listWindowsDrives()
+            }
+
+            const entries = await withTimeout(
+              fs.readdir(osPath, { withFileTypes: true }),
+              READDIR_TIMEOUT_MS,
+              `readdir(${osPath})`
+            )
+
             const settled = await Promise.allSettled(entries.map(async (e) => {
               const fullPath = path.join(osPath, e.name)
-              const webPath = (p.path === '/' ? '' : p.path) + '/' + e.name
-              // Use lstat (never follows symlinks) to avoid hangs on broken mounts
-              const statResult = await Promise.race([
-                fs.lstat(fullPath),
-                new Promise<null>((_, reject) => setTimeout(() => reject(new Error('stat timeout')), 3000))
-              ]) as Awaited<ReturnType<typeof fs.lstat>>
-              return {
-                name: e.name,
-                path: webPath,
-                isDirectory: e.isDirectory() || statResult.isDirectory(),
-                size: statResult.size,
-                modified: statResult.mtime.toISOString(),
-                permissions: (Number(statResult.mode) & 0o777).toString(8)
+              const webPath  = (p.path === '/' ? '' : p.path) + '/' + e.name
+
+              let size = 0, modified = new Date().toISOString(), permissions = '---'
+              let isDir = e.isDirectory()
+
+              try {
+                const stat = await withTimeout(
+                  fs.lstat(fullPath),
+                  STAT_TIMEOUT_MS,
+                  `lstat(${fullPath})`
+                )
+                size        = stat.size
+                modified    = stat.mtime.toISOString()
+                permissions = (Number(stat.mode) & 0o777).toString(8)
+                isDir       = isDir || stat.isDirectory()
+              } catch {
+                // Stat failed or timed out — return partial entry
               }
+
+              return { name: e.name, path: webPath, isDirectory: isDir, size, modified, permissions }
             }))
-            result = settled.map((r, i) => {
-              if (r.status === 'fulfilled') return r.value
-              const e = entries[i]
-              const webPath = (p.path === '/' ? '' : p.path) + '/' + e.name
-              return { name: e.name, path: webPath, isDirectory: e.isDirectory(), size: 0, modified: new Date().toISOString(), permissions: '---' }
-            })
+
+            return settled
+              .filter(r => r.status === 'fulfilled')
+              .map(r => (r as PromiseFulfilledResult<unknown>).value)
           }
-          break
+
+          case 'read': {
+            const buf = await withTimeout(fs.readFile(osPath), OVERALL_TIMEOUT_MS, `readFile(${osPath})`)
+            return buf.toString('base64')
+          }
+
+          case 'write': {
+            const dir = path.dirname(osPath)
+            await fs.mkdir(dir, { recursive: true })
+            await withTimeout(
+              fs.writeFile(osPath, Buffer.from(p.data || '', 'base64')),
+              OVERALL_TIMEOUT_MS,
+              `writeFile(${osPath})`
+            )
+            return { ok: true }
+          }
+
+          case 'delete': {
+            await withTimeout(
+              fs.rm(osPath, { recursive: true, force: true }),
+              OVERALL_TIMEOUT_MS,
+              `rm(${osPath})`
+            )
+            return { ok: true }
+          }
+
+          case 'rename': {
+            const newOsPath = this.toOsPath(p.newPath || '')
+            await withTimeout(fs.rename(osPath, newOsPath), OVERALL_TIMEOUT_MS, `rename`)
+            return { ok: true }
+          }
+
+          case 'mkdir': {
+            await withTimeout(fs.mkdir(osPath, { recursive: true }), OVERALL_TIMEOUT_MS, `mkdir(${osPath})`)
+            return { ok: true }
+          }
+
+          default:
+            throw new Error(`عملية غير معروفة: ${op}`)
         }
-        case 'read': {
-          const buf = await fs.readFile(osPath)
-          result = buf.toString('base64')
-          break
-        }
-        case 'write': {
-          const dir = path.dirname(osPath)
-          await fs.mkdir(dir, { recursive: true })
-          await fs.writeFile(osPath, Buffer.from(p.data || '', 'base64'))
-          result = { ok: true }
-          break
-        }
-        case 'delete': {
-          await fs.rm(osPath, { recursive: true, force: true })
-          result = { ok: true }
-          break
-        }
-        case 'rename': {
-          const newOsPath = this.toOsPath(p.newPath || '')
-          await fs.rename(osPath, newOsPath)
-          result = { ok: true }
-          break
-        }
-        case 'mkdir': {
-          await fs.mkdir(osPath, { recursive: true })
-          result = { ok: true }
-          break
-        }
-        default:
-          throw new Error(`عملية غير معروفة: ${op}`)
       }
+
+      result = await withTimeout(doOp(), OVERALL_TIMEOUT_MS + 1000, `fs:${op}`)
+      console.log(`✅ FS result: op=${op} path=${p.path}`)
 
       this.send({
         type: 'agent:fs_result',
@@ -425,6 +462,7 @@ export class AgentService {
       })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
+      console.error(`❌ FS error: op=${op} path=${p.path} — ${msg}`)
       this.send({
         type: 'agent:fs_result',
         payload: { opId, error: msg },

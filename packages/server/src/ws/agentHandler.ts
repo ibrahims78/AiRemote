@@ -262,19 +262,28 @@ export function sendFsRequest(
   op: string,
   path: string,
   extra: Record<string, unknown> = {},
-  timeoutMs = 30000
+  timeoutMs = 10000
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const opId = uuidv4()
+
+    // Verify the socket is truly writable before queuing
+    const device = deviceRegistry.getDevice(deviceId)
+    if (!device || device.socket.readyState !== 1) {
+      reject(new Error('الجهاز غير متصل أو الاتصال منقطع'))
+      return
+    }
+
     const sent = deviceRegistry.sendToDevice(deviceId, {
       type: 'server:fs_request',
       payload: { opId, op, path, ...extra },
       timestamp: Date.now()
     })
     if (!sent) { reject(new Error('الجهاز غير متصل')); return }
+
     const timeout = setTimeout(() => {
       pendingFsOps.delete(opId)
-      reject(new Error('انتهت مهلة العملية'))
+      reject(new Error('انتهت مهلة الاتصال بالأيجنت — تأكد من أن الأيجنت يعمل ومتصل'))
     }, timeoutMs)
     pendingFsOps.set(opId, { resolve, reject, timeout })
   })
