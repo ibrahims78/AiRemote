@@ -363,72 +363,90 @@ function toOsPath(p) {
 }
 
 async function handleFsRequest(payload) {
-  const { requestId, action, path: reqPath, newPath, content, encoding } = payload || {}
+  const { opId, op, path: reqPath, newPath, content, encoding } = payload || {}
   const respond = (data) => send({
     type: 'agent:fs_result',
-    payload: { requestId, ...data },
+    payload: { opId, ...data },
     timestamp: Date.now()
   })
 
   try {
-    switch (action) {
+    switch (op) {
       case 'list': {
         if (reqPath === '/' || reqPath === '') {
           if (process.platform === 'win32') {
-            const drives = []
-            for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
-              try { await fsPromises.access(letter + ':\\'); drives.push({ name: letter + ':', path: letter + ':\\', type: 'directory', size: 0 }) } catch {}
+            const checkDrive = async (letter) => {
+              try {
+                await Promise.race([
+                  fsPromises.access(letter + ':\\'),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+                ])
+                return { name: letter + ':', path: '/' + letter + ':', isDirectory: true, size: 0, modified: new Date().toISOString(), permissions: '755' }
+              } catch { return null }
             }
-            return respond({ items: drives })
+            const drives = (await Promise.all('CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(checkDrive))).filter(Boolean)
+            return respond({ data: drives })
           }
-          return respond({ items: [{ name: '/', path: '/', type: 'directory', size: 0 }] })
+          return respond({ data: [{ name: '/', path: '/', isDirectory: true, size: 0, modified: new Date().toISOString(), permissions: '755' }] })
         }
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })
         const entries = await fsPromises.readdir(osp, { withFileTypes: true })
+        // Convert OS path back to web path for response
+        const toWebPath = (osFullPath) => {
+          if (process.platform !== 'win32') return osFullPath
+          return osFullPath.replace(/\\/g, '/')
+        }
         const settled = await Promise.allSettled(entries.map(async e => {
           const full = require('path').join(osp, e.name)
           const st = await Promise.race([
             fsPromises.lstat(full),
             new Promise((_, rej) => setTimeout(() => rej(new Error('stat timeout')), 3000))
           ])
-          return { name: e.name, path: full, type: e.isDirectory() || st.isDirectory() ? 'directory' : 'file', size: st.size, modified: st.mtime.toISOString() }
+          return {
+            name: e.name,
+            path: toWebPath(full),
+            isDirectory: e.isDirectory() || st.isDirectory(),
+            size: st.size,
+            modified: st.mtime.toISOString(),
+            permissions: '755'
+          }
         }))
-        const items = settled.map((r, i) => {
+        const data = settled.map((r, i) => {
           if (r.status === 'fulfilled') return r.value
           const full = require('path').join(osp, entries[i].name)
-          return { name: entries[i].name, path: full, type: entries[i].isDirectory() ? 'directory' : 'file', size: 0 }
+          return { name: entries[i].name, path: toWebPath(full), isDirectory: entries[i].isDirectory(), size: 0, modified: new Date().toISOString(), permissions: '755' }
         })
-        respond({ items })
+        respond({ data })
         break
       }
       case 'read': {
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })
         const buf = await fsPromises.readFile(osp)
-        respond({ content: buf.toString('base64'), encoding: 'base64' })
+        respond({ data: buf.toString('base64'), encoding: 'base64' })
         break
       }
       case 'write': {
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })
-        const data = encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content || '')
-        await fsPromises.writeFile(osp, data)
-        respond({ ok: true })
+        const writeData = encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content || '')
+        await fsPromises.writeFile(osp, writeData)
+        respond({ data: { ok: true } })
         break
       }
       case 'delete': {
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })
         await fsPromises.rm(osp, { recursive: true, force: true })
-        respond({ ok: true })
+        respond({ data: { ok: true } })
         break
       }
       case 'mkdir': {
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })
         await fsPromises.mkdir(osp, { recursive: true })
-        respond({ ok: true })
+        respond({ data: { ok: true } })
         break
       }
       case 'rename': {
@@ -436,18 +454,18 @@ async function handleFsRequest(payload) {
         const osp2 = toOsPath(newPath)
         if (!osp || !osp2) return respond({ error: 'Invalid path' })
         await fsPromises.rename(osp, osp2)
-        respond({ ok: true })
+        respond({ data: { ok: true } })
         break
       }
       case 'stat': {
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })
         const st = await fsPromises.stat(osp)
-        respond({ size: st.size, modified: st.mtime.toISOString(), isDirectory: st.isDirectory() })
+        respond({ data: { size: st.size, modified: st.mtime.toISOString(), isDirectory: st.isDirectory() } })
         break
       }
       default:
-        respond({ error: `Unknown action: ${action}` })
+        respond({ error: `Unknown op: ${op}` })
     }
   } catch (e) {
     respond({ error: e.message })
