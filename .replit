@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web"]
+modules = ["web", "nodejs-22"]
 [agent]
 expertMode = true
 stack = "BEST_EFFORT_FALLBACK"
@@ -64,7 +64,6 @@ NODE_ENV = "development"
 LOG_LEVEL = "info"
 DB_PATH = "./data/airemote.db"
 DASHBOARD_URL = "true"
-JWT_SECRET = "replit-airemote-jwt-secret-change-in-production"
 
 [nix]
 channel = "stable-25_05"
