@@ -1,6 +1,6 @@
 {
   "name": "airemote-agent-desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "AiRemote Agent — Windows Desktop Application",
   "author": "AiRemote <support@airemote.io>",
   "main": "main.js",
@@ -35,7 +35,12 @@
     "extraResources": [],
     "win": {
       "target": [
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.ico",
       "requestedExecutionLevel": "asInvoker",

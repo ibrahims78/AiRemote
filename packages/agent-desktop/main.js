@@ -24,7 +24,7 @@ const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
 const SSH_KEYS_FILE  = path.join(app.getPath('userData'), 'airemote-ssh-keys.json')
 const LOG_MAX        = 300
-const AGENT_VERSION  = '1.3.0'
+const AGENT_VERSION  = '1.4.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null
@@ -269,7 +269,7 @@ function doConnect() {
           info,
           stats,
           tunnelLayer: 'relay',
-          capabilities: { pty: true, sshAvailable, shell },
+          capabilities: { pty: true, sshAvailable, shell, fs: true },
           sshInfo: {
             available: sshAvailable,
             host:      sshCfg.host || info.ipLocal,
@@ -346,6 +346,104 @@ function handleMsg(msg) {
     case 'server:pty_close':
       handlePtyClose(msg.payload)
       break
+    case 'server:fs_request':
+      handleFsRequest(msg.payload)
+      break
+  }
+}
+
+// ─── File System (proxy FS) ────────────────────────────────────────────────
+const fsPromises = require('fs').promises
+
+function toOsPath(p) {
+  if (process.platform !== 'win32') return p
+  if (/^[A-Za-z]:/.test(p)) return p
+  if (p === '/' || p === '') return null
+  return p.replace(/\//g, '\\')
+}
+
+async function handleFsRequest(payload) {
+  const { requestId, action, path: reqPath, newPath, content, encoding } = payload || {}
+  const respond = (data) => send({
+    type: 'agent:fs_result',
+    payload: { requestId, ...data },
+    timestamp: Date.now()
+  })
+
+  try {
+    switch (action) {
+      case 'list': {
+        if (reqPath === '/' || reqPath === '') {
+          if (process.platform === 'win32') {
+            const drives = []
+            for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+              try { await fsPromises.access(letter + ':\\'); drives.push({ name: letter + ':', path: letter + ':\\', type: 'directory', size: 0 }) } catch {}
+            }
+            return respond({ items: drives })
+          }
+          return respond({ items: [{ name: '/', path: '/', type: 'directory', size: 0 }] })
+        }
+        const osp = toOsPath(reqPath)
+        if (!osp) return respond({ error: 'Invalid path' })
+        const entries = await fsPromises.readdir(osp, { withFileTypes: true })
+        const items = await Promise.all(entries.map(async e => {
+          try {
+            const st = await fsPromises.stat(require('path').join(osp, e.name))
+            return { name: e.name, path: require('path').join(osp, e.name), type: e.isDirectory() ? 'directory' : 'file', size: st.size, modified: st.mtime.toISOString() }
+          } catch { return { name: e.name, path: require('path').join(osp, e.name), type: e.isDirectory() ? 'directory' : 'file', size: 0 } }
+        }))
+        respond({ items })
+        break
+      }
+      case 'read': {
+        const osp = toOsPath(reqPath)
+        if (!osp) return respond({ error: 'Invalid path' })
+        const buf = await fsPromises.readFile(osp)
+        respond({ content: buf.toString('base64'), encoding: 'base64' })
+        break
+      }
+      case 'write': {
+        const osp = toOsPath(reqPath)
+        if (!osp) return respond({ error: 'Invalid path' })
+        const data = encoding === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content || '')
+        await fsPromises.writeFile(osp, data)
+        respond({ ok: true })
+        break
+      }
+      case 'delete': {
+        const osp = toOsPath(reqPath)
+        if (!osp) return respond({ error: 'Invalid path' })
+        await fsPromises.rm(osp, { recursive: true, force: true })
+        respond({ ok: true })
+        break
+      }
+      case 'mkdir': {
+        const osp = toOsPath(reqPath)
+        if (!osp) return respond({ error: 'Invalid path' })
+        await fsPromises.mkdir(osp, { recursive: true })
+        respond({ ok: true })
+        break
+      }
+      case 'rename': {
+        const osp = toOsPath(reqPath)
+        const osp2 = toOsPath(newPath)
+        if (!osp || !osp2) return respond({ error: 'Invalid path' })
+        await fsPromises.rename(osp, osp2)
+        respond({ ok: true })
+        break
+      }
+      case 'stat': {
+        const osp = toOsPath(reqPath)
+        if (!osp) return respond({ error: 'Invalid path' })
+        const st = await fsPromises.stat(osp)
+        respond({ size: st.size, modified: st.mtime.toISOString(), isDirectory: st.isDirectory() })
+        break
+      }
+      default:
+        respond({ error: `Unknown action: ${action}` })
+    }
+  } catch (e) {
+    respond({ error: e.message })
   }
 }
 
@@ -462,7 +560,7 @@ async function startHeartbeat() {
         type: 'agent:heartbeat',
         payload: {
           deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now(),
-          capabilities: { pty: true, sshAvailable }
+          capabilities: { pty: true, sshAvailable, fs: true }
         },
         timestamp: Date.now()
       })
