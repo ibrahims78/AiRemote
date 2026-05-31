@@ -56,7 +56,7 @@ export async function handleAgentMessage(
         timestamp: Date.now()
       }))
 
-      deviceRegistry.broadcastDeviceStatus(device.id, 'online', payload.tunnelLayer, caps)
+      deviceRegistry.broadcastDeviceStatus(device.id, 'online', payload.tunnelLayer, caps, payload.info)
       fireDeviceOnlineAlert(device.id).catch(() => {})
 
       console.log(`✅ Agent registered: ${device.name} (${device.id}) v${payload.info?.agentVersion || '?'} from ${clientIp}`)

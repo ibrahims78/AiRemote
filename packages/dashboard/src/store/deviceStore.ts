@@ -8,6 +8,7 @@ interface DeviceState {
   loading: boolean
   fetchDevices: () => Promise<void>
   updateDeviceStatus: (id: string, status: DeviceStatus, tunnelLayer?: TunnelLayer) => void
+  updateDeviceInfo: (id: string, info: Device['info']) => void
   updateDeviceStats: (id: string, stats: DeviceStats) => void
   addDevice: (name: string) => Promise<Device>
   deleteDevice: (id: string) => Promise<void>
@@ -32,6 +33,15 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     set(state => ({
       devices: state.devices.map(d =>
         d.id === id ? { ...d, status, tunnelLayer: tunnelLayer ?? d.tunnelLayer } : d
+      )
+    }))
+  },
+
+  updateDeviceInfo: (id, info) => {
+    if (!info) return
+    set(state => ({
+      devices: state.devices.map(d =>
+        d.id === id ? { ...d, info } : d
       )
     }))
   },

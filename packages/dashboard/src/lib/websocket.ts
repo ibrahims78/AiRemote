@@ -39,16 +39,15 @@ export function connectWebSocket(userId: string, token: string, onMessage?: Mess
   ws.onmessage = (event) => {
     try {
       const msg: WsMessage = JSON.parse(event.data)
-      const { updateDeviceStatus, updateDeviceStats } = useDeviceStore.getState()
+      const { updateDeviceStatus, updateDeviceStats, updateDeviceInfo } = useDeviceStore.getState()
 
       switch (msg.type) {
-        case 'broadcast:device_update':
-          updateDeviceStatus(
-            (msg.payload as { deviceId: string }).deviceId,
-            (msg.payload as { status: string }).status as DeviceStatus,
-            (msg.payload as { tunnelLayer?: string }).tunnelLayer as TunnelLayer | undefined
-          )
+        case 'broadcast:device_update': {
+          const p = msg.payload as { deviceId: string; status: string; tunnelLayer?: string; info?: unknown }
+          updateDeviceStatus(p.deviceId, p.status as DeviceStatus, p.tunnelLayer as TunnelLayer | undefined)
+          if (p.info) updateDeviceInfo(p.deviceId, p.info as Parameters<typeof updateDeviceInfo>[1])
           break
+        }
         case 'broadcast:stats_update':
           updateDeviceStats(
             (msg.payload as { deviceId: string }).deviceId,

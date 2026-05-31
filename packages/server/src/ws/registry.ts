@@ -128,10 +128,10 @@ class DeviceRegistry {
     }
   }
 
-  broadcastDeviceStatus(deviceId: string, status: string, tunnelLayer?: string, capabilities?: AgentCapabilities): void {
+  broadcastDeviceStatus(deviceId: string, status: string, tunnelLayer?: string, capabilities?: AgentCapabilities, info?: unknown): void {
     const msg = JSON.stringify({
       type: 'broadcast:device_update',
-      payload: { deviceId, status, tunnelLayer, capabilities },
+      payload: { deviceId, status, tunnelLayer, capabilities, info },
       timestamp: Date.now()
     })
     for (const [, client] of this.clients) {
