@@ -24,7 +24,7 @@ const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
 const SSH_KEYS_FILE  = path.join(app.getPath('userData'), 'airemote-ssh-keys.json')
 const LOG_MAX        = 300
-const AGENT_VERSION  = '1.2.0'
+const AGENT_VERSION  = '1.3.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null

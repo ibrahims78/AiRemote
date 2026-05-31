@@ -14,6 +14,7 @@ const LANG = {
     stop:           'إيقاف',
     reconnect:      'إعادة الاتصال',
     tabConn:        'الاتصال',
+    tabSsh:         'SSH',
     serverUrl:      'عنوان الخادم (WebSocket)',
     serverHint:     'مثال: wss://myserver.replit.app/ws',
     deviceToken:    'Device Token',
@@ -31,6 +32,9 @@ const LANG = {
     localIp:        'IP المحلي',
     publicIp:       'IP الإنترنت',
     server:         'الخادم',
+    connServer:     'الخادم',
+    sessionTime:    'وقت الجلسة',
+    active:         'نشط',
     errNoConfig:    '⚠ أدخل عنوان الخادم والـ Token أولاً',
     errNeedWs:      '⚠ العنوان يجب أن يبدأ بـ ws:// أو wss://',
     titleConnecting: 'جاري الاتصال...',
@@ -71,6 +75,8 @@ const LANG = {
     keyInstructionPublic:  'أضف هذا المفتاح العام إلى ملف authorized_keys على هذا الجهاز',
     keyInstructionPrivate: 'أعطِ هذا المفتاح الخاص للخادم — الاتصال يُنشأ من طرف الخادم فقط',
     noKeyGenerated:  'لا يوجد مفتاح — اضغط "توليد مفتاح"',
+    sshBannerText:   'هذه الإعدادات تُمكّن الخادم من الاتصال بهذا الجهاز عبر SSH مباشرةً. الاتصال يُنشأ من الخادم فقط — لا حاجة لفتح منفذ من طرفك.',
+    connectedToast:  'تم الاتصال بالخادم',
   },
   en: {
     stopped:        'Stopped',
@@ -83,6 +89,7 @@ const LANG = {
     stop:           'Stop',
     reconnect:      'Reconnect',
     tabConn:        'Connection',
+    tabSsh:         'SSH',
     serverUrl:      'Server URL (WebSocket)',
     serverHint:     'Example: wss://myserver.replit.app/ws',
     deviceToken:    'Device Token',
@@ -100,6 +107,9 @@ const LANG = {
     localIp:        'Local IP',
     publicIp:       'Public IP',
     server:         'Server',
+    connServer:     'Server',
+    sessionTime:    'Session',
+    active:         'Active',
     errNoConfig:    '⚠ Enter server URL and Token first',
     errNeedWs:      '⚠ URL must start with ws:// or wss://',
     titleConnecting: 'Connecting...',
@@ -140,6 +150,8 @@ const LANG = {
     keyInstructionPublic:  'Add this public key to authorized_keys on this device',
     keyInstructionPrivate: 'Give this private key to the server — connection is initiated by the server only',
     noKeyGenerated:  'No key — click "Generate Key"',
+    sshBannerText:   'These settings allow the server to connect to this device via SSH directly. The connection is always initiated from the server side — no port forwarding needed.',
+    connectedToast:  'Connected to server',
   }
 }
 
@@ -204,7 +216,6 @@ $('btn-lang').addEventListener('click',  () => applyLang(currentLang  === 'ar' ?
 $('btn-theme').addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark'))
 
 // ─── Collapsible Sections ──────────────────────────────────────────────────
-// Defaults: info=collapsed, settings=expanded, stats=collapsed, log=expanded
 const COLL_DEFAULTS = { info: true, settings: false, stats: true, log: false }
 
 function initCollapseSections() {
@@ -244,13 +255,11 @@ function toggleSection(id) {
   }
 }
 
-// Wire up section header buttons
 document.querySelectorAll('.sec-hdr[data-target]').forEach(btn => {
   btn.addEventListener('click', () => toggleSection(btn.dataset.target))
 })
 $('log-coll-btn').addEventListener('click', () => toggleSection('log'))
 
-// Summary updaters (shown when section is collapsed)
 function updateInfoSummary() {
   const host = ($('inf-host').textContent || '').trim()
   const ip   = ($('inf-ip').textContent   || '').trim()
@@ -427,8 +436,36 @@ let currentState   = 'stopped'
 let lastDeviceId   = null
 let lastServerUrl  = ''
 let statsInterval  = null
-let uptimeInterval = null
 let sessionSeconds = 0
+
+// ─── Uptime counter (shared between strip and stats badge) ──────────────────
+let uptimeInterval = null
+
+function startUptimeCounter(initial) {
+  stopUptimeCounter()
+  sessionSeconds = initial || 0
+  renderUptime()
+  uptimeInterval = setInterval(() => { sessionSeconds++; renderUptime() }, 1000)
+}
+function stopUptimeCounter() {
+  if (uptimeInterval) { clearInterval(uptimeInterval); uptimeInterval = null }
+  $('stats-uptime').textContent = ''
+  const el = $('strip-uptime')
+  if (el) el.textContent = '—'
+}
+function renderUptime() {
+  const h = Math.floor(sessionSeconds / 3600)
+  const m = Math.floor((sessionSeconds % 3600) / 60)
+  const s = sessionSeconds % 60
+  const fmt = LANG[currentLang].uptimeFmt(h, m, s)
+  $('stats-uptime').textContent = fmt
+  const el = $('strip-uptime')
+  if (el) el.textContent = fmt
+}
+
+// Kept as alias so applyState references work
+function startStripUptime(initial) { startUptimeCounter(initial) }
+function stopStripUptime()          { stopUptimeCounter() }
 
 // ─── Agent Control ─────────────────────────────────────────────────────────
 function getConnConfig() {
@@ -459,7 +496,6 @@ function doStart() {
   const t = LANG[currentLang]
   if (!cfg.serverUrl || !cfg.token) {
     flashError(!cfg.serverUrl ? $('inp-server') : $('inp-token'), t.errNoConfig)
-    // Expand settings section so user can see the fields
     const sec = $('sec-settings')
     if (sec && sec.classList.contains('collapsed')) toggleSection('settings')
     return
@@ -545,7 +581,7 @@ $('test-ssh-btn').addEventListener('click', async () => {
   }
 
   setTimeout(() => {
-    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> <span data-i18n="testSsh">${t.testSsh}</span>`
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> <span>${t.testSsh}</span>`
     btn.className = 'btn-ghost'
   }, 4000)
 })
@@ -607,7 +643,6 @@ airemote.onPublicIp(ip => {
   updateInfoSummary()
 })
 
-// Fallback: if no IP event received after 9 seconds, clear loading animation
 setTimeout(() => {
   if (!ipReceived) {
     const el = $('inf-pubip')
@@ -689,22 +724,35 @@ function applyState(state, deviceId, serverUrl, uptime) {
   lastServerUrl = serverUrl || lastServerUrl
   applyStateLabels(state, deviceId, serverUrl || lastServerUrl)
 
-  if (state === 'connected' || state === 'connecting') {
+  const connStrip = $('conn-strip')
+
+  if (state === 'connected') {
     startStatsPolling()
-    startUptimeCounter(uptime || 0)
-    // Auto-expand stats when connected
+    startStripUptime(uptime || 0)
+    // Show connection details strip
+    if (connStrip) connStrip.classList.remove('hidden')
+    // Update strip server info
+    const stripServer = $('strip-server')
+    if (stripServer) stripServer.textContent = resolveHost(serverUrl || lastServerUrl) || '—'
+    // Auto-expand stats
     const secStats = $('sec-stats')
-    if (secStats && secStats.classList.contains('collapsed') && state === 'connected') {
-      toggleSection('stats')
-    }
+    if (secStats && secStats.classList.contains('collapsed')) toggleSection('stats')
+  } else if (state === 'connecting') {
+    startStatsPolling()
+    // Show strip in connecting state
+    if (connStrip) connStrip.classList.remove('hidden')
+    const stripServer = $('strip-server')
+    if (stripServer) stripServer.textContent = resolveHost(serverUrl || lastServerUrl) || '—'
   } else {
     stopStatsPolling()
-    stopUptimeCounter()
+    stopStripUptime()
     resetStats()
+    // Hide connection strip
+    if (connStrip) connStrip.classList.add('hidden')
   }
 
   const t = LANG[currentLang]
-  if (state === 'connected') showToast(`✅ ${t.connected}`, 'success')
+  if (state === 'connected') showToast(`✅ ${t.connectedToast}`, 'success')
   if (state === 'error')     showToast(`❌ ${t.error}`, 'error')
 }
 
@@ -716,8 +764,20 @@ function applyStateLabels(state, deviceId, serverUrl) {
   dotWrap.className = `status-dot-wrap ${state}`
   $('title-dot').className = `title-dot ${state}`
 
+  // Titlebar: show host when connected/connecting
+  const titleSep  = $('title-sep')
+  const titleHost = $('title-host')
+  const host = resolveHost(serverUrl)
+  if ((state === 'connected' || state === 'connecting') && host) {
+    if (titleSep)  titleSep.style.display  = ''
+    if (titleHost) titleHost.textContent   = host
+  } else {
+    if (titleSep)  titleSep.style.display  = 'none'
+    if (titleHost) titleHost.textContent   = ''
+  }
+
   const META = {
-    stopped:    { label: t.stopped,    sub: t.notConnected,               title: t.titleStopped    },
+    stopped:    { label: t.stopped,    sub: t.notConnected,                title: t.titleStopped    },
     connecting: { label: t.connecting, sub: resolveHost(serverUrl) || '—', title: t.titleConnecting },
     connected:  { label: t.connected,  sub: resolveHost(serverUrl) || '—', title: t.titleConnected  },
     error:      { label: t.error,      sub: t.checkConfig,                 title: t.titleError      }
@@ -762,24 +822,6 @@ function resolveHost(url) {
 function updateServerDisplay(url) {
   $('inf-server').textContent = resolveHost(url) || '—'
   updateInfoSummary()
-}
-
-// ─── Uptime ─────────────────────────────────────────────────────────────────
-function startUptimeCounter(initial) {
-  stopUptimeCounter()
-  sessionSeconds = initial || 0
-  renderUptime()
-  uptimeInterval = setInterval(() => { sessionSeconds++; renderUptime() }, 1000)
-}
-function stopUptimeCounter() {
-  if (uptimeInterval) { clearInterval(uptimeInterval); uptimeInterval = null }
-  $('stats-uptime').textContent = ''
-}
-function renderUptime() {
-  const h = Math.floor(sessionSeconds / 3600)
-  const m = Math.floor((sessionSeconds % 3600) / 60)
-  const s = sessionSeconds % 60
-  $('stats-uptime').textContent = LANG[currentLang].uptimeFmt(h, m, s)
 }
 
 // ─── Stats ──────────────────────────────────────────────────────────────────
@@ -841,7 +883,6 @@ function appendLog(entry) {
   box.appendChild(el)
   while (box.children.length > 200) box.removeChild(box.firstChild)
 
-  // Auto-scroll only if log is not mini
   if (!document.getElementById('app').classList.contains('log-mini')) {
     box.scrollTop = box.scrollHeight
   }
@@ -905,27 +946,21 @@ airemote.onInit(data => {
   $('inf-ip').textContent    = ipLocal  || '—'
   $('footer-os').textContent = platform || 'Windows'
 
-  // Public IP: show loading animation, wait for onPublicIp event
   if (ipPublic && ipPublic.trim()) {
     ipReceived = true
     $('inf-pubip').textContent = ipPublic.trim()
     $('inf-pubip').classList.add('mono')
   }
-  // else: loading animation stays until onPublicIp fires or fallback timeout
 
-  // Restore collapse states THEN update summaries
   initCollapseSections()
   updateInfoSummary()
   updateStatsSummary()
 
-  // Apply lang/theme
   applyLang(currentLang)
   applyTheme(currentTheme)
 
-  // Load existing SSH keys
   loadAndShowKeys()
 
-  // Restore state
   if (state && state !== 'stopped') {
     applyState(state, deviceId, serverUrl, data.uptime || 0)
   } else {
@@ -933,12 +968,10 @@ airemote.onInit(data => {
     updateServerDisplay(serverUrl)
   }
 
-  // Replay logs
   if (logs && logs.length) {
     logs.forEach(entry => appendLog(entry))
   }
 
-  // Auto-start if configured
   if (config.autoStart && config.serverUrl && config.token && state === 'stopped') {
     setTimeout(doStart, 800)
   }

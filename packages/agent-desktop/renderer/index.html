@@ -10,7 +10,7 @@
 
 <div id="toast-wrap"></div>
 
-<!-- ── Titlebar ────────────────────────────────────────────────────────── -->
+<!-- ── Titlebar ──────────────────────────────────────────────────────────── -->
 <div id="titlebar">
   <div class="brand">
     <div class="logo">
@@ -24,6 +24,8 @@
   <div class="title-status" id="title-status">
     <span class="title-dot" id="title-dot"></span>
     <span id="title-state-lbl" data-i18n="stopped">متوقف</span>
+    <span class="title-sep" id="title-sep" style="display:none">·</span>
+    <span class="title-host" id="title-host"></span>
   </div>
 
   <div class="title-actions">
@@ -56,13 +58,12 @@
   </div>
 </div>
 
-<!-- ── App ────────────────────────────────────────────────────────────── -->
+<!-- ── App ────────────────────────────────────────────────────────────────── -->
 <div id="app">
 
-  <!-- Upper scrollable area -->
   <div id="upper">
 
-    <!-- Status Card -->
+    <!-- ── Status Card ─────────────────────────────────────────────────── -->
     <div id="status-card" class="stopped">
       <div class="status-dot-wrap stopped" id="dot-wrap">
         <div class="status-ring"></div>
@@ -78,7 +79,36 @@
       </button>
     </div>
 
-    <!-- ── Section: Device Info (collapsible) ──────────────────────── -->
+    <!-- ── Connection Details Strip (shown when connected) ─────────────── -->
+    <div id="conn-strip" class="conn-strip hidden">
+      <div class="conn-strip-item">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+          <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/>
+        </svg>
+        <span class="conn-strip-lbl" data-i18n="connServer">الخادم</span>
+        <span class="conn-strip-val mono" id="strip-server">—</span>
+      </div>
+      <div class="conn-strip-sep"></div>
+      <div class="conn-strip-item">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span class="conn-strip-lbl" data-i18n="sessionTime">وقت الجلسة</span>
+        <span class="conn-strip-val mono" id="strip-uptime">—</span>
+      </div>
+      <div class="conn-strip-sep"></div>
+      <div class="conn-strip-item">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/>
+          <line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
+        </svg>
+        <span class="conn-strip-lbl">PTY</span>
+        <span class="conn-strip-badge conn-strip-badge--green" data-i18n="active">نشط</span>
+      </div>
+    </div>
+
+    <!-- ── Section: Device Info (collapsible) ────────────────────────── -->
     <div class="coll-sec collapsed" id="sec-info">
       <button class="sec-hdr" type="button" data-target="info">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -144,7 +174,7 @@
       </div>
     </div>
 
-    <!-- ── Section: Settings (collapsible) ────────────────────────── -->
+    <!-- ── Section: Settings (collapsible) ──────────────────────────── -->
     <div class="coll-sec" id="sec-settings">
       <button class="sec-hdr" type="button" data-target="settings">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -168,11 +198,9 @@
             </button>
             <button class="tab-btn" id="tab-ssh" data-tab="ssh" type="button">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <rect x="2" y="3" width="20" height="14" rx="2"/>
-                <polyline points="8,21 12,17 16,21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
+                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
               </svg>
-              <span>SSH</span>
+              <span data-i18n="tabSsh">SSH</span>
             </button>
           </div>
 
@@ -229,14 +257,25 @@
             </div>
           </div>
 
-          <!-- Panel: SSH -->
+          <!-- Panel: SSH Access -->
           <div class="tab-panel" id="panel-ssh">
+
+            <!-- Info Banner -->
+            <div class="ssh-info-banner">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0; color:var(--blue); margin-top:1px">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span data-i18n="sshBannerText">هذه الإعدادات تُمكّن الخادم من الاتصال بهذا الجهاز عبر SSH مباشرةً. الاتصال يُنشأ من الخادم فقط — لا حاجة لفتح منفذ من طرفك.</span>
+            </div>
+
+            <!-- SSH Status Bar -->
             <div class="ssh-status-bar" id="ssh-status-bar">
               <span class="ssh-dot" id="ssh-dot"></span>
-              <span id="ssh-status-lbl" data-i18n="sshNotConn">SSH غير متصل</span>
+              <span id="ssh-status-lbl" data-i18n="sshNotConn">SSH غير نشط</span>
               <span id="ssh-session-info" class="ssh-session-info"></span>
               <span id="ssh-server-badge" class="ssh-server-badge" style="display:none" data-i18n="sshFromServer">من الخادم</span>
             </div>
+
             <div class="fields-row">
               <div class="field f-grow">
                 <label data-i18n="sshHost">SSH Host</label>
@@ -383,7 +422,7 @@
 
   </div><!-- /#upper -->
 
-  <!-- ── Log Section ────────────────────────────────────────────── -->
+  <!-- ── Log Section ─────────────────────────────────────────────────── -->
   <div id="log-section">
     <div class="card log-card">
       <div class="card-header log-header">
@@ -441,13 +480,15 @@
         </div>
       </div>
     </div>
-  </div><!-- /#log-section -->
+  </div>
 
-  <!-- Footer -->
+  <!-- ── Footer ─────────────────────────────────────────────────────────── -->
   <div id="footer">
-    <span>AiRemote Agent v1.1.0</span>
-    <span class="sep">·</span>
     <span id="footer-os">Windows</span>
+    <span class="sep">·</span>
+    <span>AiRemote Agent</span>
+    <span class="sep">·</span>
+    <span id="footer-ver">v1.3.0</span>
   </div>
 
 </div><!-- /#app -->
