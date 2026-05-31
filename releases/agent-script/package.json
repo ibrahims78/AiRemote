@@ -1,0 +1,16 @@
+{
+  "name": "airemote-agent-script",
+  "version": "1.4.0",
+  "description": "AiRemote Agent — Script Edition (Node.js 18+)",
+  "main": "agent-v1.4.0.js",
+  "scripts": {
+    "start": "node agent-v1.4.0.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-os-utils": "^1.3.7",
+    "ssh2": "^1.16.0",
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0"
+  }
+}
