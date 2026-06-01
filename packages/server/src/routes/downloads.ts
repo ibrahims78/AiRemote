@@ -62,7 +62,7 @@ const RELEASE_DEFS: ReleaseDef[] = [
           '  [zf.write(os.path.join(r,f),os.path.relpath(os.path.join(r,f),src))',
           '   for r,d,files in os.walk(src) for f in files]',
           'print("Done:",os.path.getsize(dst),"bytes")',
-        ].join(';'),
+        ].join('\n'),
       ],
     },
   },
