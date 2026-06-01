@@ -1,6 +1,6 @@
 Unicode True
-Name "AiRemote Agent v1.4.0"
-OutFile "AiRemote-Agent-v1.4.0-Windows-x64.exe"
+Name "AiRemote Agent v1.5.0"
+OutFile "AiRemote-Agent-v1.5.0-Windows-x64.exe"
 InstallDir "$LOCALAPPDATA\Programs\AiRemote-Agent"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma

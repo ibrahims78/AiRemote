@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-v1.4.0-blue)
+![Version](https://img.shields.io/badge/Version-v1.5.0-blue)
 ![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)
 ![Linux](https://img.shields.io/badge/Linux-x64-FCC624?logo=linux&logoColor=black)
 
@@ -16,8 +16,8 @@
 
 | الملف | المنصة | الحجم |
 |-------|--------|-------|
-| `AiRemote-Agent-v1.4.0-win-x64.exe` | Windows 64-bit | ~36 MB |
-| `AiRemote-Agent-v1.4.0-linux-x64` | Linux 64-bit | ~45 MB |
+| `AiRemote-Agent-v1.5.0-win-x64.exe` | Windows 64-bit | ~36 MB |
+| `AiRemote-Agent-v1.5.0-linux-x64` | Linux 64-bit | ~45 MB |
 
 ---
 
@@ -27,7 +27,7 @@
 ```cmd
 set SERVER_URL=wss://your-server.replit.app/ws
 set DEVICE_TOKEN=YOUR-DEVICE-TOKEN
-AiRemote-Agent-v1.4.0-win-x64.exe
+AiRemote-Agent-v1.5.0-win-x64.exe
 ```
 
 أو عبر ملف `.env` (في نفس مجلد الـ exe):
@@ -39,11 +39,11 @@ DEVICE_TOKEN=YOUR-DEVICE-TOKEN
 
 ### Linux
 ```bash
-chmod +x AiRemote-Agent-v1.4.0-linux-x64
+chmod +x AiRemote-Agent-v1.5.0-linux-x64
 
 SERVER_URL=wss://your-server.replit.app/ws \
 DEVICE_TOKEN=YOUR-DEVICE-TOKEN \
-./AiRemote-Agent-v1.4.0-linux-x64
+./AiRemote-Agent-v1.5.0-linux-x64
 ```
 
 ---
@@ -51,7 +51,7 @@ DEVICE_TOKEN=YOUR-DEVICE-TOKEN \
 ## 🛡️ التشغيل كـ Windows Service (NSSM)
 
 ```cmd
-nssm install AiRemote "C:\path\to\AiRemote-Agent-v1.4.0-win-x64.exe"
+nssm install AiRemote "C:\path\to\AiRemote-Agent-v1.5.0-win-x64.exe"
 nssm set AiRemote AppEnvironmentExtra "SERVER_URL=wss://your-server.replit.app/ws" "DEVICE_TOKEN=YOUR-TOKEN"
 nssm start AiRemote
 ```
@@ -68,11 +68,11 @@ sudo nano /etc/systemd/system/airemote-agent.service
 
 ```ini
 [Unit]
-Description=AiRemote Agent v1.4.0
+Description=AiRemote Agent v1.5.0
 After=network.target
 
 [Service]
-ExecStart=/opt/airemote/AiRemote-Agent-v1.4.0-linux-x64
+ExecStart=/opt/airemote/AiRemote-Agent-v1.5.0-linux-x64
 Environment="SERVER_URL=wss://your-server.replit.app/ws"
 Environment="DEVICE_TOKEN=YOUR-DEVICE-TOKEN"
 Restart=always
@@ -105,6 +105,12 @@ sudo journalctl -u airemote-agent -f  # متابعة السجلات
 | 🔄 **إعادة الاتصال** | Exponential backoff تلقائي (2s → 30s) |
 
 ---
+
+## ما الجديد في v1.5.0
+
+- ✅ **إحصائيات الشبكة محسّنة** — دعم Linux/macOS/Windows عبر `/proc/net/dev` + WMI
+- ✅ **Terminal PTY** — `script` على Linux/macOS لـ PTY حقيقي (backspace، arrow keys، cd)
+- ✅ إعادة بناء كاملة من المصدر المحدّث
 
 ## ما الجديد في v1.4.0
 

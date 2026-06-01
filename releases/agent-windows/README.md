@@ -94,13 +94,15 @@ print('Done:', os.path.getsize(dst), 'bytes')
 
 ---
 
-## ما الجديد في v1.4.0
+## ما الجديد في v1.5.0
 
 | الميزة | الوصف |
 |--------|-------|
+| إحصائيات الشبكة | Upload/Download عبر netstat-e + WMI fallback |
+| Terminal PTY محسّن | Software PTY: echo تلقائي، backspace يعمل، cd يُحدّث الـ prompt |
+| Shell Wrapper | PowerShell يقرأ الأوامر ويُظهر `PS C:\path> ` بعد كل أمر |
 | تصفح الملفات | من الـ Dashboard بدون SSH |
 | رفع وتنزيل الملفات | عبر اتصال الوكيل |
-| Terminal PTY | نفق نصي مستقر عبر PowerShell/CMD |
 
 ---
 
@@ -108,9 +110,9 @@ print('Done:', os.path.getsize(dst), 'bytes')
 
 | Platform | Type | File |
 |----------|------|------|
-| Windows | CLI Headless | `../agent-headless/AiRemote-Agent-v1.4.0-win-x64.exe` |
-| Linux | CLI Headless | `../agent-headless/AiRemote-Agent-v1.4.0-linux-x64` |
-| Any | Node.js Script | `../agent-script/agent-v1.4.0.js` |
-| Any | Script ZIP | `../agent-script/agent-script-v1.4.0.zip` |
+| Windows | CLI Headless | `../agent-headless/AiRemote-Agent-v1.5.0-win-x64.exe` |
+| Linux | CLI Headless | `../agent-headless/AiRemote-Agent-v1.5.0-linux-x64` |
+| Any | Node.js Script | `../agent-script/agent-v1.5.0.js` |
+| Any | Script ZIP | `../agent-script/agent-script-v1.5.0.zip` |
 
 See [releases/README.md](../README.md) for the full release matrix.

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-v1.4.0-blue)
+![Version](https://img.shields.io/badge/Version-v1.5.0-blue)
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 
@@ -16,8 +16,8 @@
 
 | الملف | الوصف |
 |-------|-------|
-| `agent-v1.4.0.js` | السكريبت المُجمَّع (bundle كامل) |
-| `agent-script-v1.4.0.zip` | حزمة كاملة (script + start.bat + start.sh) |
+| `agent-v1.5.0.js` | السكريبت المُجمَّع (bundle كامل) |
+| `agent-script-v1.5.0.zip` | حزمة كاملة (script + start.bat + start.sh) |
 | `start.bat` | سكريبت تشغيل Windows |
 | `start.sh` | سكريبت تشغيل Linux / macOS |
 | `package.json` | تعريف الحزمة والمتطلبات |
@@ -34,7 +34,7 @@ npm install
 :: 2. تعيين متغيرات البيئة وتشغيل
 set SERVER_URL=wss://your-server.replit.app/ws
 set DEVICE_TOKEN=YOUR-DEVICE-TOKEN
-node agent-v1.4.0.js
+node agent-v1.5.0.js
 ```
 
 أو استخدم سكريبت التشغيل المُرفق:
@@ -51,7 +51,7 @@ npm install
 # 2. تشغيل
 SERVER_URL=wss://your-server.replit.app/ws \
 DEVICE_TOKEN=YOUR-DEVICE-TOKEN \
-node agent-v1.4.0.js
+node agent-v1.5.0.js
 ```
 
 أو استخدم سكريبت التشغيل المُرفق:
@@ -67,7 +67,7 @@ DEVICE_TOKEN=YOUR-DEVICE-TOKEN
 ```
 ثم شغّل:
 ```bash
-node agent-v1.4.0.js
+node agent-v1.5.0.js
 ```
 
 ---
@@ -97,7 +97,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/opt/airemote
-ExecStart=/usr/bin/node /opt/airemote/agent-v1.4.0.js
+ExecStart=/usr/bin/node /opt/airemote/agent-v1.5.0.js
 Environment="SERVER_URL=wss://your-server.replit.app/ws"
 Environment="DEVICE_TOKEN=YOUR-DEVICE-TOKEN"
 Restart=always
@@ -114,7 +114,7 @@ sudo systemctl enable --now airemote-agent
 ### Windows — PM2
 ```cmd
 npm install -g pm2
-pm2 start agent-v1.4.0.js --name airemote-agent
+pm2 start agent-v1.5.0.js --name airemote-agent
 pm2 startup
 pm2 save
 ```
@@ -132,7 +132,7 @@ pm2 save
 
 ---
 
-## ما الجديد في v1.4.0
+## ما الجديد في v1.5.0
 
 - ✅ تصفح الملفات من الـ Dashboard بدون SSH
 - ✅ رفع وتنزيل الملفات عبر اتصال الوكيل

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![AiRemote](https://img.shields.io/badge/AiRemote-v1.4.0-blue?style=for-the-badge)
+![AiRemote](https://img.shields.io/badge/AiRemote-v1.5.0-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=for-the-badge)
 
@@ -12,15 +12,15 @@
 
 ---
 
-## 📦 الإصدارات المتاحة — v1.4.0
+## 📦 الإصدارات المتاحة — v1.5.0
 
 | النسخة | الملف | الحجم | المنصة | الوصف |
 |--------|-------|-------|--------|-------|
-| 🪟 **Windows GUI** | `agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.zip` | ~103 MB | Windows x64 | تطبيق سطح مكتب + System Tray — فُك الضغط وشغّل |
-| 🖥️ **Windows CLI** | `agent-headless/AiRemote-Agent-v1.4.0-win-x64.exe` | ~36 MB | Windows x64 | ملف تنفيذي مستقل — سطر أوامر، لا يحتاج Node.js |
-| 🐧 **Linux Binary** | `agent-headless/AiRemote-Agent-v1.4.0-linux-x64` | ~45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
-| 📜 **Node.js Script** | `agent-script/agent-v1.4.0.js` | ~168 KB | أي نظام | يتطلب Node.js 18+ |
-| 📦 **Script ZIP** | `agent-script/agent-script-v1.4.0.zip` | ~168 KB | أي نظام | Script + start.bat + start.sh |
+| 🪟 **Windows GUI** | `agent-windows/AiRemote-Agent-v1.5.0-Windows-x64.zip` | ~103 MB | Windows x64 | تطبيق سطح مكتب + System Tray — فُك الضغط وشغّل |
+| 🖥️ **Windows CLI** | `agent-headless/AiRemote-Agent-v1.5.0-win-x64.exe` | ~36 MB | Windows x64 | ملف تنفيذي مستقل — سطر أوامر، لا يحتاج Node.js |
+| 🐧 **Linux Binary** | `agent-headless/AiRemote-Agent-v1.5.0-linux-x64` | ~45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
+| 📜 **Node.js Script** | `agent-script/agent-v1.5.0.js` | ~31 KB | أي نظام | يتطلب Node.js 18+ |
+| 📦 **Script ZIP** | `agent-script/agent-script-v1.5.0.zip` | ~9 KB | أي نظام | Script + start.bat + start.sh |
 
 > 💡 **للمبتدئين على Windows:** نسخة GUI (واجهة رسومية) — فُك الضغط وشغّل مباشرة.
 > 💡 **للخوادم وسطر الأوامر:** نسخة CLI لـ Windows أو Binary لـ Linux.
@@ -31,7 +31,7 @@
 
 ### 🪟 Windows GUI (تطبيق سطح المكتب)
 ```
-1. فُك الضغط عن AiRemote-Agent-v1.4.0-Windows-x64.zip
+1. فُك الضغط عن AiRemote-Agent-v1.5.0-Windows-x64.zip
 2. شغّل "AiRemote Agent.exe"
 3. أدخل عنوان الخادم والـ Token من واجهة التطبيق
 4. اضغط "تشغيل" — يظهر الـ Agent في System Tray
@@ -43,25 +43,25 @@
 :: 2. شغّل الأمر:
 set SERVER_URL=wss://your-server.replit.app/ws
 set DEVICE_TOKEN=توكن-جهازك-من-لوحة-التحكم
-AiRemote-Agent-v1.4.0-win-x64.exe
+AiRemote-Agent-v1.5.0-win-x64.exe
 ```
 
 ### Linux / macOS (Binary)
 ```bash
 # 1. أعط صلاحية التنفيذ
-chmod +x AiRemote-Agent-v1.4.0-linux-x64
+chmod +x AiRemote-Agent-v1.5.0-linux-x64
 
 # 2. شغّل مع متغيرات البيئة
 SERVER_URL=wss://your-server.replit.app/ws \
 DEVICE_TOKEN=توكن-جهازك \
-./AiRemote-Agent-v1.4.0-linux-x64
+./AiRemote-Agent-v1.5.0-linux-x64
 ```
 
 ### Node.js Script (أي نظام)
 ```bash
 # يتطلب Node.js 18+
 npm install  # المرة الأولى فقط
-DEVICE_TOKEN=توكن-جهازك node agent-v1.4.0.js
+DEVICE_TOKEN=توكن-جهازك node agent-v1.5.0.js
 ```
 
 ---
@@ -91,7 +91,7 @@ DEVICE_TOKEN=توكن-جهازك node agent-v1.4.0.js
 ### Windows — NSSM
 ```cmd
 :: تحميل NSSM من https://nssm.cc
-nssm install AiRemote "C:\path\to\AiRemote-Agent-v1.4.0-win-x64.exe"
+nssm install AiRemote "C:\path\to\AiRemote-Agent-v1.5.0-win-x64.exe"
 nssm set AiRemote AppEnvironmentExtra ^
   "SERVER_URL=wss://your-server.replit.app/ws" ^
   "DEVICE_TOKEN=توكن-جهازك"
@@ -106,7 +106,7 @@ Description=AiRemote Agent
 After=network.target
 
 [Service]
-ExecStart=/opt/airemote/AiRemote-Agent-v1.4.0-linux-x64
+ExecStart=/opt/airemote/AiRemote-Agent-v1.5.0-linux-x64
 Environment="SERVER_URL=wss://your-server.replit.app/ws"
 Environment="DEVICE_TOKEN=توكن-جهازك"
 Restart=always
@@ -130,23 +130,34 @@ sudo systemctl status airemote-agent
 # من مجلد المشروع الرئيسي
 pnpm install
 cd packages/agent
-node_modules/.bin/pkg ../../releases/agent-script/agent-v1.4.0.js \
+node_modules/.bin/pkg ../../releases/agent-script/agent-v1.5.0.js \
   --targets node18-win-x64,node18-linux-x64 \
-  --output ../../releases/agent-headless/AiRemote-Agent-v1.4.0 \
+  --output ../../releases/agent-headless/AiRemote-Agent-v1.5.0 \
   --compress GZip
 ```
 
 ### بناء Agent Script (JavaScript Bundle)
 ```bash
 cd packages/agent
-pnpm build:script   # ينتج: releases/agent-script/agent-v1.4.0.js
+pnpm build:script   # ينتج: releases/agent-script/agent-v1.5.0.js
 ```
 
 ---
 
 ## 📋 تاريخ الإصدارات
 
-### v1.4.0 — 2026-05 *(الحالي)*
+### v1.5.0 — 2026-06 *(الحالي)*
+**ميزات جديدة:**
+- ✅ **إحصائيات الشبكة (Windows GUI)** — قراءة Upload/Download عبر `netstat -e` + WMI fallback
+- ✅ **Terminal PTY محسّن (Windows GUI)** — Software PTY: echo تلقائي، backspace يعمل، prompt يُحدَّث مع `cd`
+- ✅ **Shell wrapper (PowerShell)** — يقرأ الأوامر سطرًا سطرًا ويُظهر `PS C:\path> ` بعد كل أمر
+
+**إصلاحات:**
+- ✅ Windows GUI: `networkUpKbps` / `networkDownKbps` كانت غائبة تمامًا — تمت الإضافة
+- ✅ Windows GUI: نص الـ Terminal كان يتراكب بسبب عدم وجود echo — تم الإصلاح
+- ✅ Windows GUI: `cd` لم يغيّر الـ prompt — تم الإصلاح عبر wrapper script
+
+### v1.4.0 — 2026-05
 **ميزات جديدة:**
 - ✅ **تصفح الملفات** — تصفح / رفع / تنزيل / حذف بدون SSH
 - ✅ **دعم Windows الكامل** — يعرض الأقراص (C: D: ...) عند المسار `/`

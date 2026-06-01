@@ -14,3 +14,4 @@
 - [AiRemote Chunked FS Download](airemote-chunked-download.md) — Large file download via read_chunked op + agent:fs_chunk messages (512KB each); sendFsDownload() in agentHandler; WSMessageType must include agent:fs_chunk
 - [AiRemote GitHub Releases](airemote-github-releases.md) — POST /api/github/config (stored in settings table key github_config); POST /api/github/publish/:id (id or 'all'); polls /publish/:publishId/status; GitHubRelease.tsx in Settings
 - [AiRemote Network Stats Fix](airemote-network-stats.md) — esbuild drops win32 branch in readRawNetworkBytes when building on Linux; must patch agent-v1.4.0.js directly + add PowerShell WMI fallback
+- [AiRemote Agent v1.5.0](airemote-v1.5.md) — current version; agent-desktop has its own stats/PTY code (not agent.ts); Windows GUI ZIP rebuilt via python3 + asar repack; pnpm needs CI=true to avoid TTY prompt during install
