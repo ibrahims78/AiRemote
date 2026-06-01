@@ -191,23 +191,45 @@ export class AgentService {
 
   private handlePtyOpen(p: { sessionId: string; rows?: number; cols?: number; shell?: string }): void {
     const { sessionId, rows = 24, cols = 80, shell: shellHint = 'auto' } = p
-    console.log(`🖥️  PTY request (session ${sessionId})`)
+    console.log(`🖥️  PTY request (session ${sessionId}, shell=${shellHint})`)
 
     const { cmd, args } = this.resolveShell(shellHint)
 
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLUMNS: String(cols),
+      LINES: String(rows),
+      COLORTERM: 'truecolor'
+    }
+
     try {
-      const proc = spawn(cmd, args, {
-        env: {
-          ...process.env,
-          TERM: 'xterm-256color',
-          COLUMNS: String(cols),
-          LINES: String(rows),
-          COLORTERM: 'truecolor'
-        },
-        stdio: ['pipe', 'pipe', 'pipe'],
-        shell: false,
-        windowsHide: false
-      })
+      let proc: ChildProcess
+
+      if (process.platform !== 'win32') {
+        // Use `script` to allocate a real PTY so the shell runs interactively:
+        // • backspace / arrow keys / Ctrl+C all work via PTY line discipline
+        // • cd updates PS1 because the shell sees a real terminal
+        // • readline / vi-mode / autocomplete work as expected
+        const shellCmd = args.length > 0 ? `${cmd} ${args.join(' ')}` : cmd
+        const scriptArgs = process.platform === 'darwin'
+          ? ['-q', '/dev/null', cmd, ...args]          // macOS: script -q /dev/null bash --login
+          : ['-q', '-c', shellCmd, '/dev/null']         // Linux:  script -q -c "bash --login" /dev/null
+
+        proc = spawn('script', scriptArgs, {
+          env: { ...env, SHELL: cmd },
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: false
+        })
+      } else {
+        // Windows: spawn PowerShell / CMD directly (ConPTY requires node-pty)
+        proc = spawn(cmd, args, {
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: false,
+          windowsHide: false
+        })
+      }
 
       this.ptyProcs.set(sessionId, { proc, sessionId })
 

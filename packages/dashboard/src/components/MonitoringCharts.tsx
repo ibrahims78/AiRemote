@@ -188,7 +188,7 @@ export function MonitoringCharts({ deviceId, stats }: Props) {
         </div>
       </div>
 
-      {history.length > 1 && (
+      {history.length >= 1 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="glass rounded-xl p-4">
             <h4 className="text-xs font-medium text-slate-400 mb-3 flex items-center gap-1.5">
@@ -219,14 +219,22 @@ export function MonitoringCharts({ deviceId, stats }: Props) {
           <div className="glass rounded-xl p-4">
             <h4 className="text-xs font-medium text-slate-400 mb-3 flex items-center gap-1.5">
               <Network size={11} className="text-orange-400" /> الشبكة
+              {history.every(p => p.netUp === 0 && p.netDown === 0) && (
+                <span className="text-[10px] text-slate-600 ms-auto">لا يوجد نشاط شبكة</span>
+              )}
             </h4>
             <ResponsiveContainer width="100%" height={130}>
               <LineChart data={history} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#475569' }} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 9, fill: '#475569' }} tickFormatter={v => fmtKbps(v)} width={42} />
+                <YAxis
+                  tick={{ fontSize: 9, fill: '#475569' }}
+                  tickFormatter={v => fmtKbps(v)}
+                  width={42}
+                  domain={[0, (dataMax: number) => dataMax < 1 ? 10 : Math.ceil(dataMax * 1.2)]}
+                />
                 <Tooltip content={<NetTooltip />} />
-                <Line type="monotone" dataKey="netUp" name="رفع" stroke="#4ade80" strokeWidth={1.5} dot={false} />
+                <Line type="monotone" dataKey="netUp"   name="رفع"    stroke="#4ade80" strokeWidth={1.5} dot={false} />
                 <Line type="monotone" dataKey="netDown" name="تنزيل" stroke="#38bdf8" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
