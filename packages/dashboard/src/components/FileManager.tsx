@@ -180,7 +180,7 @@ export function FileManager({ deviceId, deviceName }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0f1e] rounded-xl border border-slate-700/50 overflow-hidden">
+    <div className="flex flex-col h-full bg-navy-900 rounded-xl border border-slate-700/50 overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-1 p-2.5 bg-navy-800 border-b border-slate-700/50 flex-shrink-0">
         <button onClick={() => loadDir('/')} className="p-1.5 text-slate-400 hover:text-white transition-colors rounded" title="الرئيسية">

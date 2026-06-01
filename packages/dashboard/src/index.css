@@ -140,8 +140,13 @@ html.light select:focus,
 html.light textarea:focus { border-color: #3b82f6 !important; }
 
 /* Hover text */
+html.light .hover\:text-white:hover     { color: #0f172a !important; }
 html.light .hover\:text-slate-200:hover { color: #0f172a !important; }
 html.light .hover\:text-slate-300:hover { color: #1e293b !important; }
+
+/* Hover backgrounds missing from FileManager */
+html.light .hover\:bg-slate-700\/50:hover { background-color: rgba(100,116,139,0.15) !important; }
+html.light .bg-navy-800\/90 { background-color: rgba(255,255,255,0.97) !important; }
 
 /* Active nav item stays blue */
 html.light .bg-brand-blue\/15 { background-color: rgba(59,130,246,0.12) !important; }

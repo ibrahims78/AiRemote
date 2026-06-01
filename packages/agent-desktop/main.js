@@ -359,6 +359,10 @@ function toOsPath(p) {
   if (process.platform !== 'win32') return p
   if (/^[A-Za-z]:/.test(p)) return p
   if (p === '/' || p === '') return null
+  // /C:       → C:\
+  // /C:/path  → C:\path
+  const m = p.match(/^\/([A-Za-z]:)(\/.*)?$/)
+  if (m) return m[1] + (m[2] ? m[2].replace(/\//g, '\\') : '\\')
   return p.replace(/\//g, '\\')
 }
 
