@@ -357,7 +357,8 @@ const fsPromises = require('fs').promises
 
 function toOsPath(p) {
   if (process.platform !== 'win32') return p
-  if (/^[A-Za-z]:/.test(p)) return p
+  // Already a Windows drive path like "D:/path" or "D:\path" — normalise slashes
+  if (/^[A-Za-z]:/.test(p)) return p.replace(/\//g, '\\')
   if (p === '/' || p === '') return null
   // /C:       → C:\
   // /C:/path  → C:\path
@@ -397,9 +398,11 @@ async function handleFsRequest(payload) {
         if (!osp) return respond({ error: 'Invalid path' })
         const entries = await fsPromises.readdir(osp, { withFileTypes: true })
         // Convert OS path back to web path for response
+        // Always add a leading "/" so paths are uniform: /D:/folder/file
         const toWebPath = (osFullPath) => {
           if (process.platform !== 'win32') return osFullPath
-          return osFullPath.replace(/\\/g, '/')
+          const web = osFullPath.replace(/\\/g, '/')
+          return web.startsWith('/') ? web : '/' + web
         }
         const settled = await Promise.allSettled(entries.map(async e => {
           const full = require('path').join(osp, e.name)

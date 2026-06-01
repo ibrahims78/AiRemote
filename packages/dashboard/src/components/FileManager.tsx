@@ -104,8 +104,9 @@ export function FileManager({ deviceId, deviceName }: Props) {
       a.download = entry.name
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setError('فشل التنزيل')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } }; message?: string }
+      setError(err.response?.data?.error || err.message || 'فشل التنزيل')
     } finally {
       setDownloadingFile(null)
     }
