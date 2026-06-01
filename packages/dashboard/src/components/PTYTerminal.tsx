@@ -3,8 +3,29 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { clsx } from 'clsx'
-import { Wifi, WifiOff, X, Maximize2, Minimize2, RotateCcw, ChevronDown } from 'lucide-react'
+import { Wifi, WifiOff, X, Maximize2, Minimize2, RotateCcw, ChevronDown, AlertTriangle } from 'lucide-react'
+import { useUIStore } from '../store/uiStore'
 import '@xterm/xterm/css/xterm.css'
+
+const DARK_THEME = {
+  background: '#0d1117', foreground: '#e6edf3', cursor: '#58a6ff',
+  cursorAccent: '#0d1117', selectionBackground: '#264f78', selectionForeground: '#ffffff',
+  black: '#21262d', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+  blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+  brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364',
+  brightYellow: '#e3b341', brightBlue: '#79c0ff', brightMagenta: '#d2a8ff',
+  brightCyan: '#56d4dd', brightWhite: '#f0f6fc'
+}
+
+const LIGHT_THEME = {
+  background: '#ffffff', foreground: '#1f2328', cursor: '#0969da',
+  cursorAccent: '#ffffff', selectionBackground: '#add6ff', selectionForeground: '#000000',
+  black: '#24292f', red: '#cf222e', green: '#116329', yellow: '#4d2d00',
+  blue: '#0550ae', magenta: '#8250df', cyan: '#0e7490', white: '#6e7781',
+  brightBlack: '#57606a', brightRed: '#a40e26', brightGreen: '#1a7f37',
+  brightYellow: '#633c01', brightBlue: '#0969da', brightMagenta: '#6639ba',
+  brightCyan: '#1d7a8a', brightWhite: '#24292f'
+}
 
 interface Props {
   deviceId: string
@@ -33,6 +54,8 @@ function getFreshToken(): string {
 }
 
 export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
+  const theme = useUIStore(s => s.theme)
+
   const termRef       = useRef<HTMLDivElement>(null)
   const termInstance  = useRef<Terminal | null>(null)
   const fitAddon      = useRef<FitAddon | null>(null)
@@ -52,20 +75,11 @@ export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
     if (!termRef.current) return
 
     const term = new Terminal({
-      theme: {
-        background:          '#0a0f1e',
-        foreground:          '#e2e8f0',
-        cursor:              '#38bdf8',
-        selectionBackground: '#1e3a5f',
-        black:   '#1a1f35', red:     '#f87171', green:  '#4ade80', yellow:  '#fbbf24',
-        blue:    '#38bdf8', magenta: '#c084fc', cyan:   '#22d3ee', white:   '#e2e8f0',
-        brightBlack:   '#374151', brightRed:     '#fca5a5', brightGreen:  '#86efac',
-        brightYellow:  '#fcd34d', brightBlue:    '#7dd3fc', brightMagenta:'#d8b4fe',
-        brightCyan:    '#67e8f9', brightWhite:   '#f8fafc'
-      },
-      fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace',
-      fontSize: 13, lineHeight: 1.4, cursorBlink: true, cursorStyle: 'block',
-      scrollback: 8000, allowTransparency: true, convertEol: true
+      theme:       theme === 'light' ? LIGHT_THEME : DARK_THEME,
+      fontFamily:  '"JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace',
+      fontSize: 13, lineHeight: 1.45, cursorBlink: true, cursorStyle: 'block',
+      scrollback: 8000, allowTransparency: true, convertEol: true,
+      rightClickSelectsWord: true,
     })
 
     const fit      = new FitAddon()
@@ -87,11 +101,21 @@ export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
 
     return () => {
       ro.disconnect()
+      dataDisposableRef.current?.dispose()
+      resizeDisposableRef.current?.dispose()
       term.dispose()
       wsRef.current?.close()
       wsRef.current = null
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── Dynamic theme update ──────────────────────────────────────────────
+  useEffect(() => {
+    termInstance.current?.options.theme && (
+      termInstance.current.options.theme = theme === 'light' ? LIGHT_THEME : DARK_THEME
+    )
+  }, [theme])
 
   // ── Connect ───────────────────────────────────────────────────────────
   const connect = useCallback((shellHint: ShellHint = 'auto') => {
@@ -228,33 +252,44 @@ export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
     connect(s)
   }
 
+  const isLight = theme === 'light'
+
+  const statusBadge = {
+    idle:       { icon: <WifiOff size={10} />, label: 'Disconnected', cls: 'text-slate-500 bg-slate-700/40 border-slate-700/50' },
+    connecting: { icon: <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse" />, label: 'Connecting…', cls: 'text-yellow-400 bg-yellow-400/10 border-yellow-500/25' },
+    connected:  { icon: <Wifi size={10} />, label: 'Connected', cls: 'text-emerald-400 bg-emerald-400/10 border-emerald-500/25' },
+    error:      { icon: <AlertTriangle size={10} />, label: 'Error', cls: 'text-red-400 bg-red-400/10 border-red-500/25' },
+    closed:     { icon: <WifiOff size={10} />, label: 'Closed', cls: 'text-slate-500 bg-slate-700/40 border-slate-700/50' },
+  }[status]
+
   return (
     <div className={clsx(
-      'flex flex-col bg-[#0a0f1e] rounded-xl overflow-hidden border border-slate-700/50',
-      fullscreen ? 'fixed inset-4 z-50' : 'h-full'
+      'flex flex-col rounded-xl overflow-hidden border border-slate-700/50 transition-colors',
+      isLight ? 'bg-white' : 'bg-[#0d1117]',
+      fullscreen ? 'fixed inset-4 z-50 shadow-2xl' : 'h-full'
     )}>
-      {/* Title bar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-navy-800 border-b border-slate-700/50 flex-shrink-0">
-        <div className="flex items-center gap-2">
+      {/* ── Title bar ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-navy-800 border-b border-slate-700/50 flex-shrink-0">
+        <div className="flex items-center gap-2.5">
           <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-500/70" />
-            <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
-            <div className="w-3 h-3 rounded-full bg-green-500/70" />
+            <div className="w-3 h-3 rounded-full bg-red-400/75"    />
+            <div className="w-3 h-3 rounded-full bg-yellow-400/75" />
+            <div className="w-3 h-3 rounded-full bg-green-400/75"  />
           </div>
-          <span className="text-xs text-slate-400 font-mono ml-2">
-            Direct Shell — {deviceName || deviceId.slice(0, 12)}
+          <span className="text-xs text-slate-300 font-mono truncate max-w-[180px]" dir="ltr">
+            {deviceName || deviceId.slice(0, 12)} — Shell
           </span>
-          <span className="text-[10px] bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded font-mono">
+          <span className="text-[10px] bg-brand-blue/15 text-brand-blue px-1.5 py-0.5 rounded font-mono border border-brand-blue/20">
             PTY
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {/* Shell selector */}
           <div className="relative">
             <button
               onClick={() => setShellOpen(o => !o)}
-              className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 bg-navy-900/60 px-2 py-1 rounded border border-slate-700/50 transition-colors"
+              className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 bg-navy-900/60 px-2 py-1 rounded border border-slate-700/50 hover:border-slate-600 transition-colors"
             >
               <span className="font-mono">{shell}</span>
               <ChevronDown size={10} />
@@ -279,54 +314,64 @@ export function PTYTerminal({ deviceId, deviceName, onClose }: Props) {
 
           {/* Status badge */}
           <span className={clsx(
-            'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full',
-            status === 'connected'  ? 'bg-emerald-400/10 text-emerald-400' :
-            status === 'connecting' ? 'bg-yellow-400/10 text-yellow-400'   :
-            status === 'error'      ? 'bg-red-400/10 text-red-400'         :
-                                     'bg-slate-700/50 text-slate-500'
+            'inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border font-medium',
+            statusBadge.cls
           )}>
-            {status === 'connected' ? <Wifi size={10} /> : <WifiOff size={10} />}
-            {status === 'idle' ? 'غير متصل' : status === 'connecting' ? 'يتصل...' :
-             status === 'connected' ? 'متصل' : status === 'error' ? 'خطأ' : 'منتهي'}
+            {statusBadge.icon}
+            {statusBadge.label}
           </span>
 
           {(status === 'error' || status === 'closed') && (
-            <button onClick={retry} title="إعادة المحاولة"
-              className="p-1 text-slate-500 hover:text-brand-blue transition-colors">
-              <RotateCcw size={13} />
+            <button onClick={retry} title="Retry"
+              className="p-1.5 text-slate-500 hover:text-sky-400 hover:bg-sky-400/10 rounded-md transition-colors">
+              <RotateCcw size={12} />
             </button>
           )}
 
           <button onClick={() => setFullscreen(f => !f)}
-            className="p-1 text-slate-500 hover:text-slate-300 transition-colors">
-            {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-700/40 rounded-md transition-colors">
+            {fullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
           </button>
 
           {status === 'connected' && (
-            <button onClick={disconnect} className="p-1 text-slate-500 hover:text-red-400 transition-colors" title="قطع الاتصال">
-              <X size={13} />
+            <button onClick={disconnect}
+              className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors" title="Disconnect">
+              <X size={12} />
             </button>
           )}
           {onClose && (
-            <button onClick={onClose} className="p-1 text-slate-500 hover:text-slate-300 transition-colors">
-              <X size={13} />
+            <button onClick={onClose}
+              className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+              <X size={12} />
             </button>
           )}
         </div>
       </div>
 
-      {/* Error banner */}
+      {/* ── Error banner ─────────────────────────────────────────────────── */}
       {status === 'error' && errorMsg && (
-        <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-xs text-red-400 flex items-center justify-between gap-3 flex-shrink-0">
-          <span>{errorMsg}</span>
-          <button onClick={retry} className="text-xs text-brand-blue hover:underline whitespace-nowrap">
+        <div className="flex items-center justify-between gap-3 px-4 py-2 bg-red-500/10 border-b border-red-500/20 flex-shrink-0">
+          <span className="text-xs text-red-400 flex items-center gap-1.5">
+            <AlertTriangle size={12} className="flex-shrink-0" />
+            {errorMsg}
+          </span>
+          <button onClick={retry} className="text-xs text-sky-400 hover:underline whitespace-nowrap flex-shrink-0">
             إعادة المحاولة
           </button>
         </div>
       )}
 
-      {/* Terminal canvas */}
-      <div ref={termRef} className="flex-1 p-2 overflow-hidden" style={{ minHeight: 0 }} />
+      {/* ── Terminal canvas ─────────────────────────────────────────────────
+          dir="ltr" is required — xterm.js uses a canvas element and is
+          inherently LTR. Without this, RTL page direction breaks backspace
+          and all keyboard input on Arabic/RTL pages.
+      ─────────────────────────────────────────────────────────────────────── */}
+      <div
+        ref={termRef}
+        dir="ltr"
+        className={clsx('flex-1 overflow-hidden', isLight ? 'p-2 bg-white' : 'p-2 bg-[#0d1117]')}
+        style={{ minHeight: 0 }}
+      />
     </div>
   )
 }
