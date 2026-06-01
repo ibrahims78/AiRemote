@@ -237,10 +237,22 @@ export async function downloadRoutes(app: FastifyInstance) {
   })
 
   // GET /api/downloads/file/:id — stream file to client
-  app.get<{ Params: { id: string } }>(
+  // Accepts auth via Authorization header OR ?token= query param so the browser
+  // can trigger a native download using a plain <a href="...?token=..."> link.
+  app.get<{ Params: { id: string }; Querystring: { token?: string } }>(
     '/file/:id',
-    { preHandler: [requireAuth] },
     async (req, reply) => {
+      // Auth: try header first, fall back to ?token= query param
+      const queryToken = (req.query as { token?: string }).token
+      if (queryToken) {
+        req.headers.authorization = `Bearer ${queryToken}`
+      }
+      try {
+        await req.jwtVerify()
+      } catch {
+        return reply.code(401).send({ error: 'Unauthorized' })
+      }
+
       const def = RELEASE_DEFS.find(d => d.id === req.params.id)
       if (!def) return reply.code(404).send({ error: 'Release not found' })
 
@@ -257,6 +269,7 @@ export async function downloadRoutes(app: FastifyInstance) {
       reply.header('Content-Disposition', `attachment; filename="${def.filename}"`)
       reply.header('Content-Length', String(stat.size))
       reply.header('Content-Type', 'application/octet-stream')
+      reply.header('Cache-Control', 'no-store')
       return reply.send(fs.createReadStream(filePath))
     }
   )

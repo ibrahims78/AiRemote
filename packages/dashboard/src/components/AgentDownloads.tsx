@@ -3,6 +3,14 @@ import { Download, Terminal, Package, Loader, CheckCircle, AlertCircle, Hammer, 
 import { api } from '../lib/api'
 import { clsx } from 'clsx'
 
+function getStoredToken(): string | null {
+  try {
+    const stored = localStorage.getItem('airemote-auth')
+    if (!stored) return null
+    return JSON.parse(stored)?.state?.token ?? null
+  } catch { return null }
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 type BuildStatus = 'idle' | 'building' | 'done' | 'error'
 
@@ -72,7 +80,7 @@ export function AgentDownloads({ isAr }: Props) {
   const [releases,    setReleases]    = useState<Release[]>([])
   const [loading,     setLoading]     = useState(true)
   const [version,     setVersion]     = useState('1.4.0')
-  const [downloading, setDownloading] = useState<string | null>(null)
+  const [downloading] = useState<string | null>(null)
   const [buildStates, setBuildStates] = useState<Record<string, BuildState>>({})
   const [expanded,    setExpanded]    = useState<Record<string, boolean>>({})
   const pollRef = useRef<Record<string, ReturnType<typeof setInterval>>>({})
@@ -142,22 +150,25 @@ export function AgentDownloads({ isAr }: Props) {
     }
   }
 
-  // ── Download file ───────────────────────────────────────────────────────
-  async function handleDownload(release: Release) {
-    if (!release.available || downloading) return
-    setDownloading(release.id)
-    try {
-      const res = await api.get(release.download_url, { responseType: 'blob' })
-      const url = URL.createObjectURL(res.data)
-      const a   = document.createElement('a')
-      a.href     = url
-      a.download = release.filename
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-    } finally {
-      setDownloading(null)
-    }
+  // ── Download file — use a direct anchor so the browser handles the transfer
+  // natively (shows OS download progress bar, no memory buffering).
+  function handleDownload(release: Release) {
+    const isAvail = buildStates[release.id]?.available ?? release.available
+    if (!isAvail) return
+
+    const token = getStoredToken()
+    const url   = token
+      ? `${release.download_url}?token=${encodeURIComponent(token)}`
+      : release.download_url
+
+    const a      = document.createElement('a')
+    a.href        = url
+    a.download    = release.filename
+    a.target      = '_blank'
+    a.rel         = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   }
 
   // ── Sort: windows GUI first, then headless, then linux, then script ─────
