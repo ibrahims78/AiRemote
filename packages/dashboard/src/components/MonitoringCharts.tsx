@@ -24,6 +24,14 @@ interface Props {
   stats: DeviceStats | undefined
 }
 
+function fmtKbps(kbps: number | undefined): string {
+  const v = kbps ?? 0
+  if (v === 0)     return '0 B/s'
+  if (v < 1)       return `${Math.round(v * 1024)} B/s`
+  if (v < 1024)    return `${v.toFixed(v < 10 ? 2 : 1)} KB/s`
+  return `${(v / 1024).toFixed(2)} MB/s`
+}
+
 // Module-level history store so it persists across re-renders
 const historyMap = new Map<string, HistoryPoint[]>()
 
@@ -83,7 +91,23 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps<ValueType, NameT
         <div key={i} className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color ?? '#38bdf8' }} />
           <span className="text-slate-400">{p.name}:</span>
-          <span className="text-white font-mono">{Number(p.value).toFixed(1)}</span>
+          <span className="text-white font-mono">{Number(p.value).toFixed(1)}%</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const NetTooltip = ({ active, payload, label }: TooltipProps<ValueType, NameType>) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-navy-800 border border-slate-700/50 rounded-lg px-3 py-2 text-xs shadow-xl">
+      <p className="text-slate-400 mb-1.5 font-mono">{label}</p>
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color ?? '#38bdf8' }} />
+          <span className="text-slate-400">{p.name}:</span>
+          <span className="text-white font-mono">{fmtKbps(Number(p.value))}</span>
         </div>
       ))}
     </div>
@@ -152,13 +176,13 @@ export function MonitoringCharts({ deviceId, stats }: Props) {
               <div className="flex items-center gap-1 text-xs text-slate-400">
                 <ArrowUp size={10} className="text-emerald-400" /> رفع
               </div>
-              <span className="text-xs font-mono text-white">{(stats.networkUpKbps ?? 0).toFixed(0)} KB/s</span>
+              <span className="text-xs font-mono text-white">{fmtKbps(stats.networkUpKbps)}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1 text-xs text-slate-400">
                 <ArrowDown size={10} className="text-brand-blue" /> تنزيل
               </div>
-              <span className="text-xs font-mono text-white">{(stats.networkDownKbps ?? 0).toFixed(0)} KB/s</span>
+              <span className="text-xs font-mono text-white">{fmtKbps(stats.networkDownKbps)}</span>
             </div>
           </div>
         </div>
@@ -194,14 +218,14 @@ export function MonitoringCharts({ deviceId, stats }: Props) {
 
           <div className="glass rounded-xl p-4">
             <h4 className="text-xs font-medium text-slate-400 mb-3 flex items-center gap-1.5">
-              <Network size={11} className="text-orange-400" /> الشبكة (KB/s)
+              <Network size={11} className="text-orange-400" /> الشبكة
             </h4>
             <ResponsiveContainer width="100%" height={130}>
               <LineChart data={history} margin={{ top: 2, right: 2, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#475569' }} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 9, fill: '#475569' }} />
-                <Tooltip content={<CustomTooltip />} />
+                <YAxis tick={{ fontSize: 9, fill: '#475569' }} tickFormatter={v => fmtKbps(v)} width={42} />
+                <Tooltip content={<NetTooltip />} />
                 <Line type="monotone" dataKey="netUp" name="رفع" stroke="#4ade80" strokeWidth={1.5} dot={false} />
                 <Line type="monotone" dataKey="netDown" name="تنزيل" stroke="#38bdf8" strokeWidth={1.5} dot={false} />
               </LineChart>

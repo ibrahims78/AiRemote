@@ -13,3 +13,4 @@
 - [AiRemote xterm.js Listener Cleanup](airemote-xterm-cleanup.md) — onData/onResize return IDisposable; store and call .dispose() to remove; offData/offResize do NOT exist in xterm.js
 - [AiRemote Chunked FS Download](airemote-chunked-download.md) — Large file download via read_chunked op + agent:fs_chunk messages (512KB each); sendFsDownload() in agentHandler; WSMessageType must include agent:fs_chunk
 - [AiRemote GitHub Releases](airemote-github-releases.md) — POST /api/github/config (stored in settings table key github_config); POST /api/github/publish/:id (id or 'all'); polls /publish/:publishId/status; GitHubRelease.tsx in Settings
+- [AiRemote Network Stats Fix](airemote-network-stats.md) — Windows: netstat -e for rx/tx; heartbeat 4s; 2-decimal KB/s; fmtKbps shows B/s|KB/s|MB/s; DB saves rounded; broadcast sends raw decimals

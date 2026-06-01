@@ -186,8 +186,8 @@ function getNetworkInfo(): { downKbps: number; upKbps: number } {
   if (elapsed > 0 && bytes.rx >= lastNetworkBytes.rx && bytes.tx >= lastNetworkBytes.tx) {
     const rxDiff = bytes.rx - lastNetworkBytes.rx
     const txDiff = bytes.tx - lastNetworkBytes.tx
-    downKbps = Math.max(0, Math.round(rxDiff / elapsed / 1024))
-    upKbps   = Math.max(0, Math.round(txDiff / elapsed / 1024))
+    downKbps = Math.max(0, Math.round(rxDiff / elapsed / 1024 * 100) / 100)
+    upKbps   = Math.max(0, Math.round(txDiff / elapsed / 1024 * 100) / 100)
   }
 
   lastNetworkBytes = { rx: bytes.rx, tx: bytes.tx, time: now }
