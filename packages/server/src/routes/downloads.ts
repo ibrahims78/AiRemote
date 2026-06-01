@@ -50,19 +50,11 @@ const RELEASE_DEFS: ReleaseDef[] = [
     platform:  'windows',
     size_hint: '~103 MB',
     buildCmd: {
-      cwd:  REPO_ROOT,
-      cmd:  'python3',
+      cwd:  path.join(REPO_ROOT, 'packages', 'agent-desktop'),
+      cmd:  'sh',
       args: [
         '-c',
-        [
-          'import zipfile,os,sys',
-          `src="releases/agent-windows/win-unpacked"`,
-          `dst="releases/agent-windows/AiRemote-Agent-v${AGENT_VERSION}-Windows-x64.zip"`,
-          'with zipfile.ZipFile(dst,"w",zipfile.ZIP_DEFLATED,compresslevel=6) as zf:',
-          '  [zf.write(os.path.join(r,f),os.path.relpath(os.path.join(r,f),src))',
-          '   for r,d,files in os.walk(src) for f in files]',
-          'print("Done:",os.path.getsize(dst),"bytes")',
-        ].join('\n'),
+        `node_modules/.bin/electron-builder --win --x64 --dir && python3 ../../scripts/zip-agent.py ../../releases/agent-windows/win-unpacked ../../releases/agent-windows/AiRemote-Agent-v${AGENT_VERSION}-Windows-x64.zip`,
       ],
     },
   },
