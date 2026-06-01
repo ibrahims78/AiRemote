@@ -139,6 +139,21 @@ const RELEASE_DEFS: ReleaseDef[] = [
     dir:       'agent-script',
     platform:  'any',
     size_hint: '~168 KB',
+    buildCmd: {
+      cwd:  path.join(REPO_ROOT, 'releases', 'agent-script'),
+      cmd:  'python3',
+      args: [
+        '-c',
+        [
+          'import zipfile,os',
+          `dst="agent-script-v${AGENT_VERSION}.zip"`,
+          `files=["agent-v${AGENT_VERSION}.js","start.bat","start.sh","package.json","README.md",".env.example"]`,
+          'with zipfile.ZipFile(dst,"w",zipfile.ZIP_DEFLATED,compresslevel=6) as zf:',
+          '  [zf.write(f) for f in files if os.path.exists(f)]',
+          'print("Done:",round(os.path.getsize(dst)/1024,1),"KB")',
+        ].join('\n'),
+      ],
+    },
   },
 ]
 
