@@ -4290,6 +4290,23 @@ function readRawNetworkBytes() {
       }
       return { rx, tx };
     }
+    if (process.platform === "win32") {
+      const out = (0, import_child_process.execSync)("netstat -e", { timeout: 3e3, stdio: ["pipe", "pipe", "ignore"] }).toString();
+      const bytesLine = out.split("\n").find((l) => /^\s*bytes\s+\d/i.test(l));
+      if (bytesLine) {
+        const parts = bytesLine.trim().split(/\s+/);
+        const rx = parseInt(parts[1]) || 0, tx = parseInt(parts[2]) || 0;
+        if (rx > 0 || tx > 0) return { rx, tx };
+      }
+      const psOut = (0, import_child_process.execSync)(
+        'powershell -NoProfile -Command "$a=Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface;$a|ForEach-Object{$_.BytesReceivedPersec,$_.BytesSentPersec}"',
+        { timeout: 5e3, stdio: ["pipe", "pipe", "ignore"] }
+      ).toString().trim();
+      const nums2 = psOut.split(/\s+/).map((n) => parseInt(n.replace(/[^\d]/g, "")) || 0);
+      let rx2 = 0, tx2 = 0;
+      for (let i = 0; i + 1 < nums2.length; i += 2) { rx2 += nums2[i]; tx2 += nums2[i + 1]; }
+      if (rx2 > 0 || tx2 > 0) return { rx: rx2, tx: tx2 };
+    }
   } catch {
   }
   return { rx: 0, tx: 0 };

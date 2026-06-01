@@ -146,23 +146,26 @@ function readRawNetworkBytes(): { rx: number; tx: number } {
     }
 
     if (process.platform === 'win32') {
-      // Windows: netstat -e gives cumulative interface totals
-      // Output format:
-      //   Interface Statistics
-      //                              Received            Sent
-      //   Bytes                    1234567890       987654321
-      //   ...
-      const out   = execSync('netstat -e', { timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] }).toString()
-      const lines = out.split('\n')
-      const bytesLine = lines.find(l => /^\s*bytes\s+\d/i.test(l))
-      if (bytesLine) {
-        const parts = bytesLine.trim().split(/\s+/)
-        // parts[0]="Bytes", parts[1]=received, parts[2]=sent
-        return {
-          rx: parseInt(parts[1]) || 0,
-          tx: parseInt(parts[2]) || 0
+      // Try netstat -e first (fast, works on English Windows)
+      try {
+        const out   = execSync('netstat -e', { timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] }).toString()
+        const bytesLine = out.split('\n').find(l => /^\s*bytes\s+\d/i.test(l))
+        if (bytesLine) {
+          const parts = bytesLine.trim().split(/\s+/)
+          const rx = parseInt(parts[1]) || 0
+          const tx = parseInt(parts[2]) || 0
+          if (rx > 0 || tx > 0) return { rx, tx }
         }
-      }
+      } catch {}
+      // Fallback: WMI via PowerShell (locale-independent, works on any Windows language)
+      const psOut = execSync(
+        'powershell -NoProfile -Command "$a=Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface;$a|ForEach-Object{$_.BytesReceivedPersec,$_.BytesSentPersec}"',
+        { timeout: 5000, stdio: ['pipe', 'pipe', 'ignore'] }
+      ).toString().trim()
+      const nums = psOut.split(/\s+/).map(n => parseInt(n.replace(/[^\d]/g, '')) || 0)
+      let rx = 0, tx = 0
+      for (let i = 0; i + 1 < nums.length; i += 2) { rx += nums[i]; tx += nums[i + 1] }
+      if (rx > 0 || tx > 0) return { rx, tx }
     }
   } catch {}
   return { rx: 0, tx: 0 }

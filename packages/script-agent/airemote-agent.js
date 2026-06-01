@@ -9,7 +9,7 @@ const WebSocket = require('./node_modules/ws/index.js')
 const os   = require('os')
 const fs   = require('fs')
 const path = require('path')
-const { exec } = require('child_process')
+const { exec, execSync } = require('child_process')
 
 const CONFIG_FILE = path.join(__dirname, 'config.json')
 const HEARTBEAT_MS   = 10_000
@@ -20,6 +20,8 @@ const VERSION        = '1.1.0'
 let ws = null, deviceId = null, heartbeatTimer = null
 let reconnectTimer = null, reconnectDelay = RECONNECT_BASE
 let running = true
+
+let _netLast = { rx: 0, tx: 0, t: 0 }
 
 function loadConfig() {
   const args = process.argv.slice(2)
@@ -46,6 +48,56 @@ function getIpLocal() {
     for (const i of ifaces)
       if (!i.internal && i.family === 'IPv4') return i.address
   return '127.0.0.1'
+}
+
+function readNetBytes() {
+  try {
+    if (process.platform === 'linux') {
+      const lines = fs.readFileSync('/proc/net/dev', 'utf8').trim().split('\n').slice(2)
+      let rx = 0, tx = 0
+      for (const line of lines) {
+        const t = line.trim(); if (!t) continue
+        const col = t.indexOf(':'); if (col === -1) continue
+        if (t.slice(0, col).trim() === 'lo') continue
+        const n = t.slice(col + 1).trim().split(/\s+/).map(Number)
+        rx += n[0] || 0; tx += n[8] || 0
+      }
+      return { rx, tx }
+    }
+    if (process.platform === 'darwin') {
+      const lines = execSync('netstat -ib', { timeout: 3000 }).toString().split('\n')
+      let rx = 0, tx = 0; const seen = new Set()
+      for (const line of lines.slice(1)) {
+        const p = line.trim().split(/\s+/)
+        if (p.length < 10) continue
+        const iface = p[0].replace(/\d+$/, '')
+        if (seen.has(iface) || iface === 'lo') continue
+        seen.add(iface)
+        rx += parseInt(p[6]) || 0; tx += parseInt(p[9]) || 0
+      }
+      return { rx, tx }
+    }
+    if (process.platform === 'win32') {
+      const out = execSync('netstat -e', { timeout: 3000 }).toString()
+      const line = out.split('\n').find(l => /^\s*bytes\s+\d/i.test(l))
+      if (line) {
+        const p = line.trim().split(/\s+/)
+        return { rx: parseInt(p[1]) || 0, tx: parseInt(p[2]) || 0 }
+      }
+    }
+  } catch {}
+  return { rx: 0, tx: 0 }
+}
+
+function getNetKbps() {
+  const now = Date.now(); const b = readNetBytes()
+  if (_netLast.t === 0) { _netLast = { ...b, t: now }; return { up: 0, down: 0 } }
+  const elapsed = (now - _netLast.t) / 1000
+  if (elapsed < 0.5) return { up: 0, down: 0 }
+  const down = Math.max(0, Math.round((b.rx - _netLast.rx) / elapsed / 1024 * 100) / 100)
+  const up   = Math.max(0, Math.round((b.tx - _netLast.tx) / elapsed / 1024 * 100) / 100)
+  _netLast = { ...b, t: now }
+  return { up, down }
 }
 
 function send(msg) {
@@ -83,13 +135,14 @@ async function getStats() {
   const cpu = await getCpuPercent()
   const tot = os.totalmem(), fre = os.freemem()
   const disk = await getDisk()
+  const net = getNetKbps()
   return {
     cpuPercent: cpu,
     ramPercent: Math.round((tot-fre)/tot*100),
     ramUsedMb:  Math.round((tot-fre)/1048576),
     ramTotalMb: Math.round(tot/1048576),
     diskPercent: disk.pct, diskUsedGb: disk.usedGb, diskTotalGb: disk.totalGb,
-    networkUpKbps: 0, networkDownKbps: 0,
+    networkUpKbps: net.up, networkDownKbps: net.down,
     uptime: Math.floor(os.uptime())
   }
 }
