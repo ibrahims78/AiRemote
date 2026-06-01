@@ -416,6 +416,30 @@ export class AgentService {
             return buf.toString('base64')
           }
 
+          case 'read_chunked': {
+            // Send file in 512 KB pieces so the WS event loop stays free
+            // (prevents ping-timeout disconnects on large files)
+            const CHUNK = 512 * 1024
+            const buf   = await withTimeout(fs.readFile(osPath), 120000, `readFile_c(${osPath})`)
+            const n     = Math.ceil(buf.length / CHUNK) || 1
+            for (let i = 0; i < n; i++) {
+              this.send({
+                type:    'agent:fs_chunk',
+                payload: {
+                  opId, seq: i,
+                  data: buf.subarray(i * CHUNK, (i + 1) * CHUNK).toString('base64'),
+                  done:  i === n - 1,
+                  total: n
+                },
+                timestamp: Date.now()
+              })
+              // Yield so pings / heartbeats can pass between chunks
+              await new Promise(r => setImmediate(r))
+            }
+            console.log(`✅ FS chunked: path=${p.path} chunks=${n}`)
+            return '__chunked__'
+          }
+
           case 'write': {
             const dir = path.dirname(osPath)
             await fs.mkdir(dir, { recursive: true })
@@ -452,9 +476,12 @@ export class AgentService {
         }
       }
 
-      result = await withTimeout(doOp(), OVERALL_TIMEOUT_MS + 1000, `fs:${op}`)
-      console.log(`✅ FS result: op=${op} path=${p.path}`)
+      result = await withTimeout(doOp(), op === 'read_chunked' ? 125000 : OVERALL_TIMEOUT_MS + 1000, `fs:${op}`)
 
+      // read_chunked sends its own agent:fs_chunk messages; skip fs_result
+      if (result === '__chunked__') return
+
+      console.log(`✅ FS result: op=${op} path=${p.path}`)
       this.send({
         type: 'agent:fs_result',
         payload: { opId, data: result },

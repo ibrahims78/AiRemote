@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   Settings, Server, Bot, Bell, Save, Check, Eye, EyeOff,
-  RefreshCw, Info, Sun, Moon, Globe, Copy, Wifi, WifiOff, Loader, Download
+  RefreshCw, Info, Sun, Moon, Globe, Copy, Wifi, WifiOff, Loader, Download, Github
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useUIStore } from '../store/uiStore'
@@ -9,6 +9,7 @@ import { useT } from '../lib/i18n'
 import { toast } from '../store/toastStore'
 import { clsx } from 'clsx'
 import { AgentDownloads } from '../components/AgentDownloads'
+import { GitHubRelease } from '../components/GitHubRelease'
 
 interface AISettings {
   aiProvider: 'openai' | 'gemini' | 'ollama'
@@ -393,6 +394,11 @@ export function SettingsPage() {
           {/* Agent Downloads */}
           <Section icon={Download} color="text-brand-blue" title={isAr ? 'تنزيل الـ Agent' : 'Download Agent'}>
             <AgentDownloads isAr={isAr} />
+          </Section>
+
+          {/* GitHub Releases */}
+          <Section icon={Github} color="text-slate-400" title={isAr ? 'نشر على GitHub Releases' : 'Publish to GitHub Releases'}>
+            <GitHubRelease isAr={isAr} />
           </Section>
 
           {/* Version info */}

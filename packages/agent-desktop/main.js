@@ -431,6 +431,28 @@ async function handleFsRequest(payload) {
         respond({ data: buf.toString('base64'), encoding: 'base64' })
         break
       }
+      case 'read_chunked': {
+        // Chunked transfer — keeps WS event loop free, avoids ping-timeout on large files
+        const osp = toOsPath(reqPath)
+        if (!osp) return respond({ error: 'Invalid path' })
+        const CHUNK = 512 * 1024
+        const buf   = await fsPromises.readFile(osp)
+        const n     = Math.ceil(buf.length / CHUNK) || 1
+        for (let i = 0; i < n; i++) {
+          send({
+            type:    'agent:fs_chunk',
+            payload: {
+              opId, seq: i,
+              data: buf.slice(i * CHUNK, (i + 1) * CHUNK).toString('base64'),
+              done:  i === n - 1,
+              total: n
+            },
+            timestamp: Date.now()
+          })
+          await new Promise(r => setImmediate(r))
+        }
+        return
+      }
       case 'write': {
         const osp = toOsPath(reqPath)
         if (!osp) return respond({ error: 'Invalid path' })

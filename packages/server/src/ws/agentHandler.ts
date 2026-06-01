@@ -19,6 +19,15 @@ const pendingFsOps = new Map<string, {
   timeout: NodeJS.Timeout
 }>()
 
+// Chunked file-download tracking (read_chunked op)
+const pendingFsChunks = new Map<string, {
+  chunks:   Map<number, Buffer>
+  received: number
+  resolve:  (buf: Buffer) => void
+  reject:   (err: Error) => void
+  timeout:  NodeJS.Timeout
+}>()
+
 const heartbeatCount = new Map<string, number>()
 const SAVE_EVERY_N = 3
 
@@ -139,6 +148,35 @@ export async function handleAgentMessage(
         pendingFsOps.delete(p.opId)
         if (p.error) pending.reject(new Error(p.error))
         else pending.resolve(p.data)
+      }
+      // Also handle errors for pending chunked downloads
+      if (p.error) {
+        const pc = pendingFsChunks.get(p.opId)
+        if (pc) {
+          clearTimeout(pc.timeout)
+          pendingFsChunks.delete(p.opId)
+          pc.reject(new Error(p.error))
+        }
+      }
+      return null
+    }
+
+    // ── FS chunk (chunked file download) ──────────────────────────────────────
+    case 'agent:fs_chunk': {
+      const p = message.payload as { opId: string; seq: number; data: string; done: boolean; total: number }
+      const pc = pendingFsChunks.get(p.opId)
+      if (!pc) return null
+      pc.chunks.set(p.seq, Buffer.from(p.data, 'base64'))
+      pc.received++
+      if (p.done) {
+        clearTimeout(pc.timeout)
+        pendingFsChunks.delete(p.opId)
+        const parts: Buffer[] = []
+        for (let i = 0; i < p.total; i++) {
+          const c = pc.chunks.get(i)
+          if (c) parts.push(c)
+        }
+        pc.resolve(Buffer.concat(parts))
       }
       return null
     }
@@ -286,6 +324,35 @@ export function sendFsRequest(
       reject(new Error('انتهت مهلة الاتصال بالأيجنت — تأكد من أن الأيجنت يعمل ومتصل'))
     }, timeoutMs)
     pendingFsOps.set(opId, { resolve, reject, timeout })
+  })
+}
+
+// sendFsDownload — chunked file transfer (avoids large single WS message)
+export function sendFsDownload(
+  deviceId:  string,
+  filePath:  string,
+  timeoutMs  = 120000
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const opId   = uuidv4()
+    const device = deviceRegistry.getDevice(deviceId)
+    if (!device || device.socket.readyState !== 1) {
+      reject(new Error('الجهاز غير متصل أو الاتصال منقطع'))
+      return
+    }
+    const sent = deviceRegistry.sendToDevice(deviceId, {
+      type:      'server:fs_request',
+      payload:   { opId, op: 'read_chunked', path: filePath },
+      timestamp: Date.now()
+    })
+    if (!sent) { reject(new Error('الجهاز غير متصل')); return }
+
+    const timeout = setTimeout(() => {
+      pendingFsChunks.delete(opId)
+      reject(new Error('انتهت مهلة تنزيل الملف — الملف كبير أو الاتصال بطيء'))
+    }, timeoutMs)
+
+    pendingFsChunks.set(opId, { chunks: new Map(), received: 0, resolve, reject, timeout })
   })
 }
 

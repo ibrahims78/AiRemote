@@ -11,3 +11,5 @@
 - [AiRemote PTY Terminal](airemote-pty.md) — v1.2.0: PTY via child_process.spawn (no node-pty); /pty WS endpoint; shared must be rebuilt before server; pkg binary at releases/agent-headless/
 - [AiRemote Agent-proxied FS](airemote-agent-fs.md) — Files tab uses server:fs_request/agent:fs_result over WS; no SSH needed; Windows drives listed at path=/
 - [AiRemote xterm.js Listener Cleanup](airemote-xterm-cleanup.md) — onData/onResize return IDisposable; store and call .dispose() to remove; offData/offResize do NOT exist in xterm.js
+- [AiRemote Chunked FS Download](airemote-chunked-download.md) — Large file download via read_chunked op + agent:fs_chunk messages (512KB each); sendFsDownload() in agentHandler; WSMessageType must include agent:fs_chunk
+- [AiRemote GitHub Releases](airemote-github-releases.md) — POST /api/github/config (stored in settings table key github_config); POST /api/github/publish/:id (id or 'all'); polls /publish/:publishId/status; GitHubRelease.tsx in Settings

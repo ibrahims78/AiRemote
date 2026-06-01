@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth'
 import { deviceRegistry } from '../ws/registry'
-import { sendFsRequest } from '../ws/agentHandler'
+import { sendFsRequest, sendFsDownload } from '../ws/agentHandler'
 
 export async function fsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth)
@@ -36,8 +36,9 @@ export async function fsRoutes(fastify: FastifyInstance) {
       if (!path) return reply.code(400).send({ error: 'path مطلوب' })
       if (!assertOnline(deviceId, reply)) return
       try {
-        const b64 = await sendFsRequest(deviceId, 'read', path, {}, 60000) as string
-        const buf = Buffer.from(b64, 'base64')
+        // Use chunked transfer — avoids sending one giant WS message that
+        // blocks the event loop and trips the ping/pong timeout
+        const buf  = await sendFsDownload(deviceId, path, 120000)
         const name = path.split('/').pop() || 'file'
         reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(name)}"`)
         reply.header('Content-Type', 'application/octet-stream')

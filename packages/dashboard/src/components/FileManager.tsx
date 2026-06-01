@@ -73,7 +73,7 @@ export function FileManager({ deviceId, deviceName }: Props) {
         serverMsg.includes('منقطع')
       ) {
         setError('لم يستجب الأيجنت — تأكد من تشغيل الأيجنت على الجهاز والاتصال بالخادم')
-      } else if (err.response?.data?.error?.includes('غير متصل') || err.response?.status === 503) {
+      } else if (err.response?.data?.error?.includes('غير متصل') || (err.response as { status?: number } | undefined)?.status === 503) {
         setError('الجهاز غير متصل — شغّل الأيجنت على الجهاز أولاً')
       } else {
         setError(serverMsg || err.message || 'فشل تحميل المجلد')

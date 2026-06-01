@@ -4733,6 +4733,21 @@ var AgentService = class {
             const buf = await withTimeout(import_promises.default.readFile(osPath), OVERALL_TIMEOUT_MS, `readFile(${osPath})`);
             return buf.toString("base64");
           }
+          case "read_chunked": {
+            const CHUNK = 512 * 1024;
+            const buf = await withTimeout(import_promises.default.readFile(osPath), 120000, `readFile_c(${osPath})`);
+            const n = Math.ceil(buf.length / CHUNK) || 1;
+            for (let i = 0; i < n; i++) {
+              this.send({
+                type: "agent:fs_chunk",
+                payload: { opId, seq: i, data: buf.subarray(i * CHUNK, (i + 1) * CHUNK).toString("base64"), done: i === n - 1, total: n },
+                timestamp: Date.now()
+              });
+              await new Promise((r) => setImmediate(r));
+            }
+            console.log(`\u2705 FS chunked: path=${p.path} chunks=${n}`);
+            return "__chunked__";
+          }
           case "write": {
             const dir = import_path.default.dirname(osPath);
             await import_promises.default.mkdir(dir, { recursive: true });
@@ -4764,7 +4779,8 @@ var AgentService = class {
             throw new Error(`\u0639\u0645\u0644\u064A\u0629 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641\u0629: ${op}`);
         }
       };
-      result = await withTimeout(doOp(), OVERALL_TIMEOUT_MS + 1e3, `fs:${op}`);
+      result = await withTimeout(doOp(), op === "read_chunked" ? 125000 : OVERALL_TIMEOUT_MS + 1e3, `fs:${op}`);
+      if (result === "__chunked__") return;
       console.log(`\u2705 FS result: op=${op} path=${p.path}`);
       this.send({
         type: "agent:fs_result",
