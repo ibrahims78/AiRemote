@@ -196,6 +196,56 @@ function runCmd(cmd, timeout = 10000) {
   })
 }
 
+// ─── Network Stats ────────────────────────────────────────────────────────
+let lastNetBytes = { rx: 0, tx: 0, time: Date.now() }
+let netInit = false
+
+function readRawNetBytes() {
+  return new Promise(resolve => {
+    // Try netstat -e first (fast, works on English Windows)
+    exec('netstat -e', { timeout: 3000 }, (err, out) => {
+      if (!err && out) {
+        const line = out.split('\n').find(l => /^\s*bytes\s+\d/i.test(l))
+        if (line) {
+          const p = line.trim().split(/\s+/)
+          const rx = parseInt(p[1]) || 0
+          const tx = parseInt(p[2]) || 0
+          if (rx > 0 || tx > 0) return resolve({ rx, tx })
+        }
+      }
+      // Fallback: PowerShell WMI (locale-independent)
+      const ps = `$a=Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface;$a|ForEach-Object{$_.BytesReceivedPersec,$_.BytesSentPersec}`
+      exec(`powershell -NoProfile -Command "${ps}"`, { timeout: 5000 }, (err2, out2) => {
+        if (!err2 && out2) {
+          const nums = out2.trim().split(/\s+/).map(n => parseInt(n) || 0)
+          let rx = 0, tx = 0
+          for (let i = 0; i + 1 < nums.length; i += 2) { rx += nums[i]; tx += nums[i + 1] }
+          if (rx > 0 || tx > 0) return resolve({ rx, tx })
+        }
+        resolve({ rx: 0, tx: 0 })
+      })
+    })
+  })
+}
+
+async function computeNetKbps() {
+  const now = Date.now()
+  const bytes = await readRawNetBytes()
+  if (!netInit) {
+    netInit = true
+    lastNetBytes = { rx: bytes.rx, tx: bytes.tx, time: now }
+    return { downKbps: 0, upKbps: 0 }
+  }
+  const elapsed = (now - lastNetBytes.time) / 1000
+  let downKbps = 0, upKbps = 0
+  if (elapsed > 0 && bytes.rx >= lastNetBytes.rx && bytes.tx >= lastNetBytes.tx) {
+    downKbps = Math.round((bytes.rx - lastNetBytes.rx) / elapsed / 1024 * 100) / 100
+    upKbps   = Math.round((bytes.tx - lastNetBytes.tx) / elapsed / 1024 * 100) / 100
+  }
+  lastNetBytes = { rx: bytes.rx, tx: bytes.tx, time: now }
+  return { downKbps: Math.max(0, downKbps), upKbps: Math.max(0, upKbps) }
+}
+
 async function getStats() {
   const cpuPercent = await getCpuPercent()
   const total = os.totalmem(), free = os.freemem()
@@ -203,9 +253,11 @@ async function getStats() {
   const ramUsedMb   = Math.round((total - free) / 1048576)
   const ramPercent  = Math.round(ramUsedMb / ramTotalMb * 100)
   const disk        = await getDiskPercent()
+  const net         = await computeNetKbps()
   const stats = {
     cpuPercent, ramPercent, ramUsedMb, ramTotalMb,
     diskPercent: disk.pct, diskUsedGb: disk.usedGb, diskTotalGb: disk.totalGb,
+    networkUpKbps: net.upKbps, networkDownKbps: net.downKbps,
     uptime: Math.floor(os.uptime())
   }
   lastStats = stats
@@ -513,21 +565,80 @@ function checkSshPort(host, port) {
 }
 
 // ─── PTY (Direct Shell) ───────────────────────────────────────────────────
-function resolveShell(hint) {
-  if (process.platform === 'win32') {
-    if (hint === 'cmd') return { cmd: 'cmd.exe', args: [] }
-    return { cmd: 'powershell.exe', args: ['-NoLogo', '-NoProfile'] }
+// Windows software-PTY: buffer chars per session, echo locally, send lines to shell
+/** @type {Map<string, {buf: string, tmpScript: string|null}>} */
+const winPtyBufs = new Map()
+
+// PowerShell wrapper: reads stdin line-by-line, shows CWD prompt, executes commands
+const WIN_PS_SCRIPT = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+$ErrorActionPreference = 'Continue'
+function Show-Prompt { [Console]::Write("PS " + (Get-Location).Path + "> ") }
+Show-Prompt
+while ($true) {
+  $line = [Console]::ReadLine()
+  if ($null -eq $line) { break }
+  $line = $line.Trim()
+  if ($line -eq "exit" -or $line -eq "quit") { break }
+  if ($line.Length -gt 0) {
+    try { Invoke-Expression $line 2>&1 | ForEach-Object { [Console]::WriteLine([string]$_) } }
+    catch { [Console]::WriteLine("Error: " + $_.Exception.Message) }
   }
-  if (hint === 'bash') return { cmd: '/bin/bash', args: ['--login'] }
-  if (hint === 'sh')   return { cmd: '/bin/sh',   args: [] }
-  if (hint === 'zsh')  return { cmd: '/bin/zsh',  args: ['--login'] }
-  return { cmd: process.env.SHELL || '/bin/bash', args: ['--login'] }
+  Show-Prompt
 }
+`.trim()
+
+const WIN_CMD_WRAPPER = `@echo off
+setlocal enabledelayedexpansion
+:loop
+set /p "cmd=> "
+if "!cmd!"=="exit" goto end
+if "!cmd!"=="quit" goto end
+if not "!cmd!"=="" (
+  cmd /c !cmd! 2>&1
+)
+goto loop
+:end
+`.trim()
 
 function handlePtyOpen(payload) {
   const { sessionId, rows = 24, cols = 80, shell: hint = 'auto' } = payload
   addLog('info', `🖥 PTY فُتح (${sessionId.slice(0, 8)})`)
-  const { cmd, args } = resolveShell(hint)
+
+  let cmd, args, tmpScript = null
+
+  if (process.platform === 'win32') {
+    const useCmdShell = (hint === 'cmd')
+    if (useCmdShell) {
+      tmpScript = path.join(os.tmpdir(), `airemote-pty-${sessionId}.bat`)
+      fs.writeFileSync(tmpScript, WIN_CMD_WRAPPER, 'utf8')
+      cmd = 'cmd.exe'
+      args = ['/Q', '/C', tmpScript]
+    } else {
+      tmpScript = path.join(os.tmpdir(), `airemote-pty-${sessionId}.ps1`)
+      fs.writeFileSync(tmpScript, WIN_PS_SCRIPT, 'utf8')
+      cmd = 'powershell.exe'
+      args = ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tmpScript]
+    }
+    winPtyBufs.set(sessionId, { buf: '', tmpScript })
+  } else if (process.platform === 'linux') {
+    cmd = '/bin/bash'
+    args = []
+    // Use `script` to allocate a real PTY so line discipline works
+    try {
+      const inner = `${process.env.SHELL || '/bin/bash'} --login`
+      cmd = 'script'
+      args = ['-q', '-c', inner, '/dev/null']
+    } catch {}
+  } else if (process.platform === 'darwin') {
+    cmd = 'script'
+    args = ['-q', '/dev/null', process.env.SHELL || '/bin/bash', '--login']
+  } else {
+    cmd = process.env.SHELL || '/bin/bash'
+    args = ['--login']
+  }
+
   try {
     const proc = spawn(cmd, args, {
       env: { ...process.env, TERM: 'xterm-256color', COLUMNS: String(cols), LINES: String(rows), COLORTERM: 'truecolor' },
@@ -548,25 +659,73 @@ function handlePtyOpen(payload) {
     proc.on('close', () => {
       send({ type: 'agent:pty_closed', payload: { sessionId }, timestamp: Date.now() })
       ptyProcs.delete(sessionId)
+      _cleanWinBuf(sessionId)
       if (win && !win.isDestroyed()) win.webContents.send('pty-state', { active: false, sessionId })
       addLog('info', `🖥 PTY أُغلق (${sessionId.slice(0, 8)})`)
     })
     proc.on('error', err => {
       send({ type: 'agent:pty_error', payload: { sessionId, message: err.message }, timestamp: Date.now() })
       ptyProcs.delete(sessionId)
+      _cleanWinBuf(sessionId)
       addLog('error', `PTY error: ${err.message}`)
     })
   } catch (e) {
+    _cleanWinBuf(sessionId)
     send({ type: 'agent:pty_error', payload: { sessionId, message: `فشل تشغيل Shell: ${e.message}` }, timestamp: Date.now() })
     addLog('error', `PTY spawn failed: ${e.message}`)
   }
 }
 
+function _cleanWinBuf(sessionId) {
+  const state = winPtyBufs.get(sessionId)
+  if (state?.tmpScript) { try { fs.unlinkSync(state.tmpScript) } catch {} }
+  winPtyBufs.delete(sessionId)
+}
+
+function _sendPtyData(sessionId, str) {
+  send({ type: 'agent:pty_data', payload: { sessionId, data: Buffer.from(str).toString('base64') }, timestamp: Date.now() })
+}
+
 function handlePtyData(payload) {
   const proc = ptyProcs.get(payload.sessionId)
-  if (proc?.stdin?.writable) {
-    proc.stdin.write(Buffer.from(payload.data, 'base64'))
+  if (!proc?.stdin?.writable) return
+
+  if (process.platform === 'win32') {
+    // Software PTY: echo chars locally, buffer until Enter, then send full line
+    const state = winPtyBufs.get(payload.sessionId)
+    if (!state) return
+    const raw = Buffer.from(payload.data, 'base64').toString('binary')
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i]
+      const code = ch.charCodeAt(0)
+      if (ch === '\r' || ch === '\n') {
+        // Echo CRLF then send buffered line to shell
+        _sendPtyData(payload.sessionId, '\r\n')
+        proc.stdin.write(state.buf + '\n', 'utf8')
+        state.buf = ''
+      } else if (code === 0x7f || code === 0x08) {
+        // Backspace: erase last char locally
+        if (state.buf.length > 0) {
+          state.buf = state.buf.slice(0, -1)
+          _sendPtyData(payload.sessionId, '\x08 \x08')
+        }
+      } else if (code === 0x03) {
+        // Ctrl+C: clear buffer + send newline
+        state.buf = ''
+        _sendPtyData(payload.sessionId, '^C\r\n')
+        proc.stdin.write('\x03', 'binary')
+      } else if (code >= 0x20) {
+        // Printable: echo + buffer
+        const char = Buffer.from([code]).toString('utf8')
+        state.buf += char
+        _sendPtyData(payload.sessionId, char)
+      }
+    }
+    return
   }
+
+  // Linux/macOS: pass through directly (script handles echo/line discipline)
+  proc.stdin.write(Buffer.from(payload.data, 'base64'))
 }
 
 function handlePtyResize(payload) {
@@ -582,6 +741,7 @@ function handlePtyClose(payload) {
     try { proc.kill() } catch {}
     ptyProcs.delete(payload.sessionId)
   }
+  _cleanWinBuf(payload.sessionId)
 }
 
 function executeCommand(payload) {
