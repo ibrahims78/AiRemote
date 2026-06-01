@@ -144,6 +144,26 @@ function readRawNetworkBytes(): { rx: number; tx: number } {
       }
       return { rx, tx }
     }
+
+    if (process.platform === 'win32') {
+      // Windows: netstat -e gives cumulative interface totals
+      // Output format:
+      //   Interface Statistics
+      //                              Received            Sent
+      //   Bytes                    1234567890       987654321
+      //   ...
+      const out   = execSync('netstat -e', { timeout: 3000, stdio: ['pipe', 'pipe', 'ignore'] }).toString()
+      const lines = out.split('\n')
+      const bytesLine = lines.find(l => /^\s*bytes\s+\d/i.test(l))
+      if (bytesLine) {
+        const parts = bytesLine.trim().split(/\s+/)
+        // parts[0]="Bytes", parts[1]=received, parts[2]=sent
+        return {
+          rx: parseInt(parts[1]) || 0,
+          tx: parseInt(parts[2]) || 0
+        }
+      }
+    }
   } catch {}
   return { rx: 0, tx: 0 }
 }
