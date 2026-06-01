@@ -1,11 +1,9 @@
 'use strict'
 
 /**
- * AiRemote Agent — Headless / CLI  v1.2.0
+ * AiRemote Agent — Headless / CLI  v1.4.0
  * No UI, no Electron. Runs as a background process or Windows service.
- * New in v1.2.0: PTY direct-shell tunnel (no SSH needed for Terminal tab)
- *                SSH availability auto-detect
- * Config: %APPDATA%\airemote\config.json  (or same folder as exe)
+ * Config: SERVER_URL and DEVICE_TOKEN env vars, or .env file, or --server/--token CLI args
  */
 
 const WebSocket = require('ws')
@@ -25,7 +23,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 const HEARTBEAT_MS   = 10_000
 const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
-const VERSION        = '1.2.0'
+const VERSION        = '1.4.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let ws             = null
@@ -46,8 +44,8 @@ function loadConfig() {
   const get  = (flag) => { const i = args.indexOf(flag); return i !== -1 ? args[i + 1] : null }
   const cliServer = get('--server')
   const cliToken  = get('--token')
-  const envServer = process.env.AIREMOTE_SERVER
-  const envToken  = process.env.AIREMOTE_TOKEN
+  const envServer = process.env.SERVER_URL
+  const envToken  = process.env.DEVICE_TOKEN
 
   let fileCfg = {}
   try {
