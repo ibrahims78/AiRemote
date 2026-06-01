@@ -32,6 +32,19 @@ export function handleClientMessage(
         payload: { message: 'Subscribed', onlineDevices: onlineDeviceIds },
         timestamp: Date.now()
       }))
+
+      // Push current stats for all online devices so the client
+      // doesn't have to wait for the next heartbeat cycle
+      const currentStats = deviceRegistry.getAllDeviceStats()
+      for (const { deviceId, stats } of currentStats) {
+        if (socket.readyState === 1) {
+          socket.send(JSON.stringify({
+            type: 'broadcast:stats_update',
+            payload: { deviceId, stats },
+            timestamp: Date.now()
+          }))
+        }
+      }
       break
     }
 

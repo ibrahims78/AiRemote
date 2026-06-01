@@ -40,11 +40,14 @@ class DeviceRegistry {
 
   // ── Device management ────────────────────────────────────────────────────
 
-  registerDevice(deviceId: string, socket: WebSocket, stats?: DeviceStats, capabilities?: Partial<AgentCapabilities>): void {
+  registerDevice(deviceId: string, socket: WebSocket, _stats?: DeviceStats, capabilities?: Partial<AgentCapabilities>): void {
+    // Do NOT store registration stats — they always have network=0 (first baseline call).
+    // Stats will be populated exclusively from heartbeats, ensuring dashboard never shows
+    // misleading "0 B/s" from the initial registration payload.
     this.devices.set(deviceId, {
       deviceId,
       socket,
-      stats,
+      stats: undefined,
       connectedAt: new Date(),
       capabilities: {
         pty:          true,
@@ -81,6 +84,14 @@ class DeviceRegistry {
 
   getOnlineDeviceIds(): string[] {
     return Array.from(this.devices.keys())
+  }
+
+  getAllDeviceStats(): Array<{ deviceId: string; stats: DeviceStats }> {
+    const result: Array<{ deviceId: string; stats: DeviceStats }> = []
+    for (const [deviceId, entry] of this.devices) {
+      if (entry.stats) result.push({ deviceId, stats: entry.stats })
+    }
+    return result
   }
 
   updateDeviceStats(deviceId: string, stats: DeviceStats): void {
