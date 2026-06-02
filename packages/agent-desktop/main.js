@@ -5,10 +5,9 @@ const path   = require('path')
 const os     = require('os')
 const fs     = require('fs')
 const https  = require('https')
-const net    = require('net')
 const crypto = require('crypto')
 const { exec, spawn } = require('child_process')
-const WebSocket  = require('ws')
+const WebSocket = require('ws')
 
 // ─── Single Instance Lock ──────────────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock()
@@ -22,9 +21,8 @@ const HEARTBEAT_MS   = 10_000
 const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
-const SSH_KEYS_FILE  = path.join(app.getPath('userData'), 'airemote-ssh-keys.json')
 const LOG_MAX        = 300
-const AGENT_VERSION  = '1.5.0'
+const AGENT_VERSION  = '2.0.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null
@@ -42,7 +40,6 @@ let quitting       = false
 let lastStats      = null
 let cachedPublicIp = ''
 let boundsTimer    = null
-let sshAvailable   = false
 
 /** @type {Map<string, import('child_process').ChildProcess>} */
 const ptyProcs = new Map()
@@ -51,8 +48,7 @@ const ptyProcs = new Map()
 function defaultConfig() {
   return {
     serverUrl: '', token: '', autoStart: false, startMinimized: false,
-    _winBounds: null,
-    ssh: { host: '', port: 22, username: '', authType: 'password', password: '', keyPath: '' }
+    _winBounds: null
   }
 }
 
@@ -68,30 +64,6 @@ function loadConfig() {
 function saveConfig(updates) {
   config = { ...config, ...updates }
   try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8') } catch {}
-}
-
-// ─── SSH Keys ─────────────────────────────────────────────────────────────
-function loadSshKeys() {
-  try {
-    if (fs.existsSync(SSH_KEYS_FILE))
-      return JSON.parse(fs.readFileSync(SSH_KEYS_FILE, 'utf8'))
-  } catch {}
-  return null
-}
-
-function saveSshKeys(keys) {
-  try { fs.writeFileSync(SSH_KEYS_FILE, JSON.stringify(keys, null, 2), 'utf8') } catch {}
-}
-
-function generateSshKeyPair() {
-  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding:  { type: 'spki',  format: 'pem' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-  })
-  const keys = { privateKey, publicKey, generatedAt: new Date().toISOString() }
-  saveSshKeys(keys)
-  return keys
 }
 
 // ─── Public IP ────────────────────────────────────────────────────────────
@@ -309,30 +281,22 @@ function doConnect() {
     reconnectDelay = RECONNECT_BASE
     addLog('info', '✅ اتصل بالخادم — جاري التسجيل...')
     try {
-      const info   = getDeviceInfo()
-      const stats  = await getStats()
-      const sshCfg = config.ssh || {}
-      sshAvailable = !!(sshCfg.host || sshCfg.username) || await checkSshPort('127.0.0.1', 22)
-      const shell  = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
+      const info  = getDeviceInfo()
+      const stats = await getStats()
+      const shell = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
       send({
         type: 'agent:register',
         payload: {
-          token:       config.token.trim(),
+          token:        config.token.trim(),
           info,
           stats,
-          tunnelLayer: 'relay',
-          capabilities: { pty: true, sshAvailable, shell, fs: true },
-          sshInfo: {
-            available: sshAvailable,
-            host:      sshCfg.host || info.ipLocal,
-            port:      sshCfg.port || 22,
-            username:  sshCfg.username
-          }
+          tunnelLayer:  'relay',
+          capabilities: { pty: true, shell, fs: true }
         },
         timestamp: Date.now()
       })
       startHeartbeat()
-      addLog('info', `🖥 PTY Shell: مفعّل | SSH: ${sshAvailable ? 'متاح' : 'غير مكتشف'} | v${AGENT_VERSION}`)
+      addLog('info', `🖥 PTY Shell: مفعّل | v${AGENT_VERSION}`)
     } catch (e) {
       addLog('error', `خطأ في التسجيل: ${e.message}`)
     }
@@ -374,16 +338,6 @@ function handleMsg(msg) {
     }
     case 'server:ping': {
       send({ type: 'agent:pong', payload: {}, timestamp: Date.now() })
-      break
-    }
-    case 'server:ssh_state': {
-      const { active, sessionId, username, method } = msg.payload || {}
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('ssh-state', { active, sessionId, username, method })
-      }
-      addLog('info', active
-        ? `🔐 SSH: جلسة نشطة${username ? ' — ' + username : ''}${sessionId ? ' [' + sessionId.slice(0, 8) + ']' : ''}${method ? ' (' + method + ')' : ''}`
-        : `🔒 SSH: انتهت جلسة الخادم`)
       break
     }
     case 'server:pty_open':
@@ -551,17 +505,6 @@ async function handleFsRequest(payload) {
   } catch (e) {
     respond({ error: e.message })
   }
-}
-
-// ─── SSH port check ────────────────────────────────────────────────────────
-function checkSshPort(host, port) {
-  return new Promise(resolve => {
-    const sock = new net.Socket()
-    sock.setTimeout(3000)
-    sock.connect(port, host, () => { sock.destroy(); resolve(true) })
-    sock.on('error',   () => { sock.destroy(); resolve(false) })
-    sock.on('timeout', () => { sock.destroy(); resolve(false) })
-  })
 }
 
 // ─── PTY (Direct Shell) ───────────────────────────────────────────────────
@@ -774,7 +717,7 @@ async function startHeartbeat() {
         type: 'agent:heartbeat',
         payload: {
           deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now(),
-          capabilities: { pty: true, sshAvailable, fs: true }
+          capabilities: { pty: true, fs: true }
         },
         timestamp: Date.now()
       })
@@ -897,7 +840,6 @@ function createWindow() {
         autoStart:      config.autoStart,
         startMinimized: config.startMinimized
       },
-      ssh:       config.ssh || defaultConfig().ssh,
       logs:      logEntries,
       state:     agentState,
       deviceId,
@@ -939,54 +881,6 @@ ipcMain.on('close-app',    () => { quitting = true; app.quit() })
 ipcMain.on('save-config', (_, cfg) => {
   saveConfig(cfg)
   addLog('info', '💾 تم حفظ الإعدادات')
-})
-
-ipcMain.on('save-ssh-config', (_, ssh) => {
-  saveConfig({ ssh: { ...defaultConfig().ssh, ...ssh } })
-  addLog('info', '💾 تم حفظ إعدادات SSH')
-  // Notify server if connected — so it updates the SSH credentials for this device
-  if (ws?.readyState === WebSocket.OPEN && deviceId) {
-    send({
-      type: 'agent:ssh_info',
-      payload: {
-        deviceId,
-        sshHost:     ssh.host || getIpLocal(),
-        sshPort:     ssh.port || 22,
-        sshUsername: ssh.username,
-        sshAuthType: ssh.authType,
-        timestamp:   Date.now()
-      }
-    })
-    addLog('info', '📡 تم إرسال بيانات SSH إلى الخادم')
-  }
-})
-
-ipcMain.handle('test-ssh-port', (_, { host, port }) => {
-  return new Promise(resolve => {
-    const sock = new net.Socket()
-    sock.setTimeout(4000)
-    sock.connect(port || 22, host, () => { sock.destroy(); resolve({ ok: true }) })
-    sock.on('error',   err => { sock.destroy(); resolve({ ok: false, error: err.message }) })
-    sock.on('timeout', ()  => { sock.destroy(); resolve({ ok: false, error: 'timeout'   }) })
-  })
-})
-
-ipcMain.handle('get-ssh-keys',      () => loadSshKeys())
-ipcMain.handle('generate-ssh-keys', () => generateSshKeyPair())
-
-ipcMain.handle('browse-file', async () => {
-  if (!win || win.isDestroyed()) return null
-  const result = await dialog.showOpenDialog(win, {
-    title: 'Select SSH Private Key',
-    properties: ['openFile'],
-    filters: [
-      { name: 'SSH Keys', extensions: ['pem', 'key', 'ppk', 'rsa', 'ed25519', 'ecdsa'] },
-      { name: 'All Files', extensions: ['*'] }
-    ],
-    defaultPath: path.join(os.homedir(), '.ssh')
-  })
-  if (result.canceled || !result.filePaths.length) return null
-  return result.filePaths[0]
 })
 
 ipcMain.handle('get-state', () => ({

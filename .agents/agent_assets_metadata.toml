@@ -90,3 +90,9 @@ id = "wqRri6ZhYbPJ8ClFIb-d8"
 uri = "file://releases/agent-script/agent-script-v2.0.0.zip"
 type = "unspecified"
 title = "AiRemote Agent v2.0.0 — Script Edition"
+
+[[outputs]]
+id = "b6UY9d5_eXdQYMENTMC0O"
+uri = "file://releases/agent-windows/AiRemote-Agent-v2.0.0-Windows-x64.zip"
+type = "unspecified"
+title = "AiRemote Agent v2.0.0 — Windows GUI (Electron)"

@@ -19,6 +19,7 @@
       </svg>
     </div>
     <span class="brand-name">AiRemote Agent</span>
+    <span class="brand-version">v2.0.0</span>
   </div>
 
   <div class="title-status" id="title-status">
@@ -188,22 +189,6 @@
       </button>
       <div class="sec-body" id="body-settings">
         <div id="settings-inner">
-          <div id="tab-bar">
-            <button class="tab-btn active" id="tab-conn" data-tab="conn" type="button">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
-              </svg>
-              <span data-i18n="tabConn">الاتصال</span>
-            </button>
-            <button class="tab-btn" id="tab-ssh" data-tab="ssh" type="button">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-              </svg>
-              <span data-i18n="tabSsh">SSH</span>
-            </button>
-          </div>
-
           <!-- Panel: Connection -->
           <div class="tab-panel active" id="panel-conn">
             <div class="field">
@@ -257,130 +242,6 @@
             </div>
           </div>
 
-          <!-- Panel: SSH Access -->
-          <div class="tab-panel" id="panel-ssh">
-
-            <!-- Info Banner -->
-            <div class="ssh-info-banner">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0; color:var(--blue); margin-top:1px">
-                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              <span data-i18n="sshBannerText">هذه الإعدادات تُمكّن الخادم من الاتصال بهذا الجهاز عبر SSH مباشرةً. الاتصال يُنشأ من الخادم فقط — لا حاجة لفتح منفذ من طرفك.</span>
-            </div>
-
-            <!-- SSH Status Bar -->
-            <div class="ssh-status-bar" id="ssh-status-bar">
-              <span class="ssh-dot" id="ssh-dot"></span>
-              <span id="ssh-status-lbl" data-i18n="sshNotConn">SSH غير نشط</span>
-              <span id="ssh-session-info" class="ssh-session-info"></span>
-              <span id="ssh-server-badge" class="ssh-server-badge" style="display:none" data-i18n="sshFromServer">من الخادم</span>
-            </div>
-
-            <div class="fields-row">
-              <div class="field f-grow">
-                <label data-i18n="sshHost">SSH Host</label>
-                <input id="inp-ssh-host" type="text" dir="ltr"
-                  placeholder="192.168.1.x" autocomplete="off" spellcheck="false"/>
-              </div>
-              <div class="field f-fixed">
-                <label data-i18n="sshPort">Port</label>
-                <input id="inp-ssh-port" type="number" dir="ltr"
-                  placeholder="22" min="1" max="65535" value="22"/>
-              </div>
-            </div>
-            <div class="field">
-              <label data-i18n="sshUser">اسم المستخدم</label>
-              <input id="inp-ssh-user" type="text" dir="ltr"
-                placeholder="administrator" autocomplete="off" spellcheck="false"/>
-            </div>
-            <div class="field">
-              <label data-i18n="sshAuth">طريقة المصادقة</label>
-              <div class="radio-group">
-                <label class="radio-row">
-                  <input type="radio" name="ssh-auth" id="rad-pass" value="password" checked/>
-                  <span data-i18n="sshPassword">كلمة المرور</span>
-                </label>
-                <label class="radio-row">
-                  <input type="radio" name="ssh-auth" id="rad-key" value="key"/>
-                  <span data-i18n="sshKey">مفتاح خاص</span>
-                </label>
-              </div>
-            </div>
-            <div id="ssh-pass-group" class="field">
-              <label data-i18n="sshPassword">كلمة المرور</label>
-              <div class="input-wrap">
-                <input id="inp-ssh-pass" type="password" class="has-eye" dir="ltr"
-                  placeholder="••••••••" autocomplete="off"/>
-                <button class="eye-btn" id="btn-show-ssh-pass" type="button">
-                  <svg id="ssh-eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div id="ssh-key-group" class="field" style="display:none">
-              <label data-i18n="sshKeyPath">مسار ملف المفتاح</label>
-              <div class="input-wrap">
-                <input id="inp-ssh-key" type="text" class="has-eye" dir="ltr"
-                  placeholder="C:\Users\user\.ssh\id_rsa" autocomplete="off"/>
-                <button class="eye-btn" id="btn-browse-key" type="button" title="Browse">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div class="btn-row">
-              <button id="save-ssh-btn" type="button">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                  <polyline points="17 21 17 13 7 13 7 21"/>
-                </svg>
-                <span data-i18n="saveSsh">حفظ إعدادات SSH</span>
-              </button>
-              <button id="test-ssh-btn" class="btn-ghost" type="button">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                </svg>
-                <span data-i18n="testSsh">اختبار الاتصال</span>
-              </button>
-            </div>
-            <div id="ssh-log-box" class="ssh-log"></div>
-
-            <!-- SSH Key Pair -->
-            <div class="ssh-keygen-section">
-              <div class="keygen-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-                </svg>
-                <span data-i18n="sshKeyPair">مفتاح SSH التشفيري</span>
-                <button id="gen-key-btn" class="btn-ghost btn-xs" type="button" data-i18n="generateKey">توليد مفتاح</button>
-              </div>
-              <p class="keygen-hint" data-i18n="keyHint">أنشئ مفتاحاً حتى يتصل الخادم بهذا الجهاز عبر SSH بدون كلمة مرور</p>
-              <div id="key-display" style="display:none">
-                <div class="key-type-row">
-                  <button class="key-tab-btn active" data-kt="public" type="button" data-i18n="publicKey">المفتاح العام</button>
-                  <button class="key-tab-btn" data-kt="private" type="button" data-i18n="privateKey">المفتاح الخاص</button>
-                </div>
-                <div class="key-panel-wrap">
-                  <pre id="key-content" class="key-code selectable"></pre>
-                  <button id="copy-key-btn" class="copy-key-btn" type="button" title="نسخ">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="9" y="9" width="13" height="13" rx="2"/>
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                    </svg>
-                  </button>
-                </div>
-                <div class="key-instruction" id="key-instruction-public" data-i18n="keyInstructionPublic">
-                  أضف هذا المفتاح العام إلى ملف <code>authorized_keys</code> على هذا الجهاز
-                </div>
-                <div class="key-instruction" id="key-instruction-private" style="display:none" data-i18n="keyInstructionPrivate">
-                  أعطِ هذا المفتاح الخاص للخادم — الاتصال يُنشأ من طرف الخادم فقط
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

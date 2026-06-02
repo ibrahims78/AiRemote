@@ -134,6 +134,15 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+.brand-version {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: .2px;
+  margin-inline-start: 4px;
+  opacity: .8;
+  -webkit-text-fill-color: var(--muted);
+}
 .logo {
   width: 22px; height: 22px;
   background: linear-gradient(135deg, var(--teal), var(--blue));
