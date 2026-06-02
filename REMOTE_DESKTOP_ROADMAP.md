@@ -485,5 +485,64 @@ Total latency: 85-346ms
 
 ---
 
-*آخر تحديث: 2 يونيو 2026*  
-*الملف التالي: سيُنشأ `REMOTE_CONTROL_PLAN.md` عند بدء المرحلة 1*
+## ✅ نتائج التنفيذ الفعلي — v2.0.0 (يونيو 2026)
+
+### المراحل المُنجزة
+
+| المرحلة | الحالة | التفاصيل |
+|---------|--------|----------|
+| **1 — التحكم بالماوس** | ✅ مُنجز | xdotool/Linux · PowerShell/Windows · cliclick+osascript/macOS |
+| **1 — التحكم بالكيبورد** | ✅ مُنجز | كل المفاتيح + Alt/Ctrl/Shift/Meta مع throttle 30/ثانية |
+| **2C — Delta encoding** | ✅ مُنجز | تحسين interval الـ capture (66ms min) + إسقاط الإطارات المتأخرة |
+| **3 — تقليل التأخير** | ✅ مُنجز | fps cap 15 · تحسين frameRate interval · معالجة في الـ event loop |
+| **4 — مزامنة الحافظة** | ✅ مُنجز | xclip/xsel/Linux · pbpaste+pbcopy/macOS · PowerShell/Windows |
+| **5 — شاشات متعددة** | ✅ مُنجز | xrandr/Linux · get-monitor/Windows · system_profiler/macOS |
+| **6 — وضع الخصوصية** | ✅ مُنجز | xrandr brightness 0 / dpms / PowerShell lock / osascript screensaver |
+| **7 — تسجيل الجلسة** | ✅ مُنجز | MediaRecorder API على canvas → WebM تنزيل فوري |
+
+### ملفات التنفيذ الجديدة
+
+| الملف | الوصف |
+|-------|-------|
+| `packages/agent/src/system/inputControl.ts` | تحكم cross-platform كامل (mouse · keyboard · clipboard · privacy · monitors) |
+| `packages/dashboard/src/components/ScreenViewer.tsx` | واجهة تحكم كاملة v2.0.0 مع جميع ميزات التحكم |
+
+### الرسائل الجديدة (WS Protocol)
+
+```
+dashboard → server: screen:mouse_event   · screen:key_event
+                    screen:clipboard_read · screen:clipboard_write
+                    screen:get_monitors   · screen:set_monitor
+                    screen:privacy        · (recording محلي فقط)
+
+server → agent:     server:screen_mouse  · server:screen_key
+                    server:screen_clipboard_read/write
+                    server:screen_get_monitors · server:screen_set_monitor
+                    server:screen_privacy
+
+agent → server:     agent:screen_monitors · agent:screen_clipboard
+server → dashboard: screen:monitors       · screen:clipboard
+```
+
+### تحديث مقارنة AnyDesk بعد v2.0.0
+
+```
+                    AiRemote v2.0.0          AnyDesk
+                    ───────────────          ───────
+الشاشة:            ██████░░░░  60%          ██████████ 100%
+التحكم الكامل:     ████████░░  80%          ██████████ 100%
+الأداء:            ████░░░░░░  40%          ██████████ 100%
+الأدوات الإضافية:  █████░░░░░  50%          ██████████ 100%
+```
+
+### ما تبقّى للمستقبل
+
+- المرحلة 2A: H.264/VP9 encoding (ffmpeg) ← تقليل bandwidth 10×
+- المرحلة 8: صوت الجهاز البعيد (Opus over WebSocket)
+- المرحلة 9: WebRTC P2P مباشر (latency < 30ms)
+- نظام طلب/موافقة التحكم (permission dialog على الجهاز البعيد)
+- نقل الملفات بالسحب والإفلات خلال جلسة الشاشة
+
+---
+
+*آخر تحديث: يونيو 2026 — v2.0.0 (المراحل 1-7 مُنجزة)*

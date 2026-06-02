@@ -20,6 +20,10 @@ export type WSMessageType =
   | 'agent:screen_closed'
   | 'agent:screen_error'
   | 'agent:screen_unavailable'
+  // ── Remote control (v2.0.0) ──────────────────────────────────────────────
+  | 'agent:screen_monitors'
+  | 'agent:screen_clipboard'
+  | 'agent:screen_control_ack'
   | 'server:registered'
   | 'server:command'
   | 'server:error'
@@ -34,6 +38,14 @@ export type WSMessageType =
   | 'server:fs_request'
   | 'server:screen_start'
   | 'server:screen_stop'
+  // ── Remote control — server → agent (v2.0.0) ─────────────────────────────
+  | 'server:screen_mouse'
+  | 'server:screen_key'
+  | 'server:screen_clipboard_read'
+  | 'server:screen_clipboard_write'
+  | 'server:screen_get_monitors'
+  | 'server:screen_set_monitor'
+  | 'server:screen_privacy'
   | 'agent:fs_result'
   | 'agent:fs_chunk'
   | 'client:subscribe'
@@ -48,12 +60,44 @@ export interface WSMessage<T = unknown> {
   timestamp: number
 }
 
+// ── Remote Control Types (v2.0.0) ────────────────────────────────────────────
+
+export interface RemoteMouseEvent {
+  sessionId: string
+  type: 'move' | 'down' | 'up' | 'click' | 'dblclick' | 'scroll'
+  x: number
+  y: number
+  button?: 0 | 1 | 2
+  deltaY?: number
+}
+
+export interface RemoteKeyEvent {
+  sessionId: string
+  type: 'down' | 'up' | 'press'
+  key: string
+  modifiers?: ('ctrl' | 'alt' | 'shift' | 'meta')[]
+}
+
+export interface MonitorInfo {
+  id: number
+  x: number
+  y: number
+  width: number
+  height: number
+  primary: boolean
+  name: string
+}
+
 export interface AgentCapabilities {
   pty: boolean
   sshAvailable: boolean
   sshPort?: number
   sshUsername?: string
   shell?: string
+  screenControl?: boolean
+  clipboard?: boolean
+  multiMonitor?: boolean
+  monitors?: MonitorInfo[]
 }
 
 export interface AgentRegisterPayload {

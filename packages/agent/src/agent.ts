@@ -9,9 +9,17 @@ import { getDeviceInfo } from './system/info'
 import { getDeviceStats } from './system/stats'
 import { executeCommand } from './system/executor'
 import { captureScreen } from './system/screenCapture'
-import type { WSMessage, AgentRegisterPayload, ServerCommandPayload } from '@airemote/shared'
+import {
+  controlMouse, controlKeyboard,
+  readClipboard, writeClipboard,
+  listMonitors, isControlAvailable,
+  enablePrivacyMode, disablePrivacyMode,
+  setScreenResolution,
+  type MonitorInfo
+} from './system/inputControl'
+import type { WSMessage, AgentRegisterPayload, ServerCommandPayload, RemoteMouseEvent, RemoteKeyEvent } from '@airemote/shared'
 
-const AGENT_VERSION     = '1.6.0'
+const AGENT_VERSION     = '2.0.0'
 const HEARTBEAT_INTERVAL = 4000
 const RECONNECT_BASE_DELAY = 2000
 const RECONNECT_MAX_DELAY  = 30000
@@ -37,7 +45,12 @@ export class AgentService {
   private ptyProcs      = new Map<string, PtyProcess>()
   private screenTimers  = new Map<string, NodeJS.Timeout>()
   private screenSeq     = new Map<string, number>()
+  private screenMonitorId = new Map<string, number>()
   private sshDetected   = false
+  // v2.0.0 — Remote control state
+  private controlAvailable = false
+  private cachedMonitors: MonitorInfo[] = []
+  private privacyMode = false
 
   constructor(
     private readonly serverUrl: string,
@@ -90,12 +103,26 @@ export class AgentService {
     this.sshDetected   = sshAvailable
     const shell = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
 
+    // v2.0.0 — detect remote control + monitor capabilities
+    this.controlAvailable = await isControlAvailable()
+    try { this.cachedMonitors = await listMonitors() } catch { this.cachedMonitors = [] }
+
+    // Update screen resolution for absolute coordinate mapping
+    const primary = this.cachedMonitors.find(m => m.primary) ?? this.cachedMonitors[0]
+    if (primary) setScreenResolution(primary.width, primary.height)
+
     const payload: AgentRegisterPayload = {
       token: this.token,
       info:  { ...info, agentVersion: AGENT_VERSION },
       stats,
       tunnelLayer: 'relay',
-      capabilities: { pty: true, sshAvailable, shell },
+      capabilities: {
+        pty: true, sshAvailable, shell,
+        screenControl: this.controlAvailable,
+        clipboard: true,
+        multiMonitor: this.cachedMonitors.length > 1,
+        monitors: this.cachedMonitors
+      },
       sshInfo: { available: sshAvailable, port: 22 }
     }
 
@@ -183,7 +210,7 @@ export class AgentService {
           break
         }
         case 'server:screen_start': {
-          const p = message.payload as { sessionId: string; fps: number; quality: number }
+          const p = message.payload as { sessionId: string; fps: number; quality: number; monitorId?: number }
           this.handleScreenStart(p)
           break
         }
@@ -192,6 +219,80 @@ export class AgentService {
           this.stopScreenCapture(p.sessionId)
           break
         }
+
+        // ── v2.0.0 Remote Control ──────────────────────────────────────────
+        case 'server:screen_mouse': {
+          const p = message.payload as RemoteMouseEvent
+          if (this.controlAvailable) {
+            controlMouse({
+              type: p.type,
+              x: p.x, y: p.y,
+              button: p.button,
+              deltaY: p.deltaY
+            }).catch(err => console.error('[agent] mouse error:', err.message))
+          }
+          break
+        }
+        case 'server:screen_key': {
+          const p = message.payload as RemoteKeyEvent
+          if (this.controlAvailable) {
+            controlKeyboard({
+              type: p.type,
+              key: p.key,
+              modifiers: p.modifiers
+            }).catch(err => console.error('[agent] key error:', err.message))
+          }
+          break
+        }
+        case 'server:screen_clipboard_read': {
+          const p = message.payload as { sessionId: string }
+          readClipboard().then(text => {
+            this.send({
+              type: 'agent:screen_clipboard',
+              payload: { sessionId: p.sessionId, text },
+              timestamp: Date.now()
+            })
+          }).catch(err => console.error('[agent] clipboard read error:', err.message))
+          break
+        }
+        case 'server:screen_clipboard_write': {
+          const p = message.payload as { text: string }
+          writeClipboard(p.text).catch(err => console.error('[agent] clipboard write error:', err.message))
+          break
+        }
+        case 'server:screen_get_monitors': {
+          const p = message.payload as { sessionId: string }
+          listMonitors().then(monitors => {
+            this.cachedMonitors = monitors
+            this.send({
+              type: 'agent:screen_monitors',
+              payload: { sessionId: p.sessionId, monitors },
+              timestamp: Date.now()
+            })
+          }).catch(err => console.error('[agent] monitors error:', err.message))
+          break
+        }
+        case 'server:screen_set_monitor': {
+          const p = message.payload as { sessionId: string; monitorId: number }
+          this.screenMonitorId.set(p.sessionId, p.monitorId)
+          // Update resolution for the selected monitor
+          const mon = this.cachedMonitors.find(m => m.id === p.monitorId)
+          if (mon) setScreenResolution(mon.width, mon.height)
+          console.log(`[agent] Monitor set to ${p.monitorId} for session ${p.sessionId}`)
+          break
+        }
+        case 'server:screen_privacy': {
+          const p = message.payload as { enable: boolean }
+          if (p.enable) {
+            this.privacyMode = true
+            enablePrivacyMode().catch(err => console.error('[agent] privacy enable error:', err.message))
+          } else {
+            this.privacyMode = false
+            disablePrivacyMode().catch(err => console.error('[agent] privacy disable error:', err.message))
+          }
+          break
+        }
+
         case 'server:error': {
           const p = message.payload as { message: string }
           console.error(`❌ Server error: ${p.message}`)
@@ -586,21 +687,33 @@ export class AgentService {
 
   // ── Screen Capture ────────────────────────────────────────────────────────
 
-  private handleScreenStart(p: { sessionId: string; fps: number; quality: number }): void {
-    const { sessionId, fps, quality } = p
+  private handleScreenStart(p: { sessionId: string; fps: number; quality: number; monitorId?: number }): void {
+    const { sessionId, fps, quality, monitorId = 0 } = p
 
     // Stop any existing session with same ID (re-start with new settings)
     this.stopScreenCapture(sessionId)
 
-    const intervalMs = Math.max(100, Math.round(1000 / fps))
+    // Track monitor for this session
+    this.screenMonitorId.set(sessionId, monitorId)
+    const mon = this.cachedMonitors.find(m => m.id === monitorId)
+    if (mon) setScreenResolution(mon.width, mon.height)
+
+    const intervalMs = Math.max(66, Math.round(1000 / Math.min(fps, 15)))
     let seq = 0
 
     const capture = async () => {
       if (!this.screenTimers.has(sessionId)) return
       if (this.ws?.readyState !== WebSocket.OPEN) return
 
+      const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId
+
       try {
-        const frame = await captureScreen({ quality, maxWidth: 1280 })
+        const frame = await captureScreen({
+          quality,
+          maxWidth: 1280,
+          monitorId: currentMonitorId,
+          monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : undefined
+        })
         if (!frame) {
           // No backend available
           this.send({
@@ -648,6 +761,7 @@ export class AgentService {
       clearInterval(timer)
       this.screenTimers.delete(sessionId)
       this.screenSeq.delete(sessionId)
+      this.screenMonitorId.delete(sessionId)
       this.send({
         type:      'agent:screen_closed',
         payload:   { sessionId },

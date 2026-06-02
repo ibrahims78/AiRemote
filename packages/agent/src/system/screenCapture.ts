@@ -1,8 +1,14 @@
+/**
+ * screenCapture.ts — v2.0.0
+ * Cross-platform screen capture with multi-monitor support.
+ */
+
 import { exec, execFile } from 'child_process'
 import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
+import type { MonitorInfo } from './inputControl'
 
 const execAsync    = promisify(exec)
 const execFileAsync = promisify(execFile)
@@ -61,18 +67,23 @@ async function detectBackend(): Promise<CaptureBackend> {
 
 // ── Capture quality / resolution settings ───────────────────────────────────
 export interface CaptureOptions {
-  quality:  number   // 1–100 JPEG quality
-  maxWidth: number   // resize to this width if larger
+  quality:   number
+  maxWidth:  number
+  monitorId?: number
+  monitors?: MonitorInfo[]
 }
 
-const DEFAULT_OPTIONS: CaptureOptions = { quality: 65, maxWidth: 1280 }
+const DEFAULT_OPTIONS: CaptureOptions = { quality: 65, maxWidth: 1280, monitorId: 0 }
 
 // ── Main capture function ────────────────────────────────────────────────────
 export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise<ScreenFrame | null> {
-  const { quality, maxWidth } = { ...DEFAULT_OPTIONS, ...opts }
+  const { quality, maxWidth, monitorId = 0, monitors } = { ...DEFAULT_OPTIONS, ...opts }
   const backend = await detectBackend()
-
   if (backend === 'none') return null
+
+  // Resolve monitor bounds for multi-monitor capture
+  const mon = monitors?.find(m => m.id === monitorId)
+  const hasMultiMon = monitors && monitors.length > 1 && mon
 
   try {
     let jpegBuf: Buffer
@@ -81,20 +92,24 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
 
       // ── scrot (Linux) ──────────────────────────────────────────────────────
       case 'scrot': {
-        await execAsync(
-          `scrot --quality ${quality} --silent "${TMP_FRAME}"`,
-          { timeout: 5000 }
-        )
+        const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
+        const cmd = hasMultiMon
+          ? `scrot --quality ${quality} --silent -a ${mon.x},${mon.y},${mon.width},${mon.height} "${TMP_FRAME}"`
+          : `scrot --quality ${quality} --silent "${TMP_FRAME}"`
+        await execAsync(cmd, { timeout: 5000, env: envX })
         jpegBuf = await fs.readFile(TMP_FRAME)
         break
       }
 
       // ── ImageMagick import (Linux with X11) ────────────────────────────────
       case 'import': {
-        // import → resize → write JPEG to tmp file
+        const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
+        const cropArg = hasMultiMon
+          ? `-crop ${mon.width}x${mon.height}+${mon.x}+${mon.y} +repage`
+          : ''
         await execAsync(
-          `import -window root -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`,
-          { timeout: 5000, env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' } }
+          `import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`,
+          { timeout: 5000, env: envX }
         )
         jpegBuf = await fs.readFile(TMP_FRAME)
         break
@@ -104,11 +119,7 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
       case 'xwd': {
         const { stdout } = await execAsync(
           `xwd -root -silent | convert xwd:- -resize ${maxWidth}x -quality ${quality} jpg:-`,
-          {
-            timeout: 8000,
-            maxBuffer: 20 * 1024 * 1024,
-            env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
-          }
+          { timeout: 8000, maxBuffer: 20 * 1024 * 1024, env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' } }
         )
         jpegBuf = Buffer.from(stdout, 'binary')
         break
@@ -116,33 +127,33 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
 
       // ── macOS screencapture ───────────────────────────────────────────────
       case 'screencapture': {
-        await execAsync(`screencapture -x -t jpg "${TMP_FRAME}"`, { timeout: 5000 })
+        const displayArg = hasMultiMon ? `-D ${monitorId + 1}` : ''
+        await execAsync(`screencapture -x ${displayArg} -t jpg "${TMP_FRAME}"`, { timeout: 5000 })
         let raw = await fs.readFile(TMP_FRAME)
-        // Resize if ImageMagick available
         try {
-          await execAsync(
-            `convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`,
-            { timeout: 3000 }
-          )
+          await execAsync(`convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`, { timeout: 3000 })
           raw = await fs.readFile(TMP_FRAME)
-        } catch { /* no convert — send as-is */ }
+        } catch {}
         jpegBuf = raw
         break
       }
 
       // ── Windows PowerShell ────────────────────────────────────────────────
       case 'powershell': {
+        const boundsCode = hasMultiMon
+          ? `$bounds = New-Object System.Drawing.Rectangle(${mon.x}, ${mon.y}, ${mon.width}, ${mon.height})`
+          : `$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds`
+
         const ps = `
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$bmp = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+${boundsCode}
+$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
 $g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
 $g.Dispose()
-# Resize
-$newW = [Math]::Min($screen.Width, ${maxWidth})
-$ratio = $newW / $screen.Width
-$newH = [int]($screen.Height * $ratio)
+$newW = [Math]::Min($bounds.Width, ${maxWidth})
+$ratio = $newW / $bounds.Width
+$newH = [int]($bounds.Height * $ratio)
 $thumb = New-Object System.Drawing.Bitmap($newW, $newH)
 $tg = [System.Drawing.Graphics]::FromImage($thumb)
 $tg.DrawImage($bmp, 0, 0, $newW, $newH)
@@ -151,15 +162,13 @@ $bmp.Dispose()
 $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
 $params = New-Object System.Drawing.Imaging.EncoderParameters(1)
 $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]${quality})
-$thumb.Save("${TMP_FRAME.replace(/\\/g, '\\\\')}${''}",  $enc, $params)
+$thumb.Save("${TMP_FRAME.replace(/\\/g, '\\\\')}",  $enc, $params)
 $thumb.Dispose()
 `.trim()
 
         await execFileAsync('powershell.exe', [
-          '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden',
-          '-Command', ps
+          '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps
         ], { timeout: 8000 })
-
         jpegBuf = await fs.readFile(TMP_FRAME)
         break
       }
@@ -168,17 +177,12 @@ $thumb.Dispose()
         return null
     }
 
-    // Parse dimensions from JPEG header (SOF0 marker)
     const { width, height } = parseJpegDimensions(jpegBuf)
-
     return { data: jpegBuf, width, height }
 
   } catch (err) {
     console.error(`[screen] Capture failed (${backend}):`, (err as Error).message)
-    // Reset backend so we retry detection next time (in case X11 becomes available)
-    if (backend === 'import' || backend === 'xwd' || backend === 'scrot') {
-      detectedBackend = null
-    }
+    if (backend === 'import' || backend === 'xwd' || backend === 'scrot') detectedBackend = null
     return null
   }
 }

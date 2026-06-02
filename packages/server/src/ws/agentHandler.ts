@@ -358,6 +358,35 @@ export async function handleAgentMessage(
       return null
     }
 
+    // ── v2.0.0 Remote Control: agent → dashboard ──────────────────────────
+    case 'agent:screen_monitors': {
+      const p = message.payload as { sessionId: string; monitors: unknown[] }
+      const session = deviceRegistry.getScreenSession(p.sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({
+            type:    'screen:monitors',
+            payload: { monitors: p.monitors }
+          }))
+        } catch {}
+      }
+      return null
+    }
+
+    case 'agent:screen_clipboard': {
+      const p = message.payload as { sessionId: string; text: string }
+      const session = deviceRegistry.getScreenSession(p.sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({
+            type:    'screen:clipboard',
+            payload: { text: p.text }
+          }))
+        } catch {}
+      }
+      return null
+    }
+
     default:
       return null
   }

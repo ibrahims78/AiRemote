@@ -124,18 +124,90 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
     try {
       const msg = JSON.parse(raw.toString())
 
-      if (msg.type === 'screen:stop') {
-        cleanup(sessionId, deviceId)
-        socket.close()
-      } else if (msg.type === 'screen:set_quality') {
-        // Allow dashboard to change quality mid-session
-        const newFps     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
-        const newQuality = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
-        deviceRegistry.sendToDevice(deviceId, {
-          type:    'server:screen_start',
-          payload: { sessionId, fps: newFps, quality: newQuality },
-          timestamp: Date.now()
-        })
+      switch (msg.type) {
+        case 'screen:stop':
+          cleanup(sessionId, deviceId)
+          socket.close()
+          break
+
+        case 'screen:set_quality': {
+          const newFps     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
+          const newQuality = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
+          const monId      = msg.payload?.monitorId ?? 0
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_start',
+            payload: { sessionId, fps: newFps, quality: newQuality, monitorId: monId },
+            timestamp: Date.now()
+          })
+          break
+        }
+
+        // ── v2.0.0 Remote Control — forward to agent ──────────────────────
+        case 'screen:mouse_event':
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_mouse',
+            payload: { ...msg.payload, sessionId },
+            timestamp: Date.now()
+          })
+          break
+
+        case 'screen:key_event':
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_key',
+            payload: { ...msg.payload, sessionId },
+            timestamp: Date.now()
+          })
+          break
+
+        case 'screen:clipboard_read':
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_clipboard_read',
+            payload: { sessionId },
+            timestamp: Date.now()
+          })
+          break
+
+        case 'screen:clipboard_write':
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_clipboard_write',
+            payload: { sessionId, text: msg.payload?.text || '' },
+            timestamp: Date.now()
+          })
+          break
+
+        case 'screen:get_monitors':
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_get_monitors',
+            payload: { sessionId },
+            timestamp: Date.now()
+          })
+          break
+
+        case 'screen:set_monitor': {
+          const monitorId = msg.payload?.monitorId ?? 0
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_set_monitor',
+            payload: { sessionId, monitorId },
+            timestamp: Date.now()
+          })
+          // Restart capture on new monitor
+          const newFps2     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
+          const newQuality2 = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_start',
+            payload: { sessionId, fps: newFps2, quality: newQuality2, monitorId },
+            timestamp: Date.now()
+          })
+          break
+        }
+
+        case 'screen:privacy':
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_privacy',
+            payload: { enable: !!msg.payload?.enable },
+            timestamp: Date.now()
+          })
+          break
       }
     } catch {}
   })
