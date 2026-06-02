@@ -1,5 +1,5 @@
 @echo off
-:: AiRemote Agent v1.5.0 — Script Edition
+:: AiRemote Agent v1.6.0 — Script Edition
 :: يتطلب Node.js 18+
 
 if not exist node_modules (
@@ -33,5 +33,5 @@ if "%DEVICE_TOKEN%"=="" (
   exit /b 1
 )
 
-node agent-v1.5.0.js
+node agent-v1.6.0.js
 pause

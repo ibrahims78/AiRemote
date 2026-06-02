@@ -1,5 +1,5 @@
 #!/bin/bash
-# AiRemote Agent v1.5.0 — Script Edition
+# AiRemote Agent v1.6.0 — Script Edition
 # يتطلب Node.js 18+
 
 if [ ! -d "node_modules" ]; then
@@ -15,4 +15,4 @@ if [ -z "$DEVICE_TOKEN" ]; then
   exit 1
 fi
 
-node agent-v1.5.0.js
+node agent-v1.6.0.js
