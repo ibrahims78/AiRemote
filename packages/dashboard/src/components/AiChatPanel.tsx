@@ -212,19 +212,23 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
       const d = res.data
       const local = loadSavedConfig()
       const hasLocal = !!localStorage.getItem(CONFIG_KEY)
-      if (!hasLocal && (d.aiProvider || d.aiApiKey)) {
+
+      // Server has a configured provider with an API key
+      if (d.aiProvider && (d.aiApiKey || d.aiProvider === 'ollama')) {
         const serverCfg: AIConfig = {
-          provider: d.aiProvider || 'openai',
-          model: d.aiModel || (d.aiProvider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o'),
-          apiKey: d.aiApiKey || '',
-          baseUrl: d.ollamaUrl || '',
+          provider: d.aiProvider,
+          model:    d.aiModel || (d.aiProvider === 'gemini' ? 'gemini-2.5-flash' : d.aiProvider === 'ollama' ? 'llama3' : 'gpt-4o'),
+          apiKey:   d.aiApiKey || '',
+          baseUrl:  d.ollamaUrl || '',
         }
-        setConfig(serverCfg)
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(serverCfg))
-      } else if (hasLocal && d.aiApiKey && !local.apiKey) {
-        const merged: AIConfig = { ...local, apiKey: d.aiApiKey, baseUrl: d.ollamaUrl || local.baseUrl }
-        setConfig(merged)
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(merged))
+        // Use server config if: no local config, OR local provider differs, OR local has no key but server does
+        const needsUpdate = !hasLocal
+          || local.provider !== serverCfg.provider
+          || (!local.apiKey && serverCfg.apiKey)
+        if (needsUpdate) {
+          setConfig(serverCfg)
+          localStorage.setItem(CONFIG_KEY, JSON.stringify(serverCfg))
+        }
       }
     }).catch(() => {})
   }, [])

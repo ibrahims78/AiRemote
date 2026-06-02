@@ -57,6 +57,13 @@ export function SettingsPage() {
     setSaving(true)
     try {
       await api.put('/api/settings', { ...ai, telegramToken })
+      // Sync AI config to localStorage so AiChatPanel picks it up immediately
+      localStorage.setItem('airemote-ai-config', JSON.stringify({
+        provider: ai.aiProvider,
+        model:    ai.aiModel,
+        apiKey:   ai.aiApiKey,
+        baseUrl:  ai.ollamaUrl || '',
+      }))
       setSaved(true)
       setValidateState('idle')
       toast.success(T('toast_settings_saved'))
