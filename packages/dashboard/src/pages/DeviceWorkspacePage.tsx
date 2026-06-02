@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import {
   Monitor, Terminal, Activity, FolderOpen, ArrowLeft,
   Wifi, WifiOff, Cpu, MemoryStick, HardDrive, Clock,
-  Globe, Server, Bot, Command
+  Globe, Server, Bot, Command, Tv2
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useDeviceStore } from '../store/deviceStore'
@@ -12,11 +12,12 @@ import { MonitoringCharts } from '../components/MonitoringCharts'
 import { FileManager } from '../components/FileManager'
 import { AiChatPanel } from '../components/AiChatPanel'
 import { CommandRunner } from '../components/CommandRunner'
+import { ScreenViewer } from '../components/ScreenViewer'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import type { Device } from '@airemote/shared'
 import { useT } from '../lib/i18n'
 
-type Tab = 'overview' | 'terminal' | 'monitor' | 'files' | 'ai' | 'commands'
+type Tab = 'overview' | 'terminal' | 'monitor' | 'files' | 'ai' | 'commands' | 'screen'
 
 
 function DeviceInfoPanel({ device }: { device: Device }) {
@@ -124,6 +125,7 @@ export function DeviceWorkspacePage() {
     { id: 'overview',  label: t('tab_overview'),  icon: Server },
     { id: 'commands',  label: t('tab_commands'),  icon: Command,    disabled: !isOnline },
     { id: 'terminal',  label: t('tab_terminal'),  icon: Terminal,   disabled: !isOnline },
+    { id: 'screen',    label: t('tab_screen'),    icon: Tv2,        disabled: !isOnline },
     { id: 'monitor',   label: t('tab_monitor'),   icon: Activity },
     { id: 'files',     label: t('tab_files'),     icon: FolderOpen, disabled: !isOnline },
     { id: 'ai',        label: t('tab_ai'),        icon: Bot },
@@ -182,7 +184,7 @@ export function DeviceWorkspacePage() {
       </div>
 
       {/* Content */}
-      <div className={clsx('flex-1 min-h-0', tab === 'ai' || tab === 'terminal' || tab === 'commands' || tab === 'files' ? 'overflow-hidden' : 'overflow-auto p-5')}>
+      <div className={clsx('flex-1 min-h-0', tab === 'ai' || tab === 'terminal' || tab === 'commands' || tab === 'files' || tab === 'screen' ? 'overflow-hidden' : 'overflow-auto p-5')}>
         <ErrorBoundary>
 
         {tab === 'overview' && (
@@ -211,6 +213,12 @@ export function DeviceWorkspacePage() {
         {tab === 'terminal' && deviceId && (
           <div className="h-full p-5">
             <PTYTerminal deviceId={deviceId} deviceName={device.name} />
+          </div>
+        )}
+
+        {tab === 'screen' && deviceId && (
+          <div className="h-full p-5">
+            <ScreenViewer deviceId={deviceId} deviceName={device.name} />
           </div>
         )}
 

@@ -32,11 +32,21 @@ interface PtySession {
   connectTimeout?: NodeJS.Timeout
 }
 
+interface ScreenSession {
+  dashboardSocket: WebSocket
+  deviceId: string
+  userId?: string
+  startedAt: number
+  connectTimeout?: NodeJS.Timeout
+  frameThrottle?: () => boolean
+}
+
 class DeviceRegistry {
-  private devices     = new Map<string, ConnectedDevice>()
-  private clients     = new Map<WebSocket, ConnectedClient>()
-  private sshSessions = new Map<string, SshTunnelSession>()
-  private ptySessions = new Map<string, PtySession>()
+  private devices        = new Map<string, ConnectedDevice>()
+  private clients        = new Map<WebSocket, ConnectedClient>()
+  private sshSessions    = new Map<string, SshTunnelSession>()
+  private ptySessions    = new Map<string, PtySession>()
+  private screenSessions = new Map<string, ScreenSession>()
 
   // ── Device management ────────────────────────────────────────────────────
 
@@ -281,12 +291,63 @@ class DeviceRegistry {
     return undefined
   }
 
+  // ── Screen Session Management ────────────────────────────────────────────
+
+  addScreenSession(sessionId: string, dashboardSocket: WebSocket, deviceId: string, userId?: string): void {
+    this.screenSessions.set(sessionId, {
+      dashboardSocket, deviceId, userId, startedAt: Date.now()
+    })
+  }
+
+  getScreenSession(sessionId: string): ScreenSession | undefined {
+    return this.screenSessions.get(sessionId)
+  }
+
+  removeScreenSession(sessionId: string): ScreenSession | undefined {
+    const s = this.screenSessions.get(sessionId)
+    if (s?.connectTimeout) clearTimeout(s.connectTimeout)
+    this.screenSessions.delete(sessionId)
+    return s
+  }
+
+  setScreenConnectTimeout(sessionId: string, timer: NodeJS.Timeout): void {
+    const s = this.screenSessions.get(sessionId)
+    if (s) s.connectTimeout = timer
+  }
+
+  clearScreenConnectTimeout(sessionId: string): void {
+    const s = this.screenSessions.get(sessionId)
+    if (s?.connectTimeout) { clearTimeout(s.connectTimeout); s.connectTimeout = undefined }
+  }
+
+  setScreenFrameThrottle(sessionId: string, fn: () => boolean): void {
+    const s = this.screenSessions.get(sessionId)
+    if (s) s.frameThrottle = fn
+  }
+
+  /** Returns all active screen sessions watching a given device */
+  getScreenSessionsForDevice(deviceId: string): Array<{ sessionId: string; session: ScreenSession }> {
+    const result: Array<{ sessionId: string; session: ScreenSession }> = []
+    for (const [sessionId, session] of this.screenSessions) {
+      if (session.deviceId === deviceId) result.push({ sessionId, session })
+    }
+    return result
+  }
+
+  getScreenSessionIdByDashboardSocket(socket: WebSocket): string | undefined {
+    for (const [sessionId, s] of this.screenSessions) {
+      if (s.dashboardSocket === socket) return sessionId
+    }
+    return undefined
+  }
+
   getStats() {
     return {
       onlineDevices:    this.devices.size,
       connectedClients: this.clients.size,
       sshSessions:      this.sshSessions.size,
-      ptySessions:      this.ptySessions.size
+      ptySessions:      this.ptySessions.size,
+      screenSessions:   this.screenSessions.size
     }
   }
 }

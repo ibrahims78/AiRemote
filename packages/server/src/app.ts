@@ -23,6 +23,7 @@ import { githubRoutes } from './routes/github'
 import { wsHandler } from './ws/handler'
 import { handleSshWebSocket } from './ws/sshHandler'
 import { handlePtyWebSocket } from './ws/ptyHandler'
+import { handleScreenWebSocket } from './ws/screenHandler'
 import { requireAuthWs } from './middleware/auth'
 
 export async function buildServer() {
@@ -101,9 +102,10 @@ export async function buildServer() {
   // /ssh — SSH tunnel; requires JWT upfront
   // /pty — Direct PTY shell; requires JWT upfront (v1.2.0)
   await app.register(async function (fastify) {
-    fastify.get('/ws',  { websocket: true }, wsHandler)
-    fastify.get('/ssh', { websocket: true, preHandler: [requireAuthWs] }, handleSshWebSocket)
-    fastify.get('/pty', { websocket: true, preHandler: [requireAuthWs] }, handlePtyWebSocket)
+    fastify.get('/ws',     { websocket: true }, wsHandler)
+    fastify.get('/ssh',    { websocket: true, preHandler: [requireAuthWs] }, handleSshWebSocket)
+    fastify.get('/pty',    { websocket: true, preHandler: [requireAuthWs] }, handlePtyWebSocket)
+    fastify.get('/screen', { websocket: true }, handleScreenWebSocket)
   })
 
   return app

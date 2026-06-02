@@ -16,3 +16,4 @@
 - [AiRemote Network Stats Fix](airemote-network-stats.md) — esbuild drops win32 branch in readRawNetworkBytes when building on Linux; must patch agent-v1.4.0.js directly + add PowerShell WMI fallback
 - [AiRemote AI Streaming & Device Context](airemote-ai-streaming.md) — POST /api/ai/chat/stream SSE endpoint; chatStream() on all 3 providers; buildDeviceContext() in ai.ts; auto-exec toggle + suggestion chips in AiChatPanel
 - [AiRemote Agent v1.5.0](airemote-v1.5.md) — current version; agent-desktop has its own stats/PTY code (not agent.ts); Windows GUI ZIP rebuilt via python3 + asar repack; pnpm needs CI=true to avoid TTY prompt during install
+- [AiRemote Screen Sharing](airemote-screen-sharing.md) — v1.6.0: MJPEG-over-WS; /screen WS endpoint; screenCapture.ts multi-platform; ScreenViewer.tsx canvas; agentHandler routes by sessionId not socket

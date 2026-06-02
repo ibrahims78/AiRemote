@@ -8,6 +8,7 @@ import path from 'path'
 import { getDeviceInfo } from './system/info'
 import { getDeviceStats } from './system/stats'
 import { executeCommand } from './system/executor'
+import { captureScreen } from './system/screenCapture'
 import type { WSMessage, AgentRegisterPayload, ServerCommandPayload } from '@airemote/shared'
 
 const AGENT_VERSION     = '1.5.0'
@@ -32,9 +33,11 @@ export class AgentService {
   private reconnectTimer: NodeJS.Timeout | null = null
   private reconnectDelay = RECONNECT_BASE_DELAY
   private running = false
-  private sshTunnels  = new Map<string, SshTunnel>()
-  private ptyProcs    = new Map<string, PtyProcess>()
-  private sshDetected = false
+  private sshTunnels    = new Map<string, SshTunnel>()
+  private ptyProcs      = new Map<string, PtyProcess>()
+  private screenTimers  = new Map<string, NodeJS.Timeout>()
+  private screenSeq     = new Map<string, number>()
+  private sshDetected   = false
 
   constructor(
     private readonly serverUrl: string,
@@ -60,6 +63,9 @@ export class AgentService {
       try { p.proc.kill() } catch {}
     }
     this.ptyProcs.clear()
+    for (const [sessionId] of this.screenTimers) {
+      this.stopScreenCapture(sessionId)
+    }
     if (this.ws) { this.ws.close(); this.ws = null }
     console.log('🛑 Agent stopped')
   }
@@ -174,6 +180,16 @@ export class AgentService {
         case 'server:fs_request': {
           const p = message.payload as { opId: string; op: string; path: string; newPath?: string; data?: string }
           this.handleFsRequest(p)
+          break
+        }
+        case 'server:screen_start': {
+          const p = message.payload as { sessionId: string; fps: number; quality: number }
+          this.handleScreenStart(p)
+          break
+        }
+        case 'server:screen_stop': {
+          const p = message.payload as { sessionId: string }
+          this.stopScreenCapture(p.sessionId)
           break
         }
         case 'server:error': {
@@ -565,6 +581,79 @@ export class AgentService {
       try { tunnel.stream?.end() } catch {}
       try { tunnel.client.end() } catch {}
       this.sshTunnels.delete(sessionId)
+    }
+  }
+
+  // ── Screen Capture ────────────────────────────────────────────────────────
+
+  private handleScreenStart(p: { sessionId: string; fps: number; quality: number }): void {
+    const { sessionId, fps, quality } = p
+
+    // Stop any existing session with same ID (re-start with new settings)
+    this.stopScreenCapture(sessionId)
+
+    const intervalMs = Math.max(100, Math.round(1000 / fps))
+    let seq = 0
+
+    const capture = async () => {
+      if (!this.screenTimers.has(sessionId)) return
+      if (this.ws?.readyState !== WebSocket.OPEN) return
+
+      try {
+        const frame = await captureScreen({ quality, maxWidth: 1280 })
+        if (!frame) {
+          // No backend available
+          this.send({
+            type: 'agent:screen_unavailable',
+            payload: { sessionId, message: 'No screen capture tool available (install scrot or imagemagick on Linux)' },
+            timestamp: Date.now()
+          })
+          this.stopScreenCapture(sessionId)
+          return
+        }
+
+        this.send({
+          type:      'agent:screen_frame',
+          payload:   {
+            sessionId,
+            data:   frame.data.toString('base64'),
+            width:  frame.width,
+            height: frame.height,
+            seq:    seq++
+          },
+          timestamp: Date.now()
+        })
+      } catch (err) {
+        console.error('[screen] Capture error:', (err as Error).message)
+        this.send({
+          type:      'agent:screen_error',
+          payload:   { sessionId, message: (err as Error).message },
+          timestamp: Date.now()
+        })
+        this.stopScreenCapture(sessionId)
+      }
+    }
+
+    // First frame immediately, then interval
+    capture()
+    const timer = setInterval(capture, intervalMs)
+    this.screenTimers.set(sessionId, timer)
+    this.screenSeq.set(sessionId, 0)
+    console.log(`🖥️  Screen capture started: sessionId=${sessionId} fps=${fps} quality=${quality}`)
+  }
+
+  private stopScreenCapture(sessionId: string): void {
+    const timer = this.screenTimers.get(sessionId)
+    if (timer) {
+      clearInterval(timer)
+      this.screenTimers.delete(sessionId)
+      this.screenSeq.delete(sessionId)
+      this.send({
+        type:      'agent:screen_closed',
+        payload:   { sessionId },
+        timestamp: Date.now()
+      })
+      console.log(`🖥️  Screen capture stopped: sessionId=${sessionId}`)
     }
   }
 

@@ -290,6 +290,74 @@ export async function handleAgentMessage(
       return null
     }
 
+    // ── Screen frame (agent → server → dashboard) ─────────────────────────────
+    case 'agent:screen_frame': {
+      const p = message.payload as {
+        sessionId: string
+        data:      string   // base64 JPEG
+        width:     number
+        height:    number
+        seq:       number
+      }
+      deviceRegistry.clearScreenConnectTimeout(p.sessionId)
+      const session = deviceRegistry.getScreenSession(p.sessionId)
+      if (session) {
+        // Apply throttle — drop frame if too early
+        if (!session.frameThrottle || session.frameThrottle()) {
+          if (session.dashboardSocket.readyState === 1) {
+            try {
+              session.dashboardSocket.send(JSON.stringify({
+                type:    'screen:frame',
+                payload: { data: p.data, width: p.width, height: p.height, seq: p.seq }
+              }))
+            } catch {}
+          }
+        }
+      }
+      return null
+    }
+
+    case 'agent:screen_closed': {
+      const { sessionId } = message.payload as { sessionId: string }
+      const session = deviceRegistry.getScreenSession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({ type: 'screen:closed', payload: {} }))
+        } catch {}
+      }
+      deviceRegistry.removeScreenSession(sessionId)
+      return null
+    }
+
+    case 'agent:screen_error': {
+      const { sessionId, message: errMsg } = message.payload as { sessionId: string; message: string }
+      deviceRegistry.clearScreenConnectTimeout(sessionId)
+      const session = deviceRegistry.getScreenSession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({ type: 'screen:error', payload: { message: errMsg } }))
+        } catch {}
+      }
+      deviceRegistry.removeScreenSession(sessionId)
+      return null
+    }
+
+    case 'agent:screen_unavailable': {
+      const { sessionId, message: errMsg } = message.payload as { sessionId: string; message: string }
+      deviceRegistry.clearScreenConnectTimeout(sessionId)
+      const session = deviceRegistry.getScreenSession(sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({
+            type: 'screen:unavailable',
+            payload: { message: errMsg }
+          }))
+        } catch {}
+      }
+      deviceRegistry.removeScreenSession(sessionId)
+      return null
+    }
+
     default:
       return null
   }
