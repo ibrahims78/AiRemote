@@ -95,7 +95,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
       try {
         s.dashboardSocket.send(JSON.stringify({
           type: 'screen:error',
-          payload: { message: 'Agent did not start screen capture — make sure the agent is v1.6.0+' }
+          payload: { message: 'Agent did not start screen capture — make sure the agent is v2.0.0+' }
         }))
       } catch {}
       cleanup(sessionId, deviceId)
@@ -207,6 +207,17 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
             payload: { enable: !!msg.payload?.enable },
             timestamp: Date.now()
           })
+          break
+
+        // ── Latency ping-pong ─────────────────────────────────────────────
+        case 'screen:ping':
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({
+              type:    'screen:pong',
+              payload: { clientTs: msg.payload?.ts, serverTs: Date.now() },
+              timestamp: Date.now()
+            }))
+          }
           break
       }
     } catch {}

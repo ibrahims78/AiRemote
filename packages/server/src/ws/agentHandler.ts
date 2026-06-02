@@ -53,13 +53,17 @@ export async function handleAgentMessage(
         return null
       }
 
-      // Extract capabilities from registration payload
+      // Extract capabilities from registration payload (v2.0.0: includes remote control caps)
       const caps = {
-        pty:          true,   // all v1.2.0+ agents support PTY
-        sshAvailable: payload.sshInfo?.available ?? payload.capabilities?.sshAvailable ?? false,
-        sshPort:      payload.sshInfo?.port      ?? payload.capabilities?.sshPort,
-        sshUsername:  payload.sshInfo?.username  ?? payload.capabilities?.sshUsername,
-        shell:        payload.capabilities?.shell
+        pty:           true,
+        sshAvailable:  payload.sshInfo?.available ?? payload.capabilities?.sshAvailable ?? false,
+        sshPort:       payload.sshInfo?.port      ?? payload.capabilities?.sshPort,
+        sshUsername:   payload.sshInfo?.username  ?? payload.capabilities?.sshUsername,
+        shell:         payload.capabilities?.shell,
+        screenControl: payload.capabilities?.screenControl ?? false,
+        clipboard:     payload.capabilities?.clipboard     ?? false,
+        multiMonitor:  payload.capabilities?.multiMonitor  ?? false,
+        monitors:      payload.capabilities?.monitors      ?? []
       }
 
       deviceRegistry.registerDevice(device.id, socket, payload.stats, caps)

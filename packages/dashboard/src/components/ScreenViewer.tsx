@@ -85,9 +85,11 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const [showHint,        setShowHint]        = useState(false)
   const [keyboardMode,    setKeyboardMode]    = useState(false)
   const [recDuration,     setRecDuration]     = useState(0)
+  const [latency,         setLatency]         = useState<number>(-1)
 
   const fpsCountRef     = useRef(0)
   const fpsTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pingTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastSeqRef      = useRef(-1)
   const mediaRecRef     = useRef<MediaRecorder | null>(null)
   const recChunksRef    = useRef<Blob[]>([])
@@ -145,6 +147,13 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
 
     ws.onopen = () => {
       setTimeout(() => sendWs({ type: 'screen:get_monitors', payload: {} }), 800)
+      // Latency ping every 3 s
+      if (pingTimerRef.current) clearInterval(pingTimerRef.current)
+      pingTimerRef.current = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'screen:ping', payload: { ts: Date.now() } }))
+        }
+      }, 3000)
     }
     ws.onmessage = (ev) => {
       try {
@@ -165,10 +174,17 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           setMonitors(msg.payload.monitors || [])
         } else if (msg.type === 'screen:clipboard') {
           setClipboardText(msg.payload.text || ''); setShowClipboard(true)
+        } else if (msg.type === 'screen:pong') {
+          setLatency(Date.now() - (msg.payload?.clientTs ?? Date.now()))
         }
       } catch {}
     }
-    ws.onclose  = () => { setStatus(s => (s === 'error' || s === 'unavailable') ? s : 'disconnected'); if (fpsTimerRef.current) { clearInterval(fpsTimerRef.current); fpsTimerRef.current = null } setFps(0) }
+    ws.onclose  = () => {
+      setStatus(s => (s === 'error' || s === 'unavailable') ? s : 'disconnected')
+      if (fpsTimerRef.current)  { clearInterval(fpsTimerRef.current);  fpsTimerRef.current  = null }
+      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
+      setFps(0); setLatency(-1)
+    }
     ws.onerror  = () => { setStatus('error'); setErrorMsg('WebSocket connection failed') }
   }, [deviceId, token, drawFrame, startFpsCounter, sendWs])
 
@@ -178,6 +194,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     return () => {
       wsRef.current?.close()
       if (fpsTimerRef.current)  clearInterval(fpsTimerRef.current)
+      if (pingTimerRef.current) clearInterval(pingTimerRef.current)
       if (recTimerRef.current)  clearInterval(recTimerRef.current)
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
     }
@@ -308,7 +325,20 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           {status === 'disconnected' && <><WifiOff size={9}/> منقطع</>}
         </span>
 
-        {status === 'streaming' && <span className="text-xs font-mono text-slate-500 shrink-0">{fps}fps · {resolution.w}×{resolution.h}</span>}
+        {status === 'streaming' && (
+          <span className="text-xs font-mono text-slate-500 shrink-0">
+            {fps}fps · {resolution.w}×{resolution.h}
+            {latency >= 0 && (
+              <span className={clsx('ml-2',
+                latency < 50  ? 'text-emerald-400' :
+                latency < 150 ? 'text-amber-400' :
+                latency < 300 ? 'text-orange-400' : 'text-red-400'
+              )} title={`زمن الاستجابة (RTT): ${latency}ms`}>
+                · {latency}ms
+              </span>
+            )}
+          </span>
+        )}
 
         <div className="flex-1"/>
 

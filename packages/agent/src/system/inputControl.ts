@@ -4,10 +4,11 @@
  * Uses native OS tools: xdotool (Linux), PowerShell (Windows), cliclick/osascript (macOS).
  */
 
-import { exec } from 'child_process'
+import { exec, execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 
-const execAsync = promisify(exec)
+const execAsync     = promisify(exec)
+const execFileAsync = promisify(execFile)
 const PLATFORM = process.platform as 'win32' | 'linux' | 'darwin'
 
 // ── Tool availability cache ─────────────────────────────────────────────────
@@ -174,7 +175,7 @@ public class MouseS { [DllImport("user32.dll")] public static extern void mouse_
   }
 
   try {
-    await execAsync(`powershell.exe -NonInteractive -NoProfile -WindowStyle Hidden -Command "${ps.replace(/"/g, '\\"')}"`, { timeout: 3000 })
+    await execFileAsync('powershell.exe', ['-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], { timeout: 3000 })
   } catch (err) {
     console.error('[input] PowerShell mouse error:', (err as Error).message)
   }
@@ -195,10 +196,10 @@ async function controlMouseMac(evt: MouseEvent, ax: number, ay: number, btn: num
           await execAsync(`cliclick dc:${ax},${ay}`, { timeout: 1000 })
           break
         case 'down':
-          await execAsync(`cliclick kd:${ax},${ay}`, { timeout: 1000 })
+          await execAsync(`cliclick dd:${ax},${ay}`, { timeout: 1000 })
           break
         case 'up':
-          await execAsync(`cliclick ku:${ax},${ay}`, { timeout: 1000 })
+          await execAsync(`cliclick du:${ax},${ay}`, { timeout: 1000 })
           break
         case 'scroll': {
           const scrollDir = (evt.deltaY ?? 0) > 0 ? '-3' : '3'
@@ -345,7 +346,7 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.SendKeys]::SendWait('${escaped}')
 `
   try {
-    await execAsync(`powershell.exe -NonInteractive -NoProfile -WindowStyle Hidden -Command "${ps.replace(/"/g, '\\"')}"`, { timeout: 3000 })
+    await execFileAsync('powershell.exe', ['-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], { timeout: 3000 })
   } catch (err) {
     console.error('[input] PowerShell key error:', (err as Error).message)
   }
@@ -418,22 +419,37 @@ export async function readClipboard(): Promise<string> {
 
 export async function writeClipboard(text: string): Promise<void> {
   try {
+    const buf = Buffer.from(text, 'utf8')
     if (PLATFORM === 'linux') {
       const display = process.env.DISPLAY || ':0'
       const env = { ...process.env, DISPLAY: display }
-      const escaped = text.replace(/'/g, "'\\''")
-      try {
-        await execAsync(`echo '${escaped}' | xclip -selection clipboard`, { env, timeout: 3000 })
-      } catch {
-        await execAsync(`echo '${escaped}' | xsel --clipboard --input`, { env, timeout: 3000 })
-      }
-    } else if (PLATFORM === 'win32') {
-      const escaped = text.replace(/"/g, '`"').replace(/'/g, "''")
-      const ps = `Set-Clipboard -Value '${escaped}'`
-      await execAsync(`powershell.exe -NonInteractive -NoProfile -Command "${ps}"`, { timeout: 3000 })
+      await new Promise<void>((resolve) => {
+        const proc = spawn('xclip', ['-selection', 'clipboard'], { env })
+        proc.stdin.write(buf)
+        proc.stdin.end()
+        proc.on('close', () => resolve())
+        proc.on('error', () => {
+          // xclip not found — try xsel
+          const proc2 = spawn('xsel', ['--clipboard', '--input'], { env })
+          proc2.stdin.write(buf)
+          proc2.stdin.end()
+          proc2.on('close', () => resolve())
+          proc2.on('error', () => resolve())
+        })
+      })
     } else if (PLATFORM === 'darwin') {
-      const escaped = text.replace(/'/g, "'\\''")
-      await execAsync(`echo '${escaped}' | pbcopy`, { timeout: 3000 })
+      await new Promise<void>((resolve) => {
+        const proc = spawn('pbcopy', [])
+        proc.stdin.write(buf)
+        proc.stdin.end()
+        proc.on('close', () => resolve())
+        proc.on('error', () => resolve())
+      })
+    } else if (PLATFORM === 'win32') {
+      // Base64-encode to avoid any quoting/escaping issues with arbitrary clipboard content
+      const b64 = buf.toString('base64')
+      const ps  = `$t=[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'));Set-Clipboard -Value $t`
+      await execFileAsync('powershell.exe', ['-NonInteractive', '-NoProfile', '-Command', ps], { timeout: 3000 })
     }
   } catch (err) {
     console.error('[clipboard] write error:', (err as Error).message)
@@ -442,7 +458,6 @@ export async function writeClipboard(text: string): Promise<void> {
 
 // ── Privacy Mode ─────────────────────────────────────────────────────────────
 
-let _privacyProc: ReturnType<typeof import('child_process').spawn> | null = null
 
 export async function enablePrivacyMode(): Promise<void> {
   try {
@@ -466,7 +481,7 @@ public class WinAPI {
 "@
 [WinAPI]::LockWorkStation()
 `
-      await execAsync(`powershell.exe -NonInteractive -NoProfile -WindowStyle Hidden -Command "${ps.replace(/"/g, '\\"')}"`, { timeout: 3000 })
+      await execFileAsync('powershell.exe', ['-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], { timeout: 3000 })
     } else if (PLATFORM === 'darwin') {
       await execAsync(`osascript -e 'tell application "System Events" to sleep'`, { timeout: 3000 })
     }
@@ -563,10 +578,7 @@ $result = $screens | ForEach-Object {
 }
 $result -join "|"
 `
-  const { stdout } = await execAsync(
-    `powershell.exe -NonInteractive -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`,
-    { timeout: 5000 }
-  )
+  const { stdout } = await execFileAsync('powershell.exe', ['-NonInteractive', '-NoProfile', '-Command', ps], { timeout: 5000 })
   const monitors: MonitorInfo[] = []
   stdout.trim().split('|').forEach((part, idx) => {
     const [x, y, w, h, primary, name] = part.split(',')

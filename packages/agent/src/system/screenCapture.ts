@@ -97,6 +97,13 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
           ? `scrot --quality ${quality} --silent -a ${mon.x},${mon.y},${mon.width},${mon.height} "${TMP_FRAME}"`
           : `scrot --quality ${quality} --silent "${TMP_FRAME}"`
         await execAsync(cmd, { timeout: 5000, env: envX })
+        // scrot doesn't resize natively — post-process with convert (ImageMagick) if available
+        try {
+          await execAsync(
+            `convert "${TMP_FRAME}" -resize ${maxWidth}x\\> -quality ${quality} "${TMP_FRAME}"`,
+            { timeout: 3000, env: envX }
+          )
+        } catch { /* convert not installed — use full-resolution scrot output */ }
         jpegBuf = await fs.readFile(TMP_FRAME)
         break
       }

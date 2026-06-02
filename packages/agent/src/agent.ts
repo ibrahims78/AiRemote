@@ -817,7 +817,14 @@ export class AgentService {
         payload: {
           deviceId: this.deviceId, stats, tunnelLayer: 'relay',
           timestamp: Date.now(),
-          capabilities: { pty: true, sshAvailable: this.sshDetected }
+          capabilities: {
+            pty:          true,
+            sshAvailable: this.sshDetected,
+            screenControl: this.controlAvailable,
+            clipboard:    true,
+            multiMonitor: this.cachedMonitors.length > 1,
+            monitors:     this.cachedMonitors
+          }
         },
         timestamp: Date.now()
       })

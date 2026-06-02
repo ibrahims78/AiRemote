@@ -53,6 +53,9 @@ export type WSMessageType =
   | 'client:ai_chat'
   | 'broadcast:device_update'
   | 'broadcast:stats_update'
+  | 'broadcast:notification'
+  | 'screen:ping'
+  | 'screen:pong'
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType
