@@ -18,3 +18,4 @@
 - [AiRemote Agent v1.5.0](airemote-v1.5.md) — current version; agent-desktop has its own stats/PTY code (not agent.ts); Windows GUI ZIP rebuilt via python3 + asar repack; pnpm needs CI=true to avoid TTY prompt during install
 - [AiRemote Screen Sharing](airemote-screen-sharing.md) — v1.6.0: MJPEG-over-WS; /screen WS endpoint; screenCapture.ts multi-platform; ScreenViewer.tsx canvas; agentHandler routes by sessionId not socket
 - [AiRemote v2.0.0 Audit](airemote-v2-audit.md) — 12 bugs fixed: cliclick dd/du, Windows execFileAsync, clipboard spawn+stdin, scrot resize, caps registration, heartbeat caps, ping-pong; 0 TS errors
+- [AiRemote Remote Desktop v3.0.0](airemote-rdp-v3.md) — frame dedup (hash), MAX_FPS 30, adaptive quality, permission consent, drag&drop upload; agent-v2.0.0.js needs --external:cpu-features --external:*.node

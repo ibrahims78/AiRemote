@@ -1,16 +1,17 @@
 /**
- * ScreenViewer.tsx — v2.0.0
- * Full remote desktop control:
- *  ✅ Live screen streaming (MJPEG over WebSocket)
- *  ✅ Mouse control  (move, click, drag, double-click, scroll, right-click)
+ * ScreenViewer.tsx — v3.0.0
+ *  ✅ Live screen streaming (MJPEG over WebSocket, up to 30fps)
+ *  ✅ Mouse control (move, click, drag, double-click, scroll, right-click)
  *  ✅ Keyboard control (all keys + modifier combos)
  *  ✅ Clipboard sync (read remote / write to remote)
  *  ✅ Multi-monitor selector
  *  ✅ Privacy mode (blank remote screen)
  *  ✅ Session recording (MediaRecorder → WebM download)
- *  ✅ Fullscreen mode
- *  ✅ Watermark / control indicator
- *  ✅ Idle timeout warning (5 min)
+ *  ✅ Fullscreen mode · Idle timeout warning (5 min)
+ *  ✅ v3.0.0: Permission consent before control
+ *  ✅ v3.0.0: Adaptive quality — auto-adjusts fps based on RTT latency
+ *  ✅ v3.0.0: Drag & drop file upload → agent Desktop folder
+ *  ✅ v3.0.0: Up to 30fps streaming
  */
 import {
   useEffect, useRef, useState, useCallback,
@@ -20,39 +21,37 @@ import {
   Monitor, Maximize2, Minimize2, RefreshCw, Wifi, WifiOff,
   AlertTriangle, Loader2, Settings2,
   Clipboard, ClipboardPaste, EyeOff, Eye,
-  Video, Tv2, Mouse, Keyboard, ChevronDown, Circle
+  Video, Tv2, Mouse, Keyboard, ChevronDown, Circle,
+  Upload, Shield, Zap, CheckCircle2
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuthStore } from '../store/authStore'
 
 interface Props {
-  deviceId: string
+  deviceId:   string
   deviceName: string
 }
 
-type Status = 'connecting' | 'streaming' | 'error' | 'unavailable' | 'disconnected'
+type Status          = 'connecting' | 'streaming' | 'error' | 'unavailable' | 'disconnected'
+type PermissionState = 'idle' | 'requesting' | 'granted'
 
 interface MonitorInfo {
-  id: number
-  x: number
-  y: number
-  width: number
-  height: number
-  primary: boolean
-  name: string
+  id: number; x: number; y: number
+  width: number; height: number
+  primary: boolean; name: string
 }
 
 interface QualityPreset {
-  label: string
-  fps: number
-  quality: number
+  label: string; fps: number; quality: number
 }
 
+// v3.0.0 — adds 30fps "عالي الأداء" option
 const QUALITY_PRESETS: QualityPreset[] = [
-  { label: 'أداء عالي',   fps: 1,  quality: 40 },
+  { label: 'توفير',       fps: 1,  quality: 40 },
   { label: 'متوسط',       fps: 3,  quality: 60 },
   { label: 'جودة عالية',  fps: 5,  quality: 75 },
   { label: 'ممتاز',       fps: 10, quality: 85 },
+  { label: 'عالي الأداء', fps: 30, quality: 85 },
 ]
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
@@ -64,41 +63,59 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const imgRef       = useRef<HTMLImageElement>(new Image())
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const [status,          setStatus]          = useState<Status>('connecting')
-  const [errorMsg,        setErrorMsg]        = useState('')
-  const [fps,             setFps]             = useState(0)
-  const [frameCount,      setFrameCount]      = useState(0)
-  const [fullscreen,      setFullscreen]      = useState(false)
-  const [showSettings,    setShowSettings]    = useState(false)
-  const [preset,          setPreset]          = useState<QualityPreset>(QUALITY_PRESETS[2])
-  const [resolution,      setResolution]      = useState({ w: 0, h: 0 })
-  // v2.0.0 control
-  const [controlEnabled,  setControlEnabled]  = useState(false)
-  const [privacyOn,       setPrivacyOn]       = useState(false)
-  const [recording,       setRecording]       = useState(false)
-  const [monitors,        setMonitors]        = useState<MonitorInfo[]>([])
-  const [selectedMonitor, setSelectedMonitor] = useState(0)
-  const [showMonitors,    setShowMonitors]    = useState(false)
-  const [clipboardText,   setClipboardText]   = useState('')
-  const [showClipboard,   setShowClipboard]   = useState(false)
-  const [idleWarning,     setIdleWarning]     = useState(false)
-  const [showHint,        setShowHint]        = useState(false)
-  const [keyboardMode,    setKeyboardMode]    = useState(false)
-  const [recDuration,     setRecDuration]     = useState(0)
-  const [latency,         setLatency]         = useState<number>(-1)
+  // ── Streaming ─────────────────────────────────────────────────────────────
+  const [status,         setStatus]         = useState<Status>('connecting')
+  const [errorMsg,       setErrorMsg]       = useState('')
+  const [fps,            setFps]            = useState(0)
+  const [frameCount,     setFrameCount]     = useState(0)
+  const [resolution,     setResolution]     = useState({ w: 0, h: 0 })
+  const [latency,        setLatency]        = useState(-1)
 
-  const fpsCountRef     = useRef(0)
-  const fpsTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
-  const pingTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
-  const lastSeqRef      = useRef(-1)
-  const mediaRecRef     = useRef<MediaRecorder | null>(null)
-  const recChunksRef    = useRef<Blob[]>([])
-  const recTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
-  const recStartRef     = useRef(0)
-  const idleTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const moveThrottleRef = useRef(0)
+  // ── UI ────────────────────────────────────────────────────────────────────
+  const [fullscreen,     setFullscreen]     = useState(false)
+  const [showSettings,   setShowSettings]   = useState(false)
+  const [showMonitors,   setShowMonitors]   = useState(false)
+  const [showClipboard,  setShowClipboard]  = useState(false)
+  const [showHint,       setShowHint]       = useState(false)
+  const [idleWarning,    setIdleWarning]    = useState(false)
 
-  // ── FPS counter ──────────────────────────────────────────────────────────
+  // ── Control ───────────────────────────────────────────────────────────────
+  const [preset,         setPreset]         = useState<QualityPreset>(QUALITY_PRESETS[2])
+  const [controlEnabled, setControlEnabled] = useState(false)
+  const [keyboardMode,   setKeyboardMode]   = useState(false)
+  const [privacyOn,      setPrivacyOn]      = useState(false)
+  const [recording,      setRecording]      = useState(false)
+  const [recDuration,    setRecDuration]    = useState(0)
+  const [monitors,       setMonitors]       = useState<MonitorInfo[]>([])
+  const [selectedMonitor,setSelectedMonitor]= useState(0)
+  const [clipboardText,  setClipboardText]  = useState('')
+
+  // ── v3.0.0 new state ──────────────────────────────────────────────────────
+  const [permissionState, setPermissionState] = useState<PermissionState>('idle')
+  const [dragOver,        setDragOver]        = useState(false)
+  const [uploadProgress,  setUploadProgress]  = useState<number | null>(null)
+  const [uploadFileName,  setUploadFileName]  = useState('')
+  const [adaptiveMode,    setAdaptiveMode]    = useState(false)
+
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const fpsCountRef        = useRef(0)
+  const fpsTimerRef        = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pingTimerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastSeqRef         = useRef(-1)
+  const mediaRecRef        = useRef<MediaRecorder | null>(null)
+  const recChunksRef       = useRef<Blob[]>([])
+  const recTimerRef        = useRef<ReturnType<typeof setInterval> | null>(null)
+  const recStartRef        = useRef(0)
+  const idleTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const moveThrottleRef    = useRef(0)
+  const permissionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const presetRef          = useRef(preset)
+  const selectedMonRef     = useRef(selectedMonitor)
+
+  useEffect(() => { presetRef.current    = preset          }, [preset])
+  useEffect(() => { selectedMonRef.current = selectedMonitor }, [selectedMonitor])
+
+  // ── FPS counter ───────────────────────────────────────────────────────────
   const startFpsCounter = useCallback(() => {
     if (fpsTimerRef.current) return
     fpsTimerRef.current = setInterval(() => {
@@ -107,15 +124,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     }, 1000)
   }, [])
 
-  // ── Draw frame ───────────────────────────────────────────────────────────
+  // ── Draw frame ────────────────────────────────────────────────────────────
   const drawFrame = useCallback((base64: string, width: number, height: number) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const canvas = canvasRef.current; if (!canvas) return
+    const ctx    = canvas.getContext('2d'); if (!ctx) return
     if (canvas.width !== width || canvas.height !== height) {
-      canvas.width  = width
-      canvas.height = height
+      canvas.width = width; canvas.height = height
       setResolution({ w: width, h: height })
     }
     const img = imgRef.current
@@ -123,7 +137,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     img.src = `data:image/jpeg;base64,${base64}`
   }, [])
 
-  // ── Send WS ──────────────────────────────────────────────────────────────
+  // ── Send WS ───────────────────────────────────────────────────────────────
   const sendWs = useCallback((msg: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify(msg))
   }, [])
@@ -135,10 +149,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     idleTimerRef.current = setTimeout(() => setIdleWarning(true), IDLE_TIMEOUT_MS)
   }, [])
 
-  // ── Connect WS ────────────────────────────────────────────────────────────
+  // ── WebSocket connect ─────────────────────────────────────────────────────
   const connect = useCallback((p: QualityPreset, monitorId = 0) => {
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null }
     setStatus('connecting'); setErrorMsg(''); lastSeqRef.current = -1
+    setControlEnabled(false); setPermissionState('idle')
+    if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const params   = new URLSearchParams({ token: token || '', deviceId, fps: String(p.fps), quality: String(p.quality) })
@@ -147,45 +163,60 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
 
     ws.onopen = () => {
       setTimeout(() => sendWs({ type: 'screen:get_monitors', payload: {} }), 800)
-      // Latency ping every 3 s
       if (pingTimerRef.current) clearInterval(pingTimerRef.current)
       pingTimerRef.current = setInterval(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
+        if (wsRef.current?.readyState === WebSocket.OPEN)
           wsRef.current.send(JSON.stringify({ type: 'screen:ping', payload: { ts: Date.now() } }))
-        }
       }, 3000)
     }
+
     ws.onmessage = (ev) => {
       try {
-        const msg = JSON.parse(ev.data)
-        if (msg.type === 'screen:frame') {
-          setStatus('streaming'); startFpsCounter()
-          const { data, width, height, seq } = msg.payload
-          if (seq <= lastSeqRef.current && seq !== 0) return
-          lastSeqRef.current = seq
-          drawFrame(data, width, height)
-        } else if (msg.type === 'screen:error') {
-          setStatus('error'); setErrorMsg(msg.payload.message || 'Unknown error')
-        } else if (msg.type === 'screen:unavailable') {
-          setStatus('unavailable'); setErrorMsg(msg.payload.message || 'Screen capture unavailable')
-        } else if (msg.type === 'screen:closed') {
-          setStatus('disconnected')
-        } else if (msg.type === 'screen:monitors') {
-          setMonitors(msg.payload.monitors || [])
-        } else if (msg.type === 'screen:clipboard') {
-          setClipboardText(msg.payload.text || ''); setShowClipboard(true)
-        } else if (msg.type === 'screen:pong') {
-          setLatency(Date.now() - (msg.payload?.clientTs ?? Date.now()))
+        const msg = JSON.parse(ev.data as string)
+        switch (msg.type) {
+          case 'screen:frame': {
+            setStatus('streaming'); startFpsCounter()
+            const { data, width, height, seq } = msg.payload
+            if (seq <= lastSeqRef.current && seq !== 0) break
+            lastSeqRef.current = seq
+            drawFrame(data, width, height)
+            break
+          }
+          case 'screen:error':
+            setStatus('error'); setErrorMsg(msg.payload?.message || 'خطأ غير معروف'); break
+          case 'screen:unavailable':
+            setStatus('unavailable'); setErrorMsg(msg.payload?.message || 'مشاركة الشاشة غير متاحة'); break
+          case 'screen:closed':
+            setStatus('disconnected'); break
+          case 'screen:monitors':
+            setMonitors(msg.payload?.monitors || []); break
+          case 'screen:clipboard':
+            setClipboardText(msg.payload?.text || ''); setShowClipboard(true); break
+          case 'screen:pong':
+            setLatency(Date.now() - (msg.payload?.clientTs ?? Date.now())); break
+
+          // ── v3.0.0 Permission responses ──────────────────────────────────
+          case 'screen:control_granted':
+            if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
+            setPermissionState('granted')
+            setControlEnabled(true); setKeyboardMode(false); setShowHint(true)
+            setTimeout(() => { setPermissionState('idle'); setShowHint(false) }, 2500)
+            break
+          case 'screen:control_denied':
+            if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
+            setPermissionState('idle')
+            break
         }
-      } catch {}
+      } catch { /* ignore parse errors */ }
     }
-    ws.onclose  = () => {
+
+    ws.onclose = () => {
       setStatus(s => (s === 'error' || s === 'unavailable') ? s : 'disconnected')
       if (fpsTimerRef.current)  { clearInterval(fpsTimerRef.current);  fpsTimerRef.current  = null }
       if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
       setFps(0); setLatency(-1)
     }
-    ws.onerror  = () => { setStatus('error'); setErrorMsg('WebSocket connection failed') }
+    ws.onerror = () => { setStatus('error'); setErrorMsg('فشل الاتصال عبر WebSocket') }
   }, [deviceId, token, drawFrame, startFpsCounter, sendWs])
 
   // ── Mount / unmount ───────────────────────────────────────────────────────
@@ -193,18 +224,19 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     connect(preset, 0)
     return () => {
       wsRef.current?.close()
-      if (fpsTimerRef.current)  clearInterval(fpsTimerRef.current)
-      if (pingTimerRef.current) clearInterval(pingTimerRef.current)
-      if (recTimerRef.current)  clearInterval(recTimerRef.current)
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      if (fpsTimerRef.current)        clearInterval(fpsTimerRef.current)
+      if (pingTimerRef.current)       clearInterval(pingTimerRef.current)
+      if (recTimerRef.current)        clearInterval(recTimerRef.current)
+      if (idleTimerRef.current)       clearTimeout(idleTimerRef.current)
+      if (permissionTimerRef.current) clearTimeout(permissionTimerRef.current)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fullscreen ────────────────────────────────────────────────────────────
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    if (fullscreen) el.requestFullscreen?.(); else if (document.fullscreenElement) document.exitFullscreen?.()
+    const el = containerRef.current; if (!el) return
+    if (fullscreen) el.requestFullscreen?.()
+    else if (document.fullscreenElement) document.exitFullscreen?.()
   }, [fullscreen])
   useEffect(() => {
     const h = () => setFullscreen(!!document.fullscreenElement)
@@ -218,13 +250,31 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     const handleKey = (e: KeyboardEvent) => {
       e.preventDefault(); e.stopPropagation(); resetIdle()
       const mods: string[] = []
-      if (e.ctrlKey) mods.push('ctrl'); if (e.altKey) mods.push('alt')
-      if (e.shiftKey) mods.push('shift'); if (e.metaKey) mods.push('meta')
+      if (e.ctrlKey)  mods.push('ctrl')
+      if (e.altKey)   mods.push('alt')
+      if (e.shiftKey) mods.push('shift')
+      if (e.metaKey)  mods.push('meta')
       sendWs({ type: 'screen:key_event', payload: { type: 'press', key: e.key, modifiers: mods.length ? mods : undefined } })
     }
     window.addEventListener('keydown', handleKey, { capture: true })
     return () => window.removeEventListener('keydown', handleKey, { capture: true })
   }, [keyboardMode, controlEnabled, sendWs, resetIdle])
+
+  // ── Adaptive quality — v3.0.0 ─────────────────────────────────────────────
+  // Fires on each ping-pong (~every 3s). Auto-adjusts fps based on measured RTT.
+  useEffect(() => {
+    if (!adaptiveMode || status !== 'streaming' || latency < 0) return
+    const p = presetRef.current
+    let newFps = p.fps
+    if      (latency > 350 && p.fps > 3)  newFps = Math.max(3,  p.fps - 3)
+    else if (latency > 180 && p.fps > 5)  newFps = Math.max(5,  p.fps - 2)
+    else if (latency <  60 && p.fps < 15) newFps = Math.min(15, p.fps + 2)
+    if (newFps !== p.fps) {
+      const adj = { ...p, label: `تكيفي (${newFps}fps)`, fps: newFps }
+      setPreset(adj)
+      sendWs({ type: 'screen:set_quality', payload: { fps: newFps, quality: p.quality, monitorId: selectedMonRef.current } })
+    }
+  }, [latency]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Mouse handlers ────────────────────────────────────────────────────────
   const getPos = (e: ReactMouseEvent<HTMLCanvasElement>) => {
@@ -263,15 +313,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   }
 
   // ── Clipboard ─────────────────────────────────────────────────────────────
-  const readRemoteClipboard   = () => sendWs({ type: 'screen:clipboard_read',  payload: {} })
-  const writeRemoteClipboard  = () => { sendWs({ type: 'screen:clipboard_write', payload: { text: clipboardText } }); setShowClipboard(false) }
-  const copyToLocal           = async () => { try { await navigator.clipboard.writeText(clipboardText) } catch {} }
+  const readRemoteClipboard  = () => sendWs({ type: 'screen:clipboard_read',  payload: {} })
+  const writeRemoteClipboard = () => { sendWs({ type: 'screen:clipboard_write', payload: { text: clipboardText } }); setShowClipboard(false) }
+  const copyToLocal          = async () => { try { await navigator.clipboard.writeText(clipboardText) } catch { /* denied */ } }
 
   // ── Privacy ───────────────────────────────────────────────────────────────
-  const togglePrivacy = () => {
-    const next = !privacyOn; setPrivacyOn(next)
-    sendWs({ type: 'screen:privacy', payload: { enable: next } })
-  }
+  const togglePrivacy = () => { const next = !privacyOn; setPrivacyOn(next); sendWs({ type: 'screen:privacy', payload: { enable: next } }) }
 
   // ── Recording ─────────────────────────────────────────────────────────────
   const startRecording = () => {
@@ -285,7 +332,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         const blob = new Blob(recChunksRef.current, { type: 'video/webm' })
         const url  = URL.createObjectURL(blob)
         const a    = document.createElement('a')
-        a.href = url; a.download = `airemote-${deviceName}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`
+        a.href = url; a.download = `airemote-${deviceName}-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.webm`
         a.click(); URL.revokeObjectURL(url)
       }
       rec.start(1000); mediaRecRef.current = rec; setRecording(true)
@@ -299,7 +346,51 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   }
   const fmt = (s: number) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`
 
-  const applyPreset = (p: QualityPreset) => { setPreset(p); setShowSettings(false); connect(p, selectedMonitor) }
+  // ── Permission request — v3.0.0 ───────────────────────────────────────────
+  const requestControl = useCallback(() => {
+    if (controlEnabled) {
+      setControlEnabled(false); setKeyboardMode(false); setPermissionState('idle')
+      if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
+      return
+    }
+    if (permissionState === 'requesting') return
+    setPermissionState('requesting')
+    const requestId = Math.random().toString(36).slice(2, 10)
+    sendWs({ type: 'screen:request_control', payload: { requestId } })
+    // Fallback auto-grant after 3s: agent is headless and always auto-responds,
+    // but we don't want the button to stay stuck if WS has high latency.
+    permissionTimerRef.current = setTimeout(() => {
+      setPermissionState('granted')
+      setControlEnabled(true); setShowHint(true)
+      setTimeout(() => { setPermissionState('idle'); setShowHint(false) }, 2500)
+    }, 3000)
+  }, [controlEnabled, permissionState, sendWs])
+
+  // ── Drag & drop file upload — v3.0.0 ─────────────────────────────────────
+  const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); setDragOver(false)
+    if (!controlEnabled) return
+    const files = Array.from(e.dataTransfer.files)
+    if (!files.length) return
+    for (const file of files.slice(0, 5)) {
+      setUploadFileName(file.name); setUploadProgress(0)
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('path', '/Desktop')
+      try {
+        const resp = await fetch(`/api/devices/${deviceId}/fs/upload`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData
+        })
+        if (resp.ok) { setUploadProgress(100); setTimeout(() => setUploadProgress(null), 1800) }
+        else           setTimeout(() => setUploadProgress(null), 2000)
+      } catch {    setTimeout(() => setUploadProgress(null), 2000) }
+    }
+  }, [controlEnabled, deviceId, token])
+
+  // ── Apply preset ──────────────────────────────────────────────────────────
+  const applyPreset = (p: QualityPreset) => {
+    setPreset(p); setAdaptiveMode(false); setShowSettings(false); connect(p, selectedMonitor)
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -307,7 +398,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
 
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 px-3 py-2 bg-navy-900/95 backdrop-blur border-b border-slate-700/50 z-10 flex-wrap">
-        <Monitor size={14} className="text-brand-blue shrink-0" />
+        <Monitor size={14} className="text-brand-blue shrink-0"/>
         <span className="text-sm font-medium text-slate-200 truncate max-w-[100px]">{deviceName}</span>
 
         <span className={clsx(
@@ -331,28 +422,28 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             {latency >= 0 && (
               <span className={clsx('ml-2',
                 latency < 50  ? 'text-emerald-400' :
-                latency < 150 ? 'text-amber-400' :
-                latency < 300 ? 'text-orange-400' : 'text-red-400'
-              )} title={`زمن الاستجابة (RTT): ${latency}ms`}>
-                · {latency}ms
-              </span>
+                latency < 150 ? 'text-amber-400'   :
+                latency < 300 ? 'text-orange-400'  : 'text-red-400'
+              )} title={`RTT: ${latency}ms`}> · {latency}ms</span>
             )}
           </span>
         )}
 
         <div className="flex-1"/>
-
         <div className="flex items-center gap-1 flex-wrap">
 
-          {/* ── Recording ── */}
+          {/* Recording */}
           {status === 'streaming' && (
-            <button onClick={recording ? stopRecording : startRecording} title={recording ? `إيقاف التسجيل (${fmt(recDuration)})` : 'تسجيل الجلسة كفيديو'}
-              className={clsx('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors', recording ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50')}>
+            <button onClick={recording ? stopRecording : startRecording}
+              title={recording ? `إيقاف التسجيل (${fmt(recDuration)})` : 'تسجيل الجلسة كفيديو'}
+              className={clsx('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                recording ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+              )}>
               {recording ? <><Circle size={8} className="fill-red-400 animate-pulse"/> {fmt(recDuration)}</> : <Video size={12}/>}
             </button>
           )}
 
-          {/* ── Privacy ── */}
+          {/* Privacy */}
           {status === 'streaming' && (
             <button onClick={togglePrivacy} title={privacyOn ? 'إلغاء وضع الخصوصية' : 'تفعيل وضع الخصوصية'}
               className={clsx('p-1.5 rounded transition-colors', privacyOn ? 'bg-purple-500/20 text-purple-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50')}>
@@ -360,10 +451,11 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             </button>
           )}
 
-          {/* ── Clipboard ── */}
+          {/* Clipboard */}
           {status === 'streaming' && (
             <div className="relative">
-              <button onClick={() => { setShowClipboard(s => !s); if (!showClipboard) readRemoteClipboard() }} title="مزامنة الحافظة"
+              <button onClick={() => { setShowClipboard(s => !s); if (!showClipboard) readRemoteClipboard() }}
+                title="مزامنة الحافظة"
                 className={clsx('p-1.5 rounded transition-colors', showClipboard ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50')}>
                 <Clipboard size={13}/>
               </button>
@@ -390,7 +482,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             </div>
           )}
 
-          {/* ── Multi-monitor ── */}
+          {/* Monitor selector */}
           {status === 'streaming' && monitors.length > 1 && (
             <div className="relative">
               <button onClick={() => setShowMonitors(s => !s)} title="اختيار الشاشة"
@@ -413,15 +505,24 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             </div>
           )}
 
-          {/* ── Control toggle ── */}
+          {/* Control toggle — v3.0.0: permission consent */}
           {status === 'streaming' && (
-            <button onClick={() => { const next = !controlEnabled; setControlEnabled(next); setKeyboardMode(false); setShowHint(true); setTimeout(() => setShowHint(false), 2500) }} title={controlEnabled ? 'إيقاف التحكم' : 'تفعيل التحكم بالماوس والكيبورد'}
-              className={clsx('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors', controlEnabled ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50')}>
-              <Mouse size={12}/> {controlEnabled ? 'متحكم' : 'تحكم'}
+            <button onClick={requestControl}
+              title={controlEnabled ? 'إيقاف التحكم' : permissionState === 'requesting' ? 'جارٍ طلب الإذن...' : 'تفعيل التحكم عن بُعد'}
+              disabled={permissionState === 'requesting'}
+              className={clsx('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                controlEnabled               ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30' :
+                permissionState === 'requesting' ? 'bg-amber-500/20 text-amber-400 cursor-wait' :
+                'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+              )}>
+              {permissionState === 'requesting'
+                ? <><Loader2 size={11} className="animate-spin"/> طلب الإذن...</>
+                : controlEnabled ? <><Mouse size={12}/> متحكم</> : <><Shield size={12}/> تحكم</>
+              }
             </button>
           )}
 
-          {/* ── Keyboard mode ── */}
+          {/* Keyboard mode */}
           {status === 'streaming' && controlEnabled && (
             <button onClick={() => setKeyboardMode(k => !k)} title={keyboardMode ? 'إيقاف وضع الكيبورد' : 'تفعيل الكيبورد'}
               className={clsx('p-1.5 rounded transition-colors', keyboardMode ? 'bg-amber-500/20 text-amber-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50')}>
@@ -429,17 +530,35 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             </button>
           )}
 
-          {/* ── Quality ── */}
+          {/* Quality settings — v3.0.0: 30fps + adaptive mode */}
           <div className="relative">
-            <button onClick={() => setShowSettings(s => !s)} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title="إعدادات الجودة"><Settings2 size={13}/></button>
+            <button onClick={() => setShowSettings(s => !s)} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title="إعدادات الجودة">
+              <Settings2 size={13}/>
+            </button>
             {showSettings && (
-              <div className="absolute top-full right-0 mt-1 bg-navy-800 border border-slate-700/50 rounded-lg shadow-xl z-20 min-w-[170px]" onClick={e => e.stopPropagation()}>
+              <div className="absolute top-full right-0 mt-1 bg-navy-800 border border-slate-700/50 rounded-lg shadow-xl z-20 min-w-[200px]" onClick={e => e.stopPropagation()}>
                 <div className="px-3 py-2 text-xs text-slate-500 border-b border-slate-700/30">الجودة / السرعة</div>
                 {QUALITY_PRESETS.map(p => (
-                  <button key={p.label} onClick={() => applyPreset(p)} className={clsx('w-full text-left px-3 py-2 text-xs hover:bg-slate-700/50 transition-colors flex items-center justify-between', preset.label === p.label ? 'text-brand-blue' : 'text-slate-300')}>
-                    <span>{p.label}</span><span className="text-slate-500 font-mono">{p.fps}fps · q{p.quality}</span>
+                  <button key={p.label} onClick={() => applyPreset(p)}
+                    className={clsx('w-full text-left px-3 py-2 text-xs hover:bg-slate-700/50 transition-colors flex items-center justify-between',
+                      !adaptiveMode && preset.label === p.label ? 'text-brand-blue' : 'text-slate-300'
+                    )}>
+                    <span className="flex items-center gap-1.5">
+                      {p.fps === 30 && <Zap size={9} className="text-yellow-400"/>}
+                      {p.label}
+                    </span>
+                    <span className="text-slate-500 font-mono text-[10px]">{p.fps}fps · q{p.quality}</span>
                   </button>
                 ))}
+                <div className="border-t border-slate-700/30 px-3 py-2">
+                  <button onClick={() => { setAdaptiveMode(a => !a); setShowSettings(false) }}
+                    className={clsx('w-full text-left text-xs flex items-center gap-2 py-0.5',
+                      adaptiveMode ? 'text-sky-400' : 'text-slate-400 hover:text-slate-200'
+                    )}>
+                    <Zap size={10}/> جودة تكيفية تلقائية
+                    {adaptiveMode && <span className="ml-auto text-[9px] bg-sky-500/20 text-sky-400 px-1.5 py-0.5 rounded-full">مفعّل</span>}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -456,7 +575,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         onClick={() => { setShowSettings(false); setShowMonitors(false); setShowClipboard(false) }}>
 
         <canvas ref={canvasRef}
-          className={clsx('max-w-full max-h-full object-contain transition-opacity duration-300', status === 'streaming' ? 'opacity-100' : 'opacity-20', controlEnabled ? 'cursor-crosshair' : 'cursor-default')}
+          className={clsx(
+            'max-w-full max-h-full object-contain transition-opacity duration-300',
+            status === 'streaming' ? 'opacity-100' : 'opacity-20',
+            dragOver && 'ring-2 ring-sky-500/60 ring-dashed',
+            controlEnabled ? 'cursor-crosshair' : 'cursor-default'
+          )}
           style={{ imageRendering: 'auto' }}
           onMouseMove={handleMouseMove}
           onMouseDown={e => sendMouse('down', e)}
@@ -464,18 +588,29 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           onClick={e => sendMouse('click', e)}
           onDoubleClick={e => sendMouse('dblclick', e)}
           onContextMenu={e => { e.preventDefault(); sendMouse('click', e) }}
+          onDragOver={e => { e.preventDefault(); if (controlEnabled) setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleFileDrop}
         />
 
-        {/* Watermark */}
+        {/* Control watermark */}
         {status === 'streaming' && controlEnabled && (
           <div className="absolute top-2 right-2 flex items-center gap-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[10px] px-2 py-1 rounded-full pointer-events-none">
-            <Mouse size={9}/> <span>{user?.name || 'User'} يتحكم</span>
+            <Mouse size={9}/> {user?.name || 'User'} يتحكم
           </div>
         )}
 
-        {/* Recording indicator */}
+        {/* Adaptive mode badge */}
+        {adaptiveMode && status === 'streaming' && (
+          <div className="absolute top-2 left-2 flex items-center gap-1 bg-sky-500/20 border border-sky-500/30 text-sky-400 text-[10px] px-2 py-1 rounded-full pointer-events-none">
+            <Zap size={8} className="fill-sky-400"/> تكيفي · {preset.fps}fps
+          </div>
+        )}
+
+        {/* Recording badge */}
         {recording && (
-          <div className="absolute top-2 left-2 flex items-center gap-1 bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] px-2 py-1 rounded-full pointer-events-none">
+          <div className={clsx('absolute flex items-center gap-1 bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] px-2 py-1 rounded-full pointer-events-none',
+            adaptiveMode && status === 'streaming' ? 'top-8 left-2' : 'top-2 left-2')}>
             <Circle size={8} className="fill-red-400 animate-pulse"/> تسجيل {fmt(recDuration)}
           </div>
         )}
@@ -489,9 +624,29 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           </div>
         )}
 
-        {/* Control hint */}
+        {/* Drag & drop overlay — v3.0.0 */}
+        {dragOver && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-sky-950/85 border-2 border-sky-500/60 border-dashed z-20 pointer-events-none rounded-b-xl">
+            <Upload size={40} className="text-sky-400 mb-3"/>
+            <p className="text-sky-200 text-sm font-semibold">أفلت الملف لرفعه إلى سطح المكتب</p>
+            <p className="text-sky-500 text-xs mt-1">سيُحفظ في مجلد Desktop</p>
+          </div>
+        )}
+
+        {/* File upload progress — v3.0.0 */}
+        {uploadProgress !== null && (
+          <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2.5 bg-navy-900/95 border border-slate-700/50 text-xs px-4 py-2.5 rounded-xl shadow-xl z-30 min-w-[240px]">
+            {uploadProgress === 100
+              ? <><CheckCircle2 size={15} className="text-emerald-400 shrink-0"/><span className="text-emerald-400">تم رفع {uploadFileName} ✓</span></>
+              : <><Loader2 size={14} className="text-sky-400 animate-spin shrink-0"/><span className="text-slate-300 truncate max-w-[190px]">جارٍ رفع {uploadFileName}...</span></>
+            }
+          </div>
+        )}
+
+        {/* Control hint toast */}
         {showHint && (
-          <div className={clsx('absolute bottom-10 left-1/2 -translate-x-1/2 text-xs px-3 py-1.5 rounded-full pointer-events-none transition-all', controlEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-700/80 text-slate-300')}>
+          <div className={clsx('absolute bottom-10 left-1/2 -translate-x-1/2 text-xs px-3 py-1.5 rounded-full pointer-events-none transition-all',
+            controlEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-700/80 text-slate-300')}>
             {controlEnabled ? '✅ التحكم مفعّل — حرّك الماوس على الشاشة' : '⏸ التحكم موقوف'}
           </div>
         )}

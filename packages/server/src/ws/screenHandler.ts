@@ -10,7 +10,7 @@ import { getDb } from '../db/database'
 // Default FPS the server will allow forwarding to the dashboard.
 // The agent may send frames faster; we drop extras to protect bandwidth.
 const DEFAULT_FPS     = 5
-const MAX_FPS         = 15
+const MAX_FPS         = 30
 const CONNECT_TIMEOUT = 15_000   // ms to wait for agent:screen_frame after start
 
 export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest) {
@@ -208,6 +208,17 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
             timestamp: Date.now()
           })
           break
+
+        // ── Permission / consent request ──────────────────────────────────
+        case 'screen:request_control': {
+          const requestId = msg.payload?.requestId || uuidv4()
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_control_request',
+            payload: { sessionId, requestId, requesterName: userEmail },
+            timestamp: Date.now()
+          })
+          break
+        }
 
         // ── Latency ping-pong ─────────────────────────────────────────────
         case 'screen:ping':

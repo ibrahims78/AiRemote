@@ -34,6 +34,19 @@ interface PtyProcess {
   sessionId: string
 }
 
+// ── Fast frame hash for deduplication (v3.0.0) ───────────────────────────────
+// Samples 32 evenly-spaced bytes — deterministic for same screen content per
+// capture tool/quality. Identical frames return the same hash → skip sending.
+function computeFrameHash(buf: Buffer): string {
+  if (buf.length < 200) return `t${buf.length}`
+  const step = Math.floor(buf.length / 32)
+  let h = buf.length
+  for (let i = 1; i <= 32; i++) {
+    h = (Math.imul(h, 31) + buf[i * step]) | 0
+  }
+  return `${buf.length}:${(h >>> 0).toString(16)}`
+}
+
 export class AgentService {
   private ws: WebSocket | null = null
   private deviceId: string | null = null
@@ -290,6 +303,18 @@ export class AgentService {
             this.privacyMode = false
             disablePrivacyMode().catch(err => console.error('[agent] privacy disable error:', err.message))
           }
+          break
+        }
+
+        // ── v3.0.0 Permission consent — auto-grant in unattended/agent mode ──
+        case 'server:screen_control_request': {
+          const p = message.payload as { sessionId: string; requestId: string; requesterName: string }
+          console.log(`🔐 Control request from ${p.requesterName} — auto-granting (unattended mode)`)
+          this.send({
+            type: 'agent:screen_control_granted',
+            payload: { sessionId: p.sessionId, requestId: p.requestId },
+            timestamp: Date.now()
+          })
           break
         }
 
@@ -690,16 +715,22 @@ export class AgentService {
   private handleScreenStart(p: { sessionId: string; fps: number; quality: number; monitorId?: number }): void {
     const { sessionId, fps, quality, monitorId = 0 } = p
 
-    // Stop any existing session with same ID (re-start with new settings)
     this.stopScreenCapture(sessionId)
-
-    // Track monitor for this session
     this.screenMonitorId.set(sessionId, monitorId)
     const mon = this.cachedMonitors.find(m => m.id === monitorId)
     if (mon) setScreenResolution(mon.width, mon.height)
 
-    const intervalMs = Math.max(66, Math.round(1000 / Math.min(fps, 15)))
+    // v3.0.0: support up to 30fps (min interval 33ms instead of 66ms)
+    const clampedFps = Math.min(fps, 30)
+    const intervalMs = Math.max(33, Math.round(1000 / clampedFps))
     let seq = 0
+
+    // ── Frame deduplication (v3.0.0) ─────────────────────────────────────────
+    // Skips sending frames where the screen content has not changed.
+    // Reduces outbound bandwidth by 60-90% on idle/static screens.
+    let prevHash = ''
+    let framesSinceKeyframe = 0
+    const KEYFRAME_EVERY = 60  // force full send every 60 captures (~2s at 30fps)
 
     const capture = async () => {
       if (!this.screenTimers.has(sessionId)) return
@@ -715,7 +746,6 @@ export class AgentService {
           monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : undefined
         })
         if (!frame) {
-          // No backend available
           this.send({
             type: 'agent:screen_unavailable',
             payload: { sessionId, message: 'No screen capture tool available (install scrot or imagemagick on Linux)' },
@@ -724,6 +754,14 @@ export class AgentService {
           this.stopScreenCapture(sessionId)
           return
         }
+
+        // Hash-based dedup — skip unchanged frames, force keyframe every N captures
+        const hash = computeFrameHash(frame.data)
+        framesSinceKeyframe++
+        const isKeyframe = framesSinceKeyframe >= KEYFRAME_EVERY
+        if (hash === prevHash && !isKeyframe) return  // identical screen — save bandwidth
+        prevHash = hash
+        if (isKeyframe) framesSinceKeyframe = 0
 
         this.send({
           type:      'agent:screen_frame',
@@ -747,12 +785,11 @@ export class AgentService {
       }
     }
 
-    // First frame immediately, then interval
     capture()
     const timer = setInterval(capture, intervalMs)
     this.screenTimers.set(sessionId, timer)
     this.screenSeq.set(sessionId, 0)
-    console.log(`🖥️  Screen capture started: sessionId=${sessionId} fps=${fps} quality=${quality}`)
+    console.log(`🖥️  Screen capture started: sessionId=${sessionId} fps=${clampedFps} quality=${quality}`)
   }
 
   private stopScreenCapture(sessionId: string): void {

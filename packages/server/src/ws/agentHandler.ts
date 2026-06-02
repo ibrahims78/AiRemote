@@ -391,6 +391,35 @@ export async function handleAgentMessage(
       return null
     }
 
+    // ── v3.0.0 Permission system ──────────────────────────────────────────
+    case 'agent:screen_control_granted': {
+      const p = message.payload as { sessionId: string; requestId: string }
+      const session = deviceRegistry.getScreenSession(p.sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({
+            type:    'screen:control_granted',
+            payload: { requestId: p.requestId }
+          }))
+        } catch {}
+      }
+      return null
+    }
+
+    case 'agent:screen_control_denied': {
+      const p = message.payload as { sessionId: string; requestId: string }
+      const session = deviceRegistry.getScreenSession(p.sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({
+            type:    'screen:control_denied',
+            payload: { requestId: p.requestId }
+          }))
+        } catch {}
+      }
+      return null
+    }
+
     default:
       return null
   }
