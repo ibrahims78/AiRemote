@@ -11,7 +11,8 @@ export default defineConfig({
       '/api': { target: 'http://localhost:3001', changeOrigin: true },
       '/ws': { target: 'ws://localhost:3001', ws: true, changeOrigin: true },
       '/ssh': { target: 'ws://localhost:3001', ws: true, changeOrigin: true },
-      '/pty': { target: 'ws://localhost:3001', ws: true, changeOrigin: true }
+      '/pty':    { target: 'ws://localhost:3001', ws: true, changeOrigin: true },
+      '/screen': { target: 'ws://localhost:3001', ws: true, changeOrigin: true }
     }
   }
 })
