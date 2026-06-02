@@ -84,3 +84,9 @@ id = "EW_bHWX7kRraWIE3Oh4eB"
 uri = "file://releases/agent-script/agent-script-v1.4.0.zip"
 type = "unspecified"
 title = "agent-script-v1.4.0.zip — Agent محدّث"
+
+[[outputs]]
+id = "wqRri6ZhYbPJ8ClFIb-d8"
+uri = "file://releases/agent-script/agent-script-v2.0.0.zip"
+type = "unspecified"
+title = "AiRemote Agent v2.0.0 — Script Edition"

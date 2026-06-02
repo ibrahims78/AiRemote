@@ -1,8 +1,6 @@
 import WebSocket from 'ws'
 import { v4 as uuidv4 } from 'uuid'
-import { Client as SSH2Client } from 'ssh2'
 import { spawn, ChildProcess } from 'child_process'
-import * as net from 'net'
 import fs from 'fs/promises'
 import path from 'path'
 import { getDeviceInfo } from './system/info'
@@ -19,22 +17,17 @@ import {
 } from './system/inputControl'
 import type { WSMessage, AgentRegisterPayload, ServerCommandPayload, RemoteMouseEvent, RemoteKeyEvent } from '@airemote/shared'
 
-const AGENT_VERSION     = '2.0.0'
-const HEARTBEAT_INTERVAL = 4000
-const RECONNECT_BASE_DELAY = 2000
-const RECONNECT_MAX_DELAY  = 30000
-
-interface SshTunnel {
-  client: SSH2Client
-  stream: NodeJS.ReadWriteStream | null
-}
+export const AGENT_VERSION      = '2.0.0'
+const HEARTBEAT_INTERVAL        = 4000
+const RECONNECT_BASE_DELAY      = 2000
+const RECONNECT_MAX_DELAY       = 30000
 
 interface PtyProcess {
   proc: ChildProcess
   sessionId: string
 }
 
-// ── Fast frame hash for deduplication (v3.0.0) ───────────────────────────────
+// ── Fast frame hash for deduplication (v2.0.0) ───────────────────────────────
 // Samples 32 evenly-spaced bytes — deterministic for same screen content per
 // capture tool/quality. Identical frames return the same hash → skip sending.
 function computeFrameHash(buf: Buffer): string {
@@ -54,13 +47,10 @@ export class AgentService {
   private reconnectTimer: NodeJS.Timeout | null = null
   private reconnectDelay = RECONNECT_BASE_DELAY
   private running = false
-  private sshTunnels    = new Map<string, SshTunnel>()
   private ptyProcs      = new Map<string, PtyProcess>()
   private screenTimers  = new Map<string, NodeJS.Timeout>()
   private screenSeq     = new Map<string, number>()
   private screenMonitorId = new Map<string, number>()
-  private sshDetected   = false
-  // v2.0.0 — Remote control state
   private controlAvailable = false
   private cachedMonitors: MonitorInfo[] = []
   private privacyMode = false
@@ -73,18 +63,11 @@ export class AgentService {
   start(): void {
     this.running = true
     this.connect()
-    console.log(`🚀 AiRemote Agent v${AGENT_VERSION} starting...`)
-    console.log(`📡 Server: ${this.serverUrl}`)
   }
 
   stop(): void {
     this.running = false
     this.clearTimers()
-    for (const [, tunnel] of this.sshTunnels) {
-      try { tunnel.stream?.end() } catch {}
-      try { tunnel.client.end() } catch {}
-    }
-    this.sshTunnels.clear()
     for (const [, p] of this.ptyProcs) {
       try { p.proc.kill() } catch {}
     }
@@ -112,15 +95,11 @@ export class AgentService {
 
     const info  = await getDeviceInfo()
     const stats = await getDeviceStats()
-    const sshAvailable = await this.checkSshAvailable('127.0.0.1', 22)
-    this.sshDetected   = sshAvailable
     const shell = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
 
-    // v2.0.0 — detect remote control + monitor capabilities
     this.controlAvailable = await isControlAvailable()
     try { this.cachedMonitors = await listMonitors() } catch { this.cachedMonitors = [] }
 
-    // Update screen resolution for absolute coordinate mapping
     const primary = this.cachedMonitors.find(m => m.primary) ?? this.cachedMonitors[0]
     if (primary) setScreenResolution(primary.width, primary.height)
 
@@ -130,13 +109,15 @@ export class AgentService {
       stats,
       tunnelLayer: 'relay',
       capabilities: {
-        pty: true, sshAvailable, shell,
+        pty: true,
+        sshAvailable: false,
+        shell,
         screenControl: this.controlAvailable,
         clipboard: true,
         multiMonitor: this.cachedMonitors.length > 1,
         monitors: this.cachedMonitors
       },
-      sshInfo: { available: sshAvailable, port: 22 }
+      sshInfo: { available: false, port: 22 }
     }
 
     this.send({ type: 'agent:register', payload, timestamp: Date.now() })
@@ -159,35 +140,6 @@ export class AgentService {
           this.handleCommand(p)
           break
         }
-        case 'server:ssh_open': {
-          const p = message.payload as {
-            sessionId: string; host: string; port: number
-            username: string; password?: string; privateKey?: string
-            rows?: number; cols?: number
-          }
-          this.handleSshOpen(p)
-          break
-        }
-        case 'server:ssh_data': {
-          const p = message.payload as { sessionId: string; data: string }
-          const tunnel = this.sshTunnels.get(p.sessionId)
-          if (tunnel?.stream) tunnel.stream.write(Buffer.from(p.data, 'base64'))
-          break
-        }
-        case 'server:ssh_resize': {
-          const p = message.payload as { sessionId: string; rows: number; cols: number }
-          const tunnel = this.sshTunnels.get(p.sessionId)
-          if (tunnel?.stream) {
-            (tunnel.stream as unknown as { setWindow: (r: number, c: number) => void })
-              .setWindow(p.rows, p.cols)
-          }
-          break
-        }
-        case 'server:ssh_close': {
-          const p = message.payload as { sessionId: string }
-          this.closeSshTunnel(p.sessionId)
-          break
-        }
         case 'server:pty_open': {
           const p = message.payload as {
             sessionId: string; rows?: number; cols?: number; shell?: string
@@ -204,7 +156,6 @@ export class AgentService {
           break
         }
         case 'server:pty_resize': {
-          // SIGWINCH on Unix; on Windows this has no effect without node-pty
           const p = message.payload as { sessionId: string; rows: number; cols: number }
           const pty = this.ptyProcs.get(p.sessionId)
           if (pty && process.platform !== 'win32') {
@@ -233,7 +184,7 @@ export class AgentService {
           break
         }
 
-        // ── v2.0.0 Remote Control ──────────────────────────────────────────
+        // ── Remote Control ─────────────────────────────────────────────────
         case 'server:screen_mouse': {
           const p = message.payload as RemoteMouseEvent
           if (this.controlAvailable) {
@@ -288,7 +239,6 @@ export class AgentService {
         case 'server:screen_set_monitor': {
           const p = message.payload as { sessionId: string; monitorId: number }
           this.screenMonitorId.set(p.sessionId, p.monitorId)
-          // Update resolution for the selected monitor
           const mon = this.cachedMonitors.find(m => m.id === p.monitorId)
           if (mon) setScreenResolution(mon.width, mon.height)
           console.log(`[agent] Monitor set to ${p.monitorId} for session ${p.sessionId}`)
@@ -306,7 +256,7 @@ export class AgentService {
           break
         }
 
-        // ── v3.0.0 Permission consent — auto-grant in unattended/agent mode ──
+        // ── Permission consent — auto-grant in unattended/headless mode ──────
         case 'server:screen_control_request': {
           const p = message.payload as { sessionId: string; requestId: string; requesterName: string }
           console.log(`🔐 Control request from ${p.requesterName} — auto-granting (unattended mode)`)
@@ -329,7 +279,7 @@ export class AgentService {
     }
   }
 
-  // ── PTY (Direct Shell) ───────────────────────────────────────────────────
+  // ── PTY (Direct Shell) ────────────────────────────────────────────────────
 
   private handlePtyOpen(p: { sessionId: string; rows?: number; cols?: number; shell?: string }): void {
     const { sessionId, rows = 24, cols = 80, shell: shellHint = 'auto' } = p
@@ -349,14 +299,10 @@ export class AgentService {
       let proc: ChildProcess
 
       if (process.platform !== 'win32') {
-        // Use `script` to allocate a real PTY so the shell runs interactively:
-        // • backspace / arrow keys / Ctrl+C all work via PTY line discipline
-        // • cd updates PS1 because the shell sees a real terminal
-        // • readline / vi-mode / autocomplete work as expected
         const shellCmd = args.length > 0 ? `${cmd} ${args.join(' ')}` : cmd
         const scriptArgs = process.platform === 'darwin'
-          ? ['-q', '/dev/null', cmd, ...args]          // macOS: script -q /dev/null bash --login
-          : ['-q', '-c', shellCmd, '/dev/null']         // Linux:  script -q -c "bash --login" /dev/null
+          ? ['-q', '/dev/null', cmd, ...args]
+          : ['-q', '-c', shellCmd, '/dev/null']
 
         proc = spawn('script', scriptArgs, {
           env: { ...env, SHELL: cmd },
@@ -364,7 +310,6 @@ export class AgentService {
           shell: false
         })
       } else {
-        // Windows: spawn PowerShell / CMD directly (ConPTY requires node-pty)
         proc = spawn(cmd, args, {
           env,
           stdio: ['pipe', 'pipe', 'pipe'],
@@ -446,68 +391,6 @@ export class AgentService {
     }
   }
 
-  // ── SSH Tunnel ────────────────────────────────────────────────────────────
-
-  private handleSshOpen(p: {
-    sessionId: string; host: string; port: number
-    username: string; password?: string; privateKey?: string
-    rows?: number; cols?: number
-  }): void {
-    const { sessionId, host, port, username, password, privateKey, rows, cols } = p
-    console.log(`🔒 SSH tunnel: ${username}@${host}:${port} (${sessionId})`)
-
-    const client = new SSH2Client()
-
-    client.on('ready', () => {
-      client.shell(
-        { term: 'xterm-256color', rows: rows || 24, cols: cols || 80 },
-        (err, stream) => {
-          if (err) {
-            this.send({ type: 'agent:ssh_error', payload: { sessionId, message: err.message }, timestamp: Date.now() })
-            client.end()
-            return
-          }
-          this.sshTunnels.set(sessionId, { client, stream })
-          this.send({ type: 'agent:ssh_opened', payload: { sessionId }, timestamp: Date.now() })
-
-          stream.on('data', (data: Buffer) => {
-            this.send({ type: 'agent:ssh_data', payload: { sessionId, data: data.toString('base64') }, timestamp: Date.now() })
-          })
-          stream.stderr.on('data', (data: Buffer) => {
-            this.send({ type: 'agent:ssh_data', payload: { sessionId, data: data.toString('base64') }, timestamp: Date.now() })
-          })
-          stream.on('close', () => {
-            this.send({ type: 'agent:ssh_closed', payload: { sessionId }, timestamp: Date.now() })
-            this.sshTunnels.delete(sessionId)
-            client.end()
-          })
-        }
-      )
-    })
-
-    client.on('error', (err) => {
-      this.send({ type: 'agent:ssh_error', payload: { sessionId, message: err.message }, timestamp: Date.now() })
-      this.sshTunnels.delete(sessionId)
-    })
-
-    const abortTimer = setTimeout(() => {
-      if (!this.sshTunnels.has(sessionId)) {
-        try { client.end() } catch {}
-        this.send({ type: 'agent:ssh_error', payload: { sessionId, message: `Connection timed out after 15s` }, timestamp: Date.now() })
-      }
-    }, 15_000)
-    client.once('ready', () => clearTimeout(abortTimer))
-    client.once('error', () => clearTimeout(abortTimer))
-
-    const connectConfig: Record<string, unknown> = {
-      host, port, username, readyTimeout: 12000, keepaliveInterval: 5000, keepaliveCountMax: 3
-    }
-    if (privateKey) connectConfig.privateKey = Buffer.from(privateKey, 'base64')
-    else if (password) connectConfig.password = password
-
-    client.connect(connectConfig as Parameters<typeof client.connect>[0])
-  }
-
   // ── File System (via Agent) ───────────────────────────────────────────────
 
   private async handleFsRequest(p: {
@@ -516,7 +399,6 @@ export class AgentService {
     const { opId, op } = p
     console.log(`📂 FS request: op=${op} path=${p.path}`)
 
-    // Overall operation timeout — prevents hanging fs ops from blocking forever
     const OVERALL_TIMEOUT_MS = 8000
     const READDIR_TIMEOUT_MS = 5000
     const STAT_TIMEOUT_MS    = 2000
@@ -563,9 +445,7 @@ export class AgentService {
                 modified    = stat.mtime.toISOString()
                 permissions = (Number(stat.mode) & 0o777).toString(8)
                 isDir       = isDir || stat.isDirectory()
-              } catch {
-                // Stat failed or timed out — return partial entry
-              }
+              } catch {}
 
               return { name: e.name, path: webPath, isDirectory: isDir, size, modified, permissions }
             }))
@@ -581,8 +461,6 @@ export class AgentService {
           }
 
           case 'read_chunked': {
-            // Send file in 512 KB pieces so the WS event loop stays free
-            // (prevents ping-timeout disconnects on large files)
             const CHUNK = 512 * 1024
             const buf   = await withTimeout(fs.readFile(osPath), 120000, `readFile_c(${osPath})`)
             const n     = Math.ceil(buf.length / CHUNK) || 1
@@ -597,7 +475,6 @@ export class AgentService {
                 },
                 timestamp: Date.now()
               })
-              // Yield so pings / heartbeats can pass between chunks
               await new Promise(r => setImmediate(r))
             }
             console.log(`✅ FS chunked: path=${p.path} chunks=${n}`)
@@ -636,13 +513,12 @@ export class AgentService {
           }
 
           default:
-            throw new Error(`عملية غير معروفة: ${op}`)
+            throw new Error(`Unknown operation: ${op}`)
         }
       }
 
       result = await withTimeout(doOp(), op === 'read_chunked' ? 125000 : OVERALL_TIMEOUT_MS + 1000, `fs:${op}`)
 
-      // read_chunked sends its own agent:fs_chunk messages; skip fs_result
       if (result === '__chunked__') return
 
       console.log(`✅ FS result: op=${op} path=${p.path}`)
@@ -701,15 +577,6 @@ export class AgentService {
     return results.filter(Boolean)
   }
 
-  private closeSshTunnel(sessionId: string): void {
-    const tunnel = this.sshTunnels.get(sessionId)
-    if (tunnel) {
-      try { tunnel.stream?.end() } catch {}
-      try { tunnel.client.end() } catch {}
-      this.sshTunnels.delete(sessionId)
-    }
-  }
-
   // ── Screen Capture ────────────────────────────────────────────────────────
 
   private handleScreenStart(p: { sessionId: string; fps: number; quality: number; monitorId?: number }): void {
@@ -720,17 +587,14 @@ export class AgentService {
     const mon = this.cachedMonitors.find(m => m.id === monitorId)
     if (mon) setScreenResolution(mon.width, mon.height)
 
-    // v3.0.0: support up to 30fps (min interval 33ms instead of 66ms)
     const clampedFps = Math.min(fps, 30)
     const intervalMs = Math.max(33, Math.round(1000 / clampedFps))
     let seq = 0
 
-    // ── Frame deduplication (v3.0.0) ─────────────────────────────────────────
-    // Skips sending frames where the screen content has not changed.
-    // Reduces outbound bandwidth by 60-90% on idle/static screens.
+    // ── Frame deduplication ───────────────────────────────────────────────────
     let prevHash = ''
     let framesSinceKeyframe = 0
-    const KEYFRAME_EVERY = 60  // force full send every 60 captures (~2s at 30fps)
+    const KEYFRAME_EVERY = 60
 
     const capture = async () => {
       if (!this.screenTimers.has(sessionId)) return
@@ -755,11 +619,10 @@ export class AgentService {
           return
         }
 
-        // Hash-based dedup — skip unchanged frames, force keyframe every N captures
         const hash = computeFrameHash(frame.data)
         framesSinceKeyframe++
         const isKeyframe = framesSinceKeyframe >= KEYFRAME_EVERY
-        if (hash === prevHash && !isKeyframe) return  // identical screen — save bandwidth
+        if (hash === prevHash && !isKeyframe) return
         prevHash = hash
         if (isKeyframe) framesSinceKeyframe = 0
 
@@ -810,16 +673,6 @@ export class AgentService {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private checkSshAvailable(host: string, port: number): Promise<boolean> {
-    return new Promise(resolve => {
-      const sock = new net.Socket()
-      sock.setTimeout(3000)
-      sock.connect(port, host, () => { sock.destroy(); resolve(true) })
-      sock.on('error', () => { sock.destroy(); resolve(false) })
-      sock.on('timeout', () => { sock.destroy(); resolve(false) })
-    })
-  }
-
   private onClose(): void {
     console.log('📴 Disconnected from server')
     this.clearTimers()
@@ -856,7 +709,7 @@ export class AgentService {
           timestamp: Date.now(),
           capabilities: {
             pty:          true,
-            sshAvailable: this.sshDetected,
+            sshAvailable: false,
             screenControl: this.controlAvailable,
             clipboard:    true,
             multiMonitor: this.cachedMonitors.length > 1,
