@@ -6,7 +6,7 @@ import { getDb } from '../db/database'
 import { getDeviceById } from '../db/devices'
 import { deviceRegistry } from '../ws/registry'
 import { sendCommandToAgent } from '../ws/agentHandler'
-import type { AIConfig, AIMessage, AuthTokenPayload } from '@airemote/shared'
+import type { AIConfig, AIMessage, AuthTokenPayload, DeviceStats } from '@airemote/shared'
 
 async function loadConversation(convId: string): Promise<AIMessage[]> {
   try {
@@ -30,6 +30,70 @@ async function saveConversation(convId: string, deviceId: string, userId: string
       args: [convId, deviceId, userId, msgJson, now, now]
     })
   } catch (e) { console.error('Failed to save conversation:', e) }
+}
+
+// ── Build device context string for AI system prompt ──────────────────────
+async function buildDeviceContext(deviceId: string): Promise<string> {
+  try {
+    const device = await getDeviceById(deviceId)
+    if (!device) return ''
+
+    const info = device.info
+    const reg   = deviceRegistry.getDevice(deviceId)
+    const stats = reg?.stats
+    const online = !!reg
+
+    const fmtUptime = (s: number) => {
+      const h = Math.floor(s / 3600)
+      const m = Math.floor((s % 3600) / 60)
+      return h > 0 ? `${h}h ${m}m` : `${m}m`
+    }
+
+    const osLabel = info?.platform === 'windows' ? 'Windows'
+      : info?.platform === 'linux'   ? 'Linux'
+      : info?.platform === 'macos'   ? 'macOS'
+      : (info?.platform || 'Unknown')
+
+    let ctx = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[معلومات الجهاز البعيد المتصل به]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+الاسم: ${device.name}
+Hostname: ${info?.hostname || 'غير معروف'}
+نظام التشغيل: ${osLabel} ${info?.osVersion || ''} (${info?.arch || ''})
+IP المحلي: ${info?.ipLocal || 'غير معروف'}
+إصدار الـ Agent: ${info?.agentVersion || 'غير معروف'}
+الحالة: ${online ? 'متصل ✅' : 'غير متصل ❌'}`
+
+    if (stats) {
+      const ramUsedGb  = (stats.ramUsedMb  / 1024).toFixed(1)
+      const ramTotalGb = (stats.ramTotalMb / 1024).toFixed(1)
+      ctx += `
+الموارد الحالية:
+• CPU: ${Math.round(stats.cpuPercent)}%
+• RAM: ${Math.round(stats.ramPercent)}% — ${ramUsedGb} GB / ${ramTotalGb} GB
+• القرص: ${Math.round(stats.diskPercent)}% — ${stats.diskUsedGb.toFixed(1)} GB / ${stats.diskTotalGb.toFixed(1)} GB
+• وقت التشغيل: ${fmtUptime(stats.uptime)}`
+    }
+
+    ctx += `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ تعليمات للـ AI (لا تتجاهلها):
+- أنت متصل حصراً بالجهاز البعيد "${device.name}"
+- كل أمر تقترحه يُنفَّذ على هذا الجهاز البعيد، وليس على سيرفر AiRemote
+- عند السؤال عن مواصفات الجهاز، استخدم البيانات أعلاه مباشرةً
+- استخدم أوامر مناسبة لـ ${osLabel} (مثلاً: PowerShell لـ Windows)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+
+    return ctx
+  } catch {
+    return ''
+  }
+}
+
+function getLiveStats(deviceId: string): DeviceStats | null {
+  return deviceRegistry.getDevice(deviceId)?.stats || null
 }
 
 export async function aiRoutes(fastify: FastifyInstance) {
@@ -61,9 +125,10 @@ export async function aiRoutes(fastify: FastifyInstance) {
     const userMsg: AIMessage = { role: 'user', content: message, timestamp: new Date() }
     history.push(userMsg)
 
+    const deviceCtx = deviceId ? await buildDeviceContext(deviceId) : ''
     try {
       const provider = createAIProvider(config)
-      const response = await provider.chat(history, SYSTEM_PROMPT_AR)
+      const response = await provider.chat(history, SYSTEM_PROMPT_AR + deviceCtx)
 
       const assistantMsg: AIMessage = { role: 'assistant', content: response, timestamp: new Date() }
       history.push(assistantMsg)
@@ -80,6 +145,73 @@ export async function aiRoutes(fastify: FastifyInstance) {
       const error = err as Error
       history.pop()
       return reply.code(500).send({ error: `AI error: ${error.message}` })
+    }
+  })
+
+  // ── POST /chat/stream — streaming SSE response ───────────────────────────
+  fastify.post<{
+    Body: {
+      message: string
+      deviceId?: string
+      conversationId?: string
+      config: AIConfig
+    }
+  }>('/chat/stream', async (request, reply) => {
+    const { message, deviceId, conversationId, config } = request.body
+    const user = request.user as unknown as AuthTokenPayload
+
+    if (!message?.trim()) return reply.code(400).send({ error: 'Message required' })
+    if (!config?.provider) return reply.code(400).send({ error: 'AI config required' })
+    if (config.provider !== 'ollama' && !config.apiKey?.trim()) {
+      const name = config.provider === 'gemini' ? 'Gemini' : 'OpenAI'
+      return reply.code(400).send({ error: `${name} API key is required. Please configure it in Settings.` })
+    }
+
+    const convId   = conversationId || `${user.userId}-${deviceId || 'global'}`
+    const deviceRef = deviceId || 'global'
+
+    const history = await loadConversation(convId)
+    const userMsg: AIMessage = { role: 'user', content: message, timestamp: new Date() }
+    history.push(userMsg)
+
+    const deviceCtx   = deviceId ? await buildDeviceContext(deviceId) : ''
+    const systemPrompt = SYSTEM_PROMPT_AR + deviceCtx
+
+    // Write SSE headers and hijack the response
+    reply.raw.writeHead(200, {
+      'Content-Type':    'text/event-stream',
+      'Cache-Control':   'no-cache',
+      'Connection':      'keep-alive',
+      'X-Accel-Buffering': 'no',
+    })
+    reply.hijack()
+
+    const send = (data: object) => {
+      try { reply.raw.write(`data: ${JSON.stringify(data)}\n\n`) } catch { /* client disconnected */ }
+    }
+
+    try {
+      const provider = createAIProvider(config)
+      let fullResponse = ''
+
+      await provider.chatStream(history, systemPrompt, (chunk) => {
+        fullResponse += chunk
+        send({ chunk })
+      })
+
+      const assistantMsg: AIMessage = { role: 'assistant', content: fullResponse, timestamp: new Date() }
+      history.push(assistantMsg)
+      if (history.length > 100) history.splice(0, history.length - 100)
+      await saveConversation(convId, deviceRef, user.userId, history)
+
+      const stats = deviceId ? getLiveStats(deviceId) : null
+      send({ done: true, conversationId: convId, stats })
+    } catch (err: unknown) {
+      const error = err as Error
+      history.pop()
+      send({ error: `AI error: ${error.message}` })
+    } finally {
+      reply.raw.end()
     }
   })
 

@@ -27,4 +27,24 @@ export class GeminiProvider implements AIProvider {
 
     return response.text ?? ''
   }
+
+  async chatStream(messages: AIMessage[], systemPrompt: string | undefined, onChunk: (text: string) => void): Promise<void> {
+    const contents = messages.map(m => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }]
+    }))
+    const stream = await this.client.models.generateContentStream({
+      model: this.config.model || 'gemini-2.5-flash',
+      contents,
+      config: {
+        ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+        temperature:     this.config.temperature ?? 0.3,
+        maxOutputTokens: this.config.maxTokens   ?? 2000,
+      }
+    })
+    for await (const chunk of stream) {
+      const text = chunk.text ?? ''
+      if (text) onChunk(text)
+    }
+  }
 }

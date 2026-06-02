@@ -29,4 +29,21 @@ export class OllamaProvider implements AIProvider {
 
     return response.message.content
   }
+
+  async chatStream(messages: AIMessage[], systemPrompt: string | undefined, onChunk: (text: string) => void): Promise<void> {
+    const ollamaMessages: { role: string; content: string }[] = []
+    if (systemPrompt) ollamaMessages.push({ role: 'system', content: systemPrompt })
+    for (const m of messages) {
+      ollamaMessages.push({ role: m.role, content: m.content })
+    }
+    const stream = await this.client.chat({
+      model: this.config.model || 'llama3',
+      messages: ollamaMessages,
+      stream: true,
+    })
+    for await (const chunk of stream) {
+      const text = chunk.message.content
+      if (text) onChunk(text)
+    }
+  }
 }

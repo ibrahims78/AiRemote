@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Bot, Send, Trash2, User, Loader, ChevronDown, Key, Zap,
   Copy, Play, Check, Terminal, AlertCircle, Wifi, WifiOff,
-  Sparkles, Settings2
+  Sparkles, Settings2, Square
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { api } from '../lib/api'
@@ -13,6 +13,7 @@ interface Message {
   content: string
   timestamp: Date
   error?: boolean
+  streaming?: boolean
   execResult?: { command: string; stdout: string; stderr: string; exitCode: number }
 }
 
@@ -21,6 +22,12 @@ interface AIConfig {
   model: string
   apiKey?: string
   baseUrl?: string
+}
+
+interface DeviceStatsMini {
+  cpuPercent?: number
+  ramPercent?: number
+  diskPercent?: number
 }
 
 const PROVIDERS = [
@@ -39,12 +46,30 @@ function loadSavedConfig(): AIConfig {
   return { provider: 'openai', model: 'gpt-4o', apiKey: '', baseUrl: '' }
 }
 
+function getAuthToken(): string {
+  try {
+    const stored = localStorage.getItem('airemote-auth')
+    if (!stored) return ''
+    const auth = JSON.parse(stored)
+    return auth?.state?.token || ''
+  } catch { return '' }
+}
+
+function buildSuggestions(stats: DeviceStatsMini | null): string[] {
+  if (!stats) return []
+  const s: string[] = []
+  if ((stats.cpuPercent ?? 0) > 75)  s.push('أظهر العمليات التي تستهلك أعلى CPU')
+  if ((stats.ramPercent ?? 0) > 80)  s.push('فحص استخدام الذاكرة بالتفصيل')
+  if ((stats.diskPercent ?? 0) > 85) s.push('اعرض أكبر الملفات لتحرير مساحة القرص')
+  return s.slice(0, 3)
+}
+
 const QUICK_PROMPTS = [
-  'ما هي حالة الخادم؟',
-  'تحقق من استخدام الذاكرة',
+  'ما هي مواصفات هذا الجهاز؟',
+  'ما هي حالة الخادم حالياً؟',
+  'تحقق من استخدام الذاكرة والمعالج',
   'اعرض آخر 20 سطر من السجلات',
   'أظهر العمليات التي تستهلك أعلى CPU',
-  'تحقق من مساحة القرص المتاحة',
 ]
 
 interface ContentPart {
@@ -68,16 +93,18 @@ function parseContent(text: string): ContentPart[] {
 }
 
 // ── CodeBlock ──────────────────────────────────────────────────────────────
-function CodeBlock({ code, lang, deviceId, isLight }: {
+function CodeBlock({ code, lang, deviceId, isLight, autoExecEnabled }: {
   code: string
   lang: string
   deviceId?: string
   isLight: boolean
+  autoExecEnabled?: boolean
 }) {
   const [copied,    setCopied]    = useState(false)
   const [executing, setExecuting] = useState(false)
   const [result,    setResult]    = useState<{ stdout: string; stderr: string; exitCode: number } | null>(null)
   const [showResult, setShowResult] = useState(true)
+  const autoExeced = useRef(false)
 
   const isExecutable = ['bash', 'sh', 'shell', 'zsh', ''].includes(lang.toLowerCase())
 
@@ -90,50 +117,67 @@ function CodeBlock({ code, lang, deviceId, isLight }: {
   async function execute() {
     if (!deviceId || executing) return
     setExecuting(true)
-    setResult(null)
-    setShowResult(true)
     try {
       const res = await api.post(`/api/devices/${deviceId}/exec`, { command: code, timeoutMs: 60000 })
-      setResult({ stdout: res.data.stdout, stderr: res.data.stderr, exitCode: res.data.exitCode })
+      setResult({ stdout: res.data.stdout || '', stderr: res.data.stderr || '', exitCode: res.data.exitCode ?? 0 })
+      setShowResult(true)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } } }
-      setResult({ stdout: '', stderr: err.response?.data?.error || 'فشل التنفيذ', exitCode: -1 })
+      setResult({ stdout: '', stderr: err.response?.data?.error || 'Execution failed', exitCode: 1 })
+      setShowResult(true)
     } finally {
       setExecuting(false)
     }
   }
 
+  // Auto-execute when enabled (only once per block)
+  useEffect(() => {
+    if (autoExecEnabled && isExecutable && deviceId && !autoExeced.current && !result) {
+      autoExeced.current = true
+      execute()
+    }
+  }, [autoExecEnabled])
+
+  const headerCls = clsx(
+    'flex items-center justify-between px-3 py-1.5 text-[11px] font-mono border-b',
+    isLight ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-[#161b22] border-slate-700/60 text-slate-500'
+  )
+
   return (
     <div className={clsx(
-      'rounded-xl overflow-hidden border my-2.5 text-[11px]',
-      isLight ? 'border-slate-200 bg-slate-50' : 'border-slate-700/60 bg-[#0d1117]'
+      'rounded-xl overflow-hidden border text-[12px] my-1.5',
+      isLight ? 'border-slate-200' : 'border-slate-700/60'
     )}>
-      {/* Toolbar */}
-      <div className={clsx(
-        'flex items-center justify-between px-3 py-1.5 border-b',
-        isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/70 border-slate-700/50'
-      )}>
-        <div className="flex items-center gap-2">
-          <Terminal size={11} className={isLight ? 'text-slate-400' : 'text-slate-500'} />
-          <span className={clsx('font-mono', isLight ? 'text-slate-500' : 'text-slate-500')}>{lang || 'bash'}</span>
+      {/* Header */}
+      <div className={headerCls}>
+        <div className="flex items-center gap-1.5">
+          <Terminal size={10} />
+          <span>{lang || 'bash'}</span>
+          {autoExecEnabled && isExecutable && (
+            <span className="text-amber-500 flex items-center gap-1">
+              <Zap size={8} /> auto
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
-          {deviceId && isExecutable && (
-            <button
-              onClick={execute}
-              disabled={executing}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/25 transition-all disabled:opacity-50"
-            >
+          <button onClick={copy} title="نسخ"
+            className={clsx('p-1 rounded transition-colors', isLight ? 'hover:bg-slate-200' : 'hover:bg-slate-700/50')}>
+            {copied ? <Check size={10} className="text-emerald-500" /> : <Copy size={10} />}
+          </button>
+          {isExecutable && deviceId && (
+            <button onClick={execute} disabled={executing}
+              title="تنفيذ على الجهاز البعيد"
+              className={clsx(
+                'flex items-center gap-1 px-2 py-0.5 rounded transition-colors text-[10px] disabled:opacity-50',
+                isLight
+                  ? 'bg-teal-100 text-teal-700 hover:bg-teal-200'
+                  : 'bg-brand-teal/15 text-brand-teal hover:bg-brand-teal/25'
+              )}>
               {executing
-                ? <><div className="w-2.5 h-2.5 border border-emerald-500 border-t-transparent rounded-full animate-spin" /> جاري...</>
-                : <><Play size={9} /> تنفيذ</>
-              }
+                ? <><Loader size={9} className="animate-spin" /> جاري...</>
+                : <><Play size={9} /> تنفيذ</>}
             </button>
           )}
-          <button onClick={copy}
-            className={clsx('p-1 rounded transition-colors', isLight ? 'text-slate-400 hover:text-slate-600' : 'text-slate-600 hover:text-slate-300')}>
-            {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-          </button>
         </div>
       </div>
 
@@ -147,10 +191,7 @@ function CodeBlock({ code, lang, deviceId, isLight }: {
 
       {/* Result */}
       {result && (
-        <div className={clsx(
-          'border-t',
-          isLight ? 'border-slate-200' : 'border-slate-700/50'
-        )}>
+        <div className={clsx('border-t', isLight ? 'border-slate-200' : 'border-slate-700/50')}>
           <div className={clsx(
             'flex items-center justify-between px-3 py-1.5',
             result.exitCode === 0
@@ -158,14 +199,10 @@ function CodeBlock({ code, lang, deviceId, isLight }: {
               : isLight ? 'bg-red-50 text-red-600'         : 'bg-red-500/8 text-red-400'
           )}>
             <div className="flex items-center gap-1.5">
-              {result.exitCode === 0
-                ? <Check size={10} />
-                : <AlertCircle size={10} />
-              }
+              {result.exitCode === 0 ? <Check size={10} /> : <AlertCircle size={10} />}
               <span className="font-mono">exit {result.exitCode}</span>
             </div>
-            <button onClick={() => setShowResult(v => !v)}
-              className="opacity-60 hover:opacity-100 transition-opacity">
+            <button onClick={() => setShowResult(v => !v)} className="opacity-60 hover:opacity-100 transition-opacity">
               <ChevronDown size={11} className={clsx('transition-transform', showResult ? '' : '-rotate-90')} />
             </button>
           </div>
@@ -184,6 +221,7 @@ function CodeBlock({ code, lang, deviceId, isLight }: {
   )
 }
 
+// ── Props ──────────────────────────────────────────────────────────────────
 interface Props {
   deviceId?: string
   conversationId?: string
@@ -200,20 +238,22 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
   const [config,         setConfig]         = useState<AIConfig>(loadSavedConfig)
   const [validating,     setValidating]     = useState(false)
   const [validateOk,     setValidateOk]     = useState<boolean | null>(null)
+  const [autoExec,       setAutoExec]       = useState(() => localStorage.getItem('airemote-ai-autoexec') === 'true')
+  const [suggestions,    setSuggestions]    = useState<string[]>([])
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const scrollBoxRef   = useRef<HTMLDivElement>(null)
-  const inputRef       = useRef<HTMLTextAreaElement>(null)
-  const userScrolled   = useRef(false)
+  const messagesEndRef  = useRef<HTMLDivElement>(null)
+  const scrollBoxRef    = useRef<HTMLDivElement>(null)
+  const inputRef        = useRef<HTMLTextAreaElement>(null)
+  const userScrolled    = useRef(false)
+  const abortRef        = useRef<AbortController | null>(null)
 
-  // ── Load config from server ───────────────────────────────────────────
+  // ── Load AI config from server (sync on mount) ─────────────────────────
   useEffect(() => {
     api.get('/api/settings').then(res => {
       const d = res.data
       const local = loadSavedConfig()
       const hasLocal = !!localStorage.getItem(CONFIG_KEY)
 
-      // Server has a configured provider with an API key
       if (d.aiProvider && (d.aiApiKey || d.aiProvider === 'ollama')) {
         const serverCfg: AIConfig = {
           provider: d.aiProvider,
@@ -221,7 +261,6 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
           apiKey:   d.aiApiKey || '',
           baseUrl:  d.ollamaUrl || '',
         }
-        // Use server config if: no local config, OR local provider differs, OR local has no key but server does
         const needsUpdate = !hasLocal
           || local.provider !== serverCfg.provider
           || (!local.apiKey && serverCfg.apiKey)
@@ -233,7 +272,7 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
     }).catch(() => {})
   }, [])
 
-  // ── Auto-resize textarea ──────────────────────────────────────────────
+  // ── Auto-resize textarea ───────────────────────────────────────────────
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.style.height = 'auto'
@@ -241,17 +280,16 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
     }
   }, [input])
 
-  // ── Smart scroll: only auto-scroll if near bottom ─────────────────────
+  // ── Smart scroll ───────────────────────────────────────────────────────
   useEffect(() => {
     const box = scrollBoxRef.current
     if (!box) return
     const isNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 150
-    if (!userScrolled.current || isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    if (!userScrolled.current && (!isNearBottom || loading)) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages, loading])
 
-  // Track when user manually scrolls up
   useEffect(() => {
     const box = scrollBoxRef.current
     if (!box) return
@@ -263,14 +301,15 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
     return () => box.removeEventListener('scroll', onScroll)
   }, [])
 
-  // ── Load history ──────────────────────────────────────────────────────
+  // ── Load conversation history ──────────────────────────────────────────
   useEffect(() => {
     setLoadingHistory(true)
     setMessages([])
+    setSuggestions([])
     userScrolled.current = false
     const params = new URLSearchParams()
     if (conversationId) params.set('conversationId', conversationId)
-    if (deviceId) params.set('deviceId', deviceId)
+    if (deviceId)       params.set('deviceId', deviceId)
 
     api.get(`/api/ai/history?${params.toString()}`).then(res => {
       const msgs = res.data.messages || []
@@ -279,6 +318,9 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
       })))
     }).catch(() => {}).finally(() => setLoadingHistory(false))
   }, [deviceId, conversationId])
+
+  // Cleanup abort on unmount
+  useEffect(() => () => { abortRef.current?.abort() }, [])
 
   const selectedProvider = PROVIDERS.find(p => p.value === config.provider)!
 
@@ -302,30 +344,115 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
     finally { setValidating(false) }
   }
 
+  // ── Streaming send ─────────────────────────────────────────────────────
   async function handleSend(text?: string) {
     const msg = (text || input).trim()
     if (!msg || loading) return
+    if (suggestions.length) setSuggestions([])
     userScrolled.current = false
+
     setMessages(prev => [...prev, { role: 'user', content: msg, timestamp: new Date() }])
     setInput('')
     setLoading(true)
+
+    // Placeholder streaming message
+    setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: new Date(), streaming: true }])
+
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
     try {
-      const res = await api.post('/api/ai/chat', {
-        message: msg, deviceId, conversationId,
-        config: { provider: config.provider, model: config.model, apiKey: config.apiKey || undefined, baseUrl: config.baseUrl || undefined }
+      const token = getAuthToken()
+      const res = await fetch('/api/ai/chat/stream', {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          message: msg, deviceId, conversationId,
+          config: { provider: config.provider, model: config.model, apiKey: config.apiKey || undefined, baseUrl: config.baseUrl || undefined }
+        }),
+        signal: ctrl.signal
       })
-      setMessages(prev => [...prev, { role: 'assistant', content: res.data.reply, timestamp: new Date() }])
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'فشل الاتصال' }))
+        throw new Error(errData.error || `HTTP ${res.status}`)
+      }
+
+      const reader  = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buf  = ''
+      let full = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.chunk) {
+              full += data.chunk
+              const content = full
+              setMessages(prev => {
+                const next = [...prev]
+                next[next.length - 1] = { ...next[next.length - 1], content }
+                return next
+              })
+            }
+            if (data.error) throw new Error(data.error)
+            if (data.done) {
+              setMessages(prev => {
+                const next = [...prev]
+                next[next.length - 1] = { ...next[next.length - 1], streaming: false }
+                return next
+              })
+              if (data.stats) setSuggestions(buildSuggestions(data.stats))
+            }
+          } catch (parseErr) {
+            if ((parseErr as Error).name !== 'SyntaxError') throw parseErr
+          }
+        }
+      }
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { error?: string } } }
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: err.response?.data?.error || 'حدث خطأ في الاتصال بالذكاء الاصطناعي',
-        timestamp: new Date(), error: true
-      }])
+      if ((e as Error).name === 'AbortError') return
+      const err = e as Error
+      setMessages(prev => {
+        const next = [...prev]
+        const lastIdx = next.length - 1
+        if (next[lastIdx]?.streaming !== undefined) {
+          next[lastIdx] = {
+            role: 'assistant', content: err.message || 'حدث خطأ في الاتصال بالذكاء الاصطناعي',
+            timestamp: new Date(), error: true, streaming: false
+          }
+        } else {
+          next.push({ role: 'assistant', content: err.message || 'حدث خطأ', timestamp: new Date(), error: true })
+        }
+        return next
+      })
     } finally {
       setLoading(false)
+      abortRef.current = null
       inputRef.current?.focus()
     }
+  }
+
+  function stopStreaming() {
+    abortRef.current?.abort()
+    setMessages(prev => {
+      const next = [...prev]
+      if (next[next.length - 1]?.streaming) {
+        next[next.length - 1] = { ...next[next.length - 1], streaming: false }
+      }
+      return next
+    })
+    setLoading(false)
   }
 
   async function clearHistory() {
@@ -333,9 +460,10 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
     try {
       const params = new URLSearchParams()
       if (conversationId) params.set('conversationId', conversationId)
-      if (deviceId) params.set('deviceId', deviceId)
+      if (deviceId)       params.set('deviceId', deviceId)
       await api.delete(`/api/ai/history?${params.toString()}`)
       setMessages([])
+      setSuggestions([])
     } catch {}
   }
 
@@ -343,7 +471,7 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
-  function renderMessageContent(msg: Message) {
+  function renderMessageContent(msg: Message, msgAutoExec = false) {
     const parts = parseContent(msg.content)
     return (
       <div className={clsx(
@@ -354,10 +482,26 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
             ? msg.role === 'user' ? 'text-white' : 'text-slate-800'
             : msg.role === 'user' ? 'text-white' : 'text-slate-200'
       )}>
-        {parts.map((part, i) =>
-          part.type === 'code'
-            ? <CodeBlock key={i} code={part.content} lang={part.lang || 'bash'} deviceId={deviceId} isLight={isLight} />
-            : <p key={i} className="whitespace-pre-wrap">{part.content}</p>
+        {parts.map((part, i) => {
+          const isLastPart = i === parts.length - 1
+          return part.type === 'code'
+            ? <CodeBlock key={i} code={part.content} lang={part.lang || 'bash'} deviceId={deviceId} isLight={isLight} autoExecEnabled={msgAutoExec} />
+            : <p key={i} className="whitespace-pre-wrap">
+                {part.content}
+                {msg.streaming && isLastPart && (
+                  <span className={clsx(
+                    'inline-block w-0.5 h-3.5 ml-0.5 align-middle animate-pulse',
+                    isLight ? 'bg-teal-500' : 'bg-brand-teal'
+                  )} />
+                )}
+              </p>
+        })}
+        {/* Cursor when content is empty (just started streaming) */}
+        {msg.streaming && msg.content === '' && (
+          <span className={clsx(
+            'inline-block w-0.5 h-3.5 animate-pulse',
+            isLight ? 'bg-teal-500' : 'bg-brand-teal'
+          )} />
         )}
       </div>
     )
@@ -372,7 +516,6 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
       : 'bg-navy-900 border-slate-600 text-slate-100 focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15'
   )
 
-  // ── Config panel classes ───────────────────────────────────────────────
   const cfgFieldCls = clsx(
     'w-full border rounded-xl px-3 py-2 text-xs transition-colors focus:outline-none',
     isLight
@@ -402,11 +545,33 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
           </div>
           {deviceId && (
             <span className="text-[10px] bg-brand-teal/10 text-brand-teal border border-brand-teal/25 px-2 py-0.5 rounded-full font-medium">
-              سياق الجهاز
+              سياق الجهاز ✓
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
+          {/* Auto-exec toggle (only when connected to a device) */}
+          {deviceId && (
+            <button
+              onClick={() => {
+                const v = !autoExec
+                setAutoExec(v)
+                localStorage.setItem('airemote-ai-autoexec', String(v))
+              }}
+              title={autoExec ? 'تنفيذ تلقائي: مفعّل — انقر للإيقاف' : 'تفعيل التنفيذ التلقائي للأوامر'}
+              className={clsx(
+                'p-1.5 rounded-lg transition-colors border text-[10px] flex items-center gap-1',
+                autoExec
+                  ? 'bg-amber-500/12 border-amber-500/30 text-amber-500'
+                  : isLight
+                    ? 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                    : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-700/40'
+              )}
+            >
+              <Zap size={13} />
+              {autoExec && <span className="hidden sm:inline font-medium">Auto</span>}
+            </button>
+          )}
           <button
             onClick={() => setShowConfig(s => !s)}
             className={clsx(
@@ -538,7 +703,7 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
             <p className={clsx('text-sm font-semibold mb-1', isLight ? 'text-slate-700' : 'text-slate-200')}>مرحباً!</p>
             <p className={clsx('text-xs leading-relaxed max-w-[220px]', isLight ? 'text-slate-500' : 'text-slate-500')}>
               {deviceId
-                ? 'أنا مساعدك لإدارة هذا الجهاز. يمكنني تنفيذ الأوامر مباشرة.'
+                ? 'أنا مساعدك لإدارة هذا الجهاز. يمكنني تنفيذ الأوامر مباشرة عليه.'
                 : 'أنا مساعدك لإدارة الأنظمة. اسألني بالعربية أو الإنجليزية.'}
             </p>
             <div className="mt-5 space-y-1.5 w-full max-w-[290px]">
@@ -561,51 +726,55 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <div key={i} className={clsx('flex gap-2.5', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
-            {/* Avatar */}
-            <div className={clsx(
-              'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 border',
-              msg.role === 'user'
-                ? 'bg-brand-blue/20 border-brand-blue/30'
-                : msg.error
-                  ? 'bg-red-500/15 border-red-500/25'
-                  : isLight
-                    ? 'bg-teal-50 border-teal-200'
-                    : 'bg-brand-teal/15 border-brand-teal/25'
-            )}>
-              {msg.role === 'user'
-                ? <User size={12} className="text-brand-blue" />
-                : <Bot size={12} className={msg.error ? 'text-red-400' : isLight ? 'text-teal-600' : 'text-brand-teal'} />
-              }
-            </div>
-
-            {/* Bubble */}
-            <div className={clsx(
-              'max-w-[88%] rounded-2xl px-3.5 py-2.5 shadow-sm',
-              msg.role === 'user'
-                ? 'bg-brand-blue text-white rounded-tr-sm'
-                : msg.error
-                  ? isLight ? 'bg-red-50 border border-red-200 text-red-700 rounded-tl-sm' : 'bg-red-500/10 border border-red-500/20 rounded-tl-sm'
-                  : isLight ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm' : 'bg-navy-800 border border-slate-700/50 rounded-tl-sm'
-            )}>
-              {renderMessageContent(msg)}
-              <p className={clsx(
-                'text-[10px] mt-1.5 select-none',
+        {messages.map((msg, i) => {
+          const isLastMsg    = i === messages.length - 1
+          const msgAutoExec  = autoExec && isLastMsg && msg.role === 'assistant' && !msg.streaming
+          return (
+            <div key={i} className={clsx('flex gap-2.5', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
+              {/* Avatar */}
+              <div className={clsx(
+                'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 border',
                 msg.role === 'user'
-                  ? 'text-blue-200'
-                  : isLight ? 'text-slate-400' : 'text-slate-600'
+                  ? 'bg-brand-blue/20 border-brand-blue/30'
+                  : msg.error
+                    ? 'bg-red-500/15 border-red-500/25'
+                    : isLight
+                      ? 'bg-teal-50 border-teal-200'
+                      : 'bg-brand-teal/15 border-brand-teal/25'
               )}>
-                {msg.timestamp instanceof Date
-                  ? msg.timestamp.toLocaleTimeString('ar')
-                  : new Date(msg.timestamp).toLocaleTimeString('ar')}
-              </p>
-            </div>
-          </div>
-        ))}
+                {msg.role === 'user'
+                  ? <User size={12} className="text-brand-blue" />
+                  : <Bot size={12} className={msg.error ? 'text-red-400' : isLight ? 'text-teal-600' : 'text-brand-teal'} />
+                }
+              </div>
 
-        {/* Typing indicator */}
-        {loading && (
+              {/* Bubble */}
+              <div className={clsx(
+                'max-w-[88%] rounded-2xl px-3.5 py-2.5 shadow-sm',
+                msg.role === 'user'
+                  ? 'bg-brand-blue text-white rounded-tr-sm'
+                  : msg.error
+                    ? isLight ? 'bg-red-50 border border-red-200 text-red-700 rounded-tl-sm' : 'bg-red-500/10 border border-red-500/20 rounded-tl-sm'
+                    : isLight ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm' : 'bg-navy-800 border border-slate-700/50 rounded-tl-sm'
+              )}>
+                {renderMessageContent(msg, msgAutoExec)}
+                <p className={clsx(
+                  'text-[10px] mt-1.5 select-none',
+                  msg.role === 'user'
+                    ? 'text-blue-200'
+                    : isLight ? 'text-slate-400' : 'text-slate-600'
+                )}>
+                  {msg.timestamp instanceof Date
+                    ? msg.timestamp.toLocaleTimeString('ar')
+                    : new Date(msg.timestamp).toLocaleTimeString('ar')}
+                </p>
+              </div>
+            </div>
+          )
+        })}
+
+        {/* Typing indicator (only while waiting for first chunk) */}
+        {loading && messages[messages.length - 1]?.content === '' && messages[messages.length - 1]?.streaming && (
           <div className="flex gap-2.5">
             <div className={clsx(
               'w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border',
@@ -626,6 +795,28 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Proactive suggestion chips */}
+        {suggestions.length > 0 && !loading && (
+          <div className="flex flex-wrap gap-1.5 pl-10 pr-2 pt-1">
+            <span className={clsx('text-[10px] w-full mb-0.5', isLight ? 'text-slate-400' : 'text-slate-600')}>اقتراحات بناءً على حالة الجهاز:</span>
+            {suggestions.map(s => (
+              <button
+                key={s}
+                onClick={() => { setSuggestions([]); handleSend(s) }}
+                className={clsx(
+                  'text-[11px] px-3 py-1.5 rounded-full border transition-all flex items-center gap-1.5',
+                  isLight
+                    ? 'border-teal-200 text-teal-600 bg-teal-50 hover:bg-teal-100 hover:border-teal-300'
+                    : 'border-brand-teal/30 text-brand-teal bg-brand-teal/8 hover:bg-brand-teal/15'
+                )}
+              >
+                <Zap size={9} />
+                {s}
+              </button>
+            ))}
           </div>
         )}
 
@@ -650,21 +841,37 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
             className={inputCls}
             style={{ minHeight: '44px', maxHeight: '128px' }}
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || loading}
-            className={clsx(
-              'p-3 rounded-2xl transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed',
-              isLight
-                ? 'bg-teal-500 hover:bg-teal-600 text-white shadow-sm shadow-teal-200'
-                : 'bg-brand-teal hover:bg-teal-400 text-white'
-            )}
-          >
-            <Send size={15} />
-          </button>
+          {loading ? (
+            <button
+              onClick={stopStreaming}
+              title="إيقاف الرد"
+              className={clsx(
+                'p-3 rounded-2xl transition-all flex-shrink-0',
+                isLight
+                  ? 'bg-red-100 hover:bg-red-200 text-red-500 border border-red-200'
+                  : 'bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/20'
+              )}
+            >
+              <Square size={15} />
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim()}
+              className={clsx(
+                'p-3 rounded-2xl transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed',
+                isLight
+                  ? 'bg-teal-500 hover:bg-teal-600 text-white shadow-sm shadow-teal-200'
+                  : 'bg-brand-teal hover:bg-teal-400 text-white'
+              )}
+            >
+              <Send size={15} />
+            </button>
+          )}
         </div>
         <p className={clsx('text-[10px] mt-1.5 text-center', isLight ? 'text-slate-400' : 'text-slate-600')}>
           Enter للإرسال · Shift+Enter لسطر جديد
+          {autoExec && deviceId && <span className="text-amber-500 mr-2">· تنفيذ تلقائي مفعّل ⚡</span>}
         </p>
       </div>
     </div>
