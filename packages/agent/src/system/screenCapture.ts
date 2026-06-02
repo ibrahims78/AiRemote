@@ -29,6 +29,20 @@ const TMP_FRAME = path.join(os.tmpdir(), `airemote_frame_${process.pid}.jpg`)
 type CaptureBackend = 'scrot' | 'import' | 'xwd' | 'screencapture' | 'powershell' | 'none'
 let detectedBackend: CaptureBackend | null = null
 
+// ── Forced-timeout promise wrapper ───────────────────────────────────────────
+// Some capture tools (scrot, import) hang indefinitely when no X display is
+// present and ignore SIGTERM. execAsync's `timeout` option sends a signal but
+// the promise never rejects if the process doesn't exit.  We wrap every shell
+// invocation with our own race-based hard cutoff.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`[screen] ${label} timed out after ${ms}ms`)), ms)
+    )
+  ])
+}
+
 async function detectBackend(): Promise<CaptureBackend> {
   if (detectedBackend !== null) return detectedBackend
 
@@ -39,6 +53,13 @@ async function detectBackend(): Promise<CaptureBackend> {
 
   if (PLATFORM === 'win32') {
     detectedBackend = 'powershell'
+    return detectedBackend
+  }
+
+  // Linux — no display means no capture is possible at all
+  if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    console.warn('[screen] No display found (DISPLAY/WAYLAND_DISPLAY not set) — screen capture unavailable')
+    detectedBackend = 'none'
     return detectedBackend
   }
 
@@ -96,12 +117,12 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
         const cmd = hasMultiMon
           ? `scrot --quality ${quality} --silent -a ${mon.x},${mon.y},${mon.width},${mon.height} "${TMP_FRAME}"`
           : `scrot --quality ${quality} --silent "${TMP_FRAME}"`
-        await execAsync(cmd, { timeout: 5000, env: envX })
+        await withTimeout(execAsync(cmd, { env: envX }), 5000, 'scrot')
         // scrot doesn't resize natively — post-process with convert (ImageMagick) if available
         try {
-          await execAsync(
-            `convert "${TMP_FRAME}" -resize ${maxWidth}x\\> -quality ${quality} "${TMP_FRAME}"`,
-            { timeout: 3000, env: envX }
+          await withTimeout(
+            execAsync(`convert "${TMP_FRAME}" -resize ${maxWidth}x\\> -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+            3000, 'convert'
           )
         } catch { /* convert not installed — use full-resolution scrot output */ }
         jpegBuf = await fs.readFile(TMP_FRAME)
@@ -114,9 +135,9 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
         const cropArg = hasMultiMon
           ? `-crop ${mon.width}x${mon.height}+${mon.x}+${mon.y} +repage`
           : ''
-        await execAsync(
-          `import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`,
-          { timeout: 5000, env: envX }
+        await withTimeout(
+          execAsync(`import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+          5000, 'import'
         )
         jpegBuf = await fs.readFile(TMP_FRAME)
         break
@@ -124,9 +145,12 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
 
       // ── xwd + convert (Linux fallback) ────────────────────────────────────
       case 'xwd': {
-        const { stdout } = await execAsync(
-          `xwd -root -silent | convert xwd:- -resize ${maxWidth}x -quality ${quality} jpg:-`,
-          { timeout: 8000, maxBuffer: 20 * 1024 * 1024, env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' } }
+        const { stdout } = await withTimeout(
+          execAsync(
+            `xwd -root -silent | convert xwd:- -resize ${maxWidth}x -quality ${quality} jpg:-`,
+            { maxBuffer: 20 * 1024 * 1024, env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' } }
+          ),
+          8000, 'xwd'
         )
         jpegBuf = Buffer.from(stdout, 'binary')
         break
@@ -135,10 +159,13 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
       // ── macOS screencapture ───────────────────────────────────────────────
       case 'screencapture': {
         const displayArg = hasMultiMon ? `-D ${monitorId + 1}` : ''
-        await execAsync(`screencapture -x ${displayArg} -t jpg "${TMP_FRAME}"`, { timeout: 5000 })
+        await withTimeout(execAsync(`screencapture -x ${displayArg} -t jpg "${TMP_FRAME}"`), 5000, 'screencapture')
         let raw = await fs.readFile(TMP_FRAME)
         try {
-          await execAsync(`convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`, { timeout: 3000 })
+          await withTimeout(
+            execAsync(`convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`),
+            3000, 'convert'
+          )
           raw = await fs.readFile(TMP_FRAME)
         } catch {}
         jpegBuf = raw
@@ -173,9 +200,12 @@ $thumb.Save("${TMP_FRAME.replace(/\\/g, '\\\\')}",  $enc, $params)
 $thumb.Dispose()
 `.trim()
 
-        await execFileAsync('powershell.exe', [
-          '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps
-        ], { timeout: 8000 })
+        await withTimeout(
+          execFileAsync('powershell.exe', [
+            '-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps
+          ]),
+          8000, 'powershell'
+        )
         jpegBuf = await fs.readFile(TMP_FRAME)
         break
       }
@@ -189,7 +219,6 @@ $thumb.Dispose()
 
   } catch (err) {
     console.error(`[screen] Capture failed (${backend}):`, (err as Error).message)
-    if (backend === 'import' || backend === 'xwd' || backend === 'scrot') detectedBackend = null
     return null
   }
 }

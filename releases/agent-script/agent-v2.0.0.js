@@ -4429,6 +4429,14 @@ var execFileAsync = (0, import_util2.promisify)(import_child_process3.execFile);
 var PLATFORM = process.platform;
 var TMP_FRAME = import_path.default.join(import_os3.default.tmpdir(), `airemote_frame_${process.pid}.jpg`);
 var detectedBackend = null;
+function withTimeoutCapture(p, ms, label) {
+  return Promise.race([
+    p,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`[screen] ${label} timed out after ${ms}ms`)), ms)
+    )
+  ]);
+}
 async function detectBackend() {
   if (detectedBackend !== null) return detectedBackend;
   if (PLATFORM === "darwin") {
@@ -4437,6 +4445,11 @@ async function detectBackend() {
   }
   if (PLATFORM === "win32") {
     detectedBackend = "powershell";
+    return detectedBackend;
+  }
+  if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    console.warn("[screen] No display found (DISPLAY/WAYLAND_DISPLAY not set) — screen capture unavailable");
+    detectedBackend = "none";
     return detectedBackend;
   }
   const tools = [
@@ -4472,11 +4485,11 @@ async function captureScreen(opts = {}) {
       case "scrot": {
         const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ":0" };
         const cmd = hasMultiMon ? `scrot --quality ${quality} --silent -a ${mon.x},${mon.y},${mon.width},${mon.height} "${TMP_FRAME}"` : `scrot --quality ${quality} --silent "${TMP_FRAME}"`;
-        await execAsync2(cmd, { timeout: 5e3, env: envX });
+        await withTimeoutCapture(execAsync2(cmd, { env: envX }), 5e3, "scrot");
         try {
-          await execAsync2(
-            `convert "${TMP_FRAME}" -resize ${maxWidth}x\\> -quality ${quality} "${TMP_FRAME}"`,
-            { timeout: 3e3, env: envX }
+          await withTimeoutCapture(
+            execAsync2(`convert "${TMP_FRAME}" -resize ${maxWidth}x\\> -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+            3e3, "convert"
           );
         } catch {
         }
@@ -4487,18 +4500,21 @@ async function captureScreen(opts = {}) {
       case "import": {
         const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ":0" };
         const cropArg = hasMultiMon ? `-crop ${mon.width}x${mon.height}+${mon.x}+${mon.y} +repage` : "";
-        await execAsync2(
-          `import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`,
-          { timeout: 5e3, env: envX }
+        await withTimeoutCapture(
+          execAsync2(`import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+          5e3, "import"
         );
         jpegBuf = await import_promises.default.readFile(TMP_FRAME);
         break;
       }
       // ── xwd + convert (Linux fallback) ────────────────────────────────────
       case "xwd": {
-        const { stdout } = await execAsync2(
-          `xwd -root -silent | convert xwd:- -resize ${maxWidth}x -quality ${quality} jpg:-`,
-          { timeout: 8e3, maxBuffer: 20 * 1024 * 1024, env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0" } }
+        const { stdout } = await withTimeoutCapture(
+          execAsync2(
+            `xwd -root -silent | convert xwd:- -resize ${maxWidth}x -quality ${quality} jpg:-`,
+            { maxBuffer: 20 * 1024 * 1024, env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0" } }
+          ),
+          8e3, "xwd"
         );
         jpegBuf = Buffer.from(stdout, "binary");
         break;
@@ -4506,10 +4522,13 @@ async function captureScreen(opts = {}) {
       // ── macOS screencapture ───────────────────────────────────────────────
       case "screencapture": {
         const displayArg = hasMultiMon ? `-D ${monitorId + 1}` : "";
-        await execAsync2(`screencapture -x ${displayArg} -t jpg "${TMP_FRAME}"`, { timeout: 5e3 });
+        await withTimeoutCapture(execAsync2(`screencapture -x ${displayArg} -t jpg "${TMP_FRAME}"`), 5e3, "screencapture");
         let raw = await import_promises.default.readFile(TMP_FRAME);
         try {
-          await execAsync2(`convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`, { timeout: 3e3 });
+          await withTimeoutCapture(
+            execAsync2(`convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`),
+            3e3, "convert"
+          );
           raw = await import_promises.default.readFile(TMP_FRAME);
         } catch {
         }
@@ -4540,14 +4559,17 @@ $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Dr
 $thumb.Save("${TMP_FRAME.replace(/\\/g, "\\\\")}",  $enc, $params)
 $thumb.Dispose()
 `.trim();
-        await execFileAsync("powershell.exe", [
-          "-NonInteractive",
-          "-NoProfile",
-          "-WindowStyle",
-          "Hidden",
-          "-Command",
-          ps
-        ], { timeout: 8e3 });
+        await withTimeoutCapture(
+          execFileAsync("powershell.exe", [
+            "-NonInteractive",
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            ps
+          ]),
+          8e3, "powershell"
+        );
         jpegBuf = await import_promises.default.readFile(TMP_FRAME);
         break;
       }
@@ -4558,7 +4580,6 @@ $thumb.Dispose()
     return { data: jpegBuf, width, height };
   } catch (err) {
     console.error(`[screen] Capture failed (${backend}):`, err.message);
-    if (backend === "import" || backend === "xwd" || backend === "scrot") detectedBackend = null;
     return null;
   }
 }
@@ -5684,9 +5705,12 @@ var AgentService = class {
     let prevHash = "";
     let framesSinceKeyframe = 0;
     const KEYFRAME_EVERY = 60;
+    let capturing = false;
     const capture = async () => {
       if (!this.screenTimers.has(sessionId)) return;
       if (this.ws?.readyState !== wrapper_default.OPEN) return;
+      if (capturing) return;
+      capturing = true;
       const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId;
       try {
         const frame = await captureScreen({
@@ -5698,7 +5722,7 @@ var AgentService = class {
         if (!frame) {
           this.send({
             type: "agent:screen_unavailable",
-            payload: { sessionId, message: "No screen capture tool available (install scrot or imagemagick on Linux)" },
+            payload: { sessionId, message: "No screen capture tool available on this device (Linux: install scrot or imagemagick; ensure DISPLAY is set)" },
             timestamp: Date.now()
           });
           this.stopScreenCapture(sessionId);
@@ -5729,6 +5753,8 @@ var AgentService = class {
           timestamp: Date.now()
         });
         this.stopScreenCapture(sessionId);
+      } finally {
+        capturing = false;
       }
     };
     capture();

@@ -596,9 +596,14 @@ export class AgentService {
     let framesSinceKeyframe = 0
     const KEYFRAME_EVERY = 60
 
+    // ── Concurrency guard — skip interval tick if previous capture is still in flight ──
+    let capturing = false
+
     const capture = async () => {
       if (!this.screenTimers.has(sessionId)) return
       if (this.ws?.readyState !== WebSocket.OPEN) return
+      if (capturing) return
+      capturing = true
 
       const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId
 
@@ -612,7 +617,7 @@ export class AgentService {
         if (!frame) {
           this.send({
             type: 'agent:screen_unavailable',
-            payload: { sessionId, message: 'No screen capture tool available (install scrot or imagemagick on Linux)' },
+            payload: { sessionId, message: 'No screen capture tool available on this device (Linux: install scrot or imagemagick; ensure DISPLAY is set)' },
             timestamp: Date.now()
           })
           this.stopScreenCapture(sessionId)
@@ -645,6 +650,8 @@ export class AgentService {
           timestamp: Date.now()
         })
         this.stopScreenCapture(sessionId)
+      } finally {
+        capturing = false
       }
     }
 
