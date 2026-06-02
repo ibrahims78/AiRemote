@@ -7,7 +7,7 @@ import {
 } from '../db/devices'
 import { deviceRegistry } from '../ws/registry'
 import { sendCommandToAgent } from '../ws/agentHandler'
-import { logAudit } from '../db/audit'
+import { logAudit, maskSensitiveData } from '../db/audit'
 import { getDb } from '../db/database'
 import type { AuthTokenPayload } from '@airemote/shared'
 
@@ -93,7 +93,8 @@ export async function deviceRoutes(fastify: FastifyInstance) {
       const result = await sendCommandToAgent(id, commandId, command.trim(), Math.min(timeoutMs, 120000))
       await logAudit({
         userId: user.userId, userEmail: user.email, deviceId: id, action: 'exec_command',
-        details: { command: command.trim(), exitCode: result.exitCode }, ipAddress: request.ip
+        details: maskSensitiveData({ command: command.trim(), exitCode: result.exitCode }),
+        ipAddress: request.ip
       })
       return reply.send({ ok: true, commandId, command: command.trim(), stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, duration: result.duration })
     } catch (err: unknown) {
@@ -131,7 +132,8 @@ export async function deviceRoutes(fastify: FastifyInstance) {
 
     await logAudit({
       userId: user.userId, userEmail: user.email, action: 'bulk_exec',
-      details: { command: command.trim(), deviceCount: deviceIds.length }, ipAddress: request.ip
+      details: maskSensitiveData({ command: command.trim(), deviceCount: deviceIds.length }),
+      ipAddress: request.ip
     })
 
     return results.map((r, i) => ({

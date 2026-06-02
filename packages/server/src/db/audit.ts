@@ -1,6 +1,31 @@
 import { getDb } from './database'
 import type { InValue } from '@libsql/client'
 
+// ── Sensitive-data masking ───────────────────────────────────────────────────
+// Masks passwords, tokens, and keys before they are persisted in audit_log.
+// Applied automatically to all entries that carry a "command" or "details" field.
+const SENSITIVE_PATTERNS: Array<{ re: RegExp; replacement: string }> = [
+  // -p password  /  --password=foo  /  MYSQL_PWD=foo
+  { re: /(-p\s+|--password[= ])([^\s'";&|]+)/gi,          replacement: '$1***' },
+  // PASS= / PASSWORD= environment variables
+  { re: /\b(PASS(?:WORD)?|PGPASSWORD|DB_PASS)\s*=\s*([^\s'";&|]+)/gi, replacement: '$1=***' },
+  // --token= / --key= / --secret= / --api-key=
+  { re: /(--(?:token|key|secret|api-?key)[= ])([^\s'";&|]+)/gi,       replacement: '$1***' },
+  // Authorization: Bearer <token>
+  { re: /(Authorization:\s*Bearer\s+)([^\s'";&|]+)/gi,                replacement: '$1***' },
+  // AWS secret key / generic secret=
+  { re: /\b(SECRET[_\w]*|API_KEY[_\w]*)\s*=\s*([^\s'";&|]+)/gi,      replacement: '$1=***' },
+]
+
+export function maskSensitiveData(details: Record<string, unknown>): Record<string, unknown> {
+  if (!details.command) return details
+  let cmd = String(details.command)
+  for (const { re, replacement } of SENSITIVE_PATTERNS) {
+    cmd = cmd.replace(re, replacement)
+  }
+  return { ...details, command: cmd }
+}
+
 export interface AuditEntry {
   userId: string
   userEmail: string

@@ -9,7 +9,9 @@ import {
   createUser, verifyPassword, countUsers
 } from '../db/users'
 import { logAudit } from '../db/audit'
-import type { LoginRequest } from '@airemote/shared'
+import { createWsTicket } from '../lib/wsTickets'
+import { requireAuth } from '../middleware/auth'
+import type { LoginRequest, AuthTokenPayload } from '@airemote/shared'
 
 const BCRYPT_ROUNDS       = 12
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000   // 30 days
@@ -258,6 +260,15 @@ export async function authRoutes(fastify: FastifyInstance) {
     await db.execute({ sql: 'UPDATE users SET totp_enabled = 1 WHERE id = ?', args: [payload.userId] })
     await logAudit({ userId: payload.userId, userEmail: payload.email, action: 'totp_enabled', ipAddress: request.ip })
     return { ok: true, message: '2FA enabled successfully' }
+  })
+
+  // ── POST /ws-ticket — issue a short-lived single-use WS auth ticket ────────
+  // Clients call this before opening a WebSocket connection so the raw JWT
+  // never has to appear in the WS upgrade URL (and therefore never in logs).
+  fastify.post('/ws-ticket', { preHandler: requireAuth }, async (request, reply) => {
+    const payload = request.user as unknown as AuthTokenPayload
+    const ticket  = createWsTicket(payload.userId, payload.email, payload.role)
+    return reply.send({ ticket })
   })
 
   // ── POST /2fa/disable ────────────────────────────────────────────────────
