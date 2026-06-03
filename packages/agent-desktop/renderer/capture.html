@@ -12,8 +12,10 @@
 <canvas id="c"></canvas>
 <script>
 'use strict'
-/* eslint-disable no-undef */
-const { ipcRenderer, desktopCapturer } = require('electron')
+/* global require */
+// desktopCapturer is main-process-only in Electron 20+.
+// We get source IDs from main via IPC, then use getUserMedia here.
+const { ipcRenderer } = require('electron')
 
 const video  = document.getElementById('v')
 const canvas = document.getElementById('c')
@@ -25,17 +27,16 @@ let frameSeq        = 0
 let currentFps      = 5
 let currentQuality  = 65
 let stream          = null
-let sourceList      = []
+let cachedSources   = []
 
-// ── Get screen sources ──────────────────────────────────────────────────────
+// ── Get screen sources from main process ──────────────────────────────────
 async function getSources() {
-  return await desktopCapturer.getSources({
-    types:         ['screen'],
-    thumbnailSize: { width: 1, height: 1 }
-  })
+  const sources = await ipcRenderer.invoke('get-screen-sources')
+  cachedSources = sources || []
+  return cachedSources
 }
 
-// ── Start / restart capture ─────────────────────────────────────────────────
+// ── Start / restart capture ───────────────────────────────────────────────
 async function startCapture(sid, fps, quality, monitorIdx) {
   sessionId      = sid
   currentFps     = Math.max(1, Math.min(30, fps     || 5))
@@ -44,14 +45,14 @@ async function startCapture(sid, fps, quality, monitorIdx) {
   stopCapture()
 
   try {
-    sourceList = await getSources()
-    if (!sourceList.length) {
+    const sources = await getSources()
+    if (!sources.length) {
       ipcRenderer.send('screen-error', { sessionId: sid, message: 'No screens available' })
       return
     }
 
-    const idx = Math.max(0, Math.min((monitorIdx || 0), sourceList.length - 1))
-    const sourceId = sourceList[idx].id
+    const idx      = Math.max(0, Math.min(monitorIdx || 0, sources.length - 1))
+    const sourceId = sources[idx].id
 
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -72,13 +73,13 @@ async function startCapture(sid, fps, quality, monitorIdx) {
       setTimeout(() => reject(new Error('Video metadata timeout')), 8000)
     })
 
-    frameSeq    = 0
+    frameSeq     = 0
     captureTimer = setInterval(captureFrame, Math.round(1000 / currentFps))
 
-    // Report monitor list
+    // Report monitor list to main process
     ipcRenderer.send('screen-monitors', {
       sessionId: sid,
-      monitors:  sourceList.map((s, i) => ({ id: i, name: s.name, primary: i === 0 }))
+      monitors:  sources.map((s, i) => ({ id: i, name: s.name, primary: i === 0 }))
     })
 
   } catch (err) {
@@ -86,7 +87,7 @@ async function startCapture(sid, fps, quality, monitorIdx) {
   }
 }
 
-// ── Capture one frame ────────────────────────────────────────────────────────
+// ── Capture one frame ─────────────────────────────────────────────────────
 function captureFrame() {
   if (!video.videoWidth || !video.videoHeight || video.readyState < 2) return
   canvas.width  = video.videoWidth
@@ -103,7 +104,7 @@ function captureFrame() {
   })
 }
 
-// ── Stop capture ─────────────────────────────────────────────────────────────
+// ── Stop capture ──────────────────────────────────────────────────────────
 function stopCapture() {
   if (captureTimer) { clearInterval(captureTimer); captureTimer = null }
   if (stream)       { stream.getTracks().forEach(t => t.stop()); stream = null }
@@ -111,7 +112,7 @@ function stopCapture() {
   frameSeq = 0
 }
 
-// ── IPC from main process ────────────────────────────────────────────────────
+// ── IPC from main process ─────────────────────────────────────────────────
 ipcRenderer.on('start-capture', (_, p) => {
   startCapture(p.sessionId, p.fps, p.quality, p.monitorIndex || 0)
 })

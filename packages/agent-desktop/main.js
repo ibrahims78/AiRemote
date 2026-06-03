@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, dialog, screen, clipboard } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, dialog, screen, clipboard, desktopCapturer } = require('electron')
 const path   = require('path')
 const os     = require('os')
 const fs     = require('fs')
@@ -1106,6 +1106,20 @@ ipcMain.handle('get-device-info', () => {
 })
 
 // ── Capture Window IPC ─────────────────────────────────────────────────────
+
+// desktopCapturer is main-process-only in Electron 20+
+ipcMain.handle('get-screen-sources', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types:         ['screen'],
+      thumbnailSize: { width: 1, height: 1 }
+    })
+    return sources.map((s, i) => ({ id: s.id, name: s.name, index: i }))
+  } catch (e) {
+    return []
+  }
+})
+
 ipcMain.on('screen-frame', (_, p) => {
   if (ws?.readyState === WebSocket.OPEN) {
     try { ws.send(JSON.stringify({ type: 'agent:screen_frame', payload: p, timestamp: Date.now() })) } catch {}
