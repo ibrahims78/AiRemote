@@ -762,9 +762,18 @@ function createCaptureWindow() {
     webPreferences: {
       nodeIntegration:  true,
       contextIsolation: false,
-      offscreen:        false
+      offscreen:        false,
+      webSecurity:      false
     }
   })
+
+  // Electron 21+: allow getUserMedia with desktop source without showing picker
+  capWin.webContents.session.setDisplayMediaRequestHandler((_, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
+      callback({ video: sources[0] })
+    }).catch(() => callback({}))
+  })
+
   capWin.loadFile(path.join(__dirname, 'renderer', 'capture.html'))
   capWin.on('closed', () => { capWin = null })
   return capWin

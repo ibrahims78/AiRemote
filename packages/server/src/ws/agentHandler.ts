@@ -340,6 +340,7 @@ export async function handleAgentMessage(
       if (session?.dashboardSocket.readyState === 1) {
         try {
           session.dashboardSocket.send(JSON.stringify({ type: 'screen:error', payload: { message: errMsg } }))
+          session.dashboardSocket.close()
         } catch {}
       }
       deviceRegistry.removeScreenSession(sessionId)
@@ -356,6 +357,7 @@ export async function handleAgentMessage(
             type: 'screen:unavailable',
             payload: { message: errMsg }
           }))
+          session.dashboardSocket.close()
         } catch {}
       }
       deviceRegistry.removeScreenSession(sessionId)

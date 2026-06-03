@@ -97,6 +97,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           type: 'screen:error',
           payload: { message: 'Agent did not start screen capture — make sure the agent is v2.0.0+' }
         }))
+        s.dashboardSocket.close()
       } catch {}
       cleanup(sessionId, deviceId)
     }

@@ -76,6 +76,22 @@ class DeviceRegistry {
   }
 
   disconnectDevice(deviceId: string): void {
+    // Notify and close all screen sessions watching this device
+    for (const [sessionId, session] of this.screenSessions) {
+      if (session.deviceId === deviceId) {
+        if (session.connectTimeout) clearTimeout(session.connectTimeout)
+        try {
+          if (session.dashboardSocket.readyState === 1) {
+            session.dashboardSocket.send(JSON.stringify({
+              type:    'screen:error',
+              payload: { message: 'الجهاز انقطع اتصاله / Device disconnected' }
+            }))
+            session.dashboardSocket.close()
+          }
+        } catch {}
+        this.screenSessions.delete(sessionId)
+      }
+    }
     this.devices.delete(deviceId)
     this.broadcastDeviceStatus(deviceId, 'offline')
   }
