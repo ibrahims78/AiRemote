@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { margin: 0; background: #000; overflow: hidden; }
+    video, canvas { display: none; }
+  </style>
+</head>
+<body>
+<video id="v" autoplay muted playsinline></video>
+<canvas id="c"></canvas>
+<script>
+'use strict'
+/* eslint-disable no-undef */
+const { ipcRenderer, desktopCapturer } = require('electron')
+
+const video  = document.getElementById('v')
+const canvas = document.getElementById('c')
+const ctx    = canvas.getContext('2d')
+
+let sessionId       = null
+let captureTimer    = null
+let frameSeq        = 0
+let currentFps      = 5
+let currentQuality  = 65
+let stream          = null
+let sourceList      = []
+
+// ── Get screen sources ──────────────────────────────────────────────────────
+async function getSources() {
+  return await desktopCapturer.getSources({
+    types:         ['screen'],
+    thumbnailSize: { width: 1, height: 1 }
+  })
+}
+
+// ── Start / restart capture ─────────────────────────────────────────────────
+async function startCapture(sid, fps, quality, monitorIdx) {
+  sessionId      = sid
+  currentFps     = Math.max(1, Math.min(30, fps     || 5))
+  currentQuality = Math.max(10, Math.min(95, quality || 65))
+
+  stopCapture()
+
+  try {
+    sourceList = await getSources()
+    if (!sourceList.length) {
+      ipcRenderer.send('screen-error', { sessionId: sid, message: 'No screens available' })
+      return
+    }
+
+    const idx = Math.max(0, Math.min((monitorIdx || 0), sourceList.length - 1))
+    const sourceId = sourceList[idx].id
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource:   'desktop',
+          chromeMediaSourceId: sourceId,
+          maxWidth:            1920,
+          maxHeight:           1080,
+          maxFrameRate:        currentFps
+        }
+      }
+    })
+
+    video.srcObject = stream
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = resolve
+      setTimeout(() => reject(new Error('Video metadata timeout')), 8000)
+    })
+
+    frameSeq    = 0
+    captureTimer = setInterval(captureFrame, Math.round(1000 / currentFps))
+
+    // Report monitor list
+    ipcRenderer.send('screen-monitors', {
+      sessionId: sid,
+      monitors:  sourceList.map((s, i) => ({ id: i, name: s.name, primary: i === 0 }))
+    })
+
+  } catch (err) {
+    ipcRenderer.send('screen-error', { sessionId: sid, message: err.message || String(err) })
+  }
+}
+
+// ── Capture one frame ────────────────────────────────────────────────────────
+function captureFrame() {
+  if (!video.videoWidth || !video.videoHeight || video.readyState < 2) return
+  canvas.width  = video.videoWidth
+  canvas.height = video.videoHeight
+  ctx.drawImage(video, 0, 0)
+  const dataUrl = canvas.toDataURL('image/jpeg', currentQuality / 100)
+  const base64  = dataUrl.split(',')[1]
+  ipcRenderer.send('screen-frame', {
+    sessionId: sessionId,
+    data:      base64,
+    width:     canvas.width,
+    height:    canvas.height,
+    seq:       frameSeq++
+  })
+}
+
+// ── Stop capture ─────────────────────────────────────────────────────────────
+function stopCapture() {
+  if (captureTimer) { clearInterval(captureTimer); captureTimer = null }
+  if (stream)       { stream.getTracks().forEach(t => t.stop()); stream = null }
+  video.srcObject = null
+  frameSeq = 0
+}
+
+// ── IPC from main process ────────────────────────────────────────────────────
+ipcRenderer.on('start-capture', (_, p) => {
+  startCapture(p.sessionId, p.fps, p.quality, p.monitorIndex || 0)
+})
+
+ipcRenderer.on('stop-capture', (_, p) => {
+  if (!p.sessionId || p.sessionId === sessionId) {
+    stopCapture()
+    sessionId = null
+  }
+})
+
+ipcRenderer.on('set-quality', (_, p) => {
+  if (p.fps)     { currentFps     = Math.max(1, Math.min(30, p.fps)) }
+  if (p.quality) { currentQuality = Math.max(10, Math.min(95, p.quality)) }
+  if (captureTimer) {
+    clearInterval(captureTimer)
+    captureTimer = setInterval(captureFrame, Math.round(1000 / currentFps))
+  }
+})
+
+ipcRenderer.on('get-monitors', (_, p) => {
+  getSources().then(sources => {
+    ipcRenderer.send('screen-monitors', {
+      sessionId: p.sessionId,
+      monitors:  sources.map((s, i) => ({ id: i, name: s.name, primary: i === 0 }))
+    })
+  }).catch(() => {})
+})
+
+ipcRenderer.on('set-monitor', (_, p) => {
+  startCapture(p.sessionId || sessionId, p.fps || currentFps, p.quality || currentQuality, p.monitorId || 0)
+})
+</script>
+</body>
+</html>

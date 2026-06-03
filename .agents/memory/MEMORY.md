@@ -19,3 +19,4 @@
 - [AiRemote Screen Sharing](airemote-screen-sharing.md) — v1.6.0: MJPEG-over-WS; /screen WS endpoint; screenCapture.ts multi-platform; ScreenViewer.tsx canvas; agentHandler routes by sessionId not socket
 - [AiRemote v2.0.0 Audit](airemote-v2-audit.md) — 12 bugs fixed: cliclick dd/du, Windows execFileAsync, clipboard spawn+stdin, scrot resize, caps registration, heartbeat caps, ping-pong; 0 TS errors
 - [AiRemote Remote Desktop v3.0.0](airemote-rdp-v3.md) — frame dedup (hash), MAX_FPS 30, adaptive quality, permission consent, drag&drop upload; agent-v2.0.0.js needs --external:cpu-features --external:*.node
+- [AiRemote Electron Screen Sharing](airemote-electron-screen.md) — desktopCapturer in hidden BrowserWindow (capture.html, nodeIntegration:true); persistent PowerShell stdin process for mouse/key injection; ZIP rebuilt via asar repack + python3 zip

@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, dialog } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell, dialog, screen, clipboard } = require('electron')
 const path   = require('path')
 const os     = require('os')
 const fs     = require('fs')
@@ -43,6 +43,12 @@ let boundsTimer    = null
 
 /** @type {Map<string, import('child_process').ChildProcess>} */
 const ptyProcs = new Map()
+
+// ─── Screen Capture State ──────────────────────────────────────────────────
+let capWin         = null
+let screenSessions = new Map()   // sessionId → { fps, quality }
+let psInputProc    = null
+let psInputReady   = false
 
 // ─── Config ───────────────────────────────────────────────────────────────
 function defaultConfig() {
@@ -254,6 +260,9 @@ function stopAgent() {
   clearTimers()
   for (const [, proc] of ptyProcs) { try { proc.kill() } catch {} }
   ptyProcs.clear()
+  screenSessions.clear()
+  destroyCaptureWindow()
+  if (psInputProc) { try { psInputProc.kill() } catch {} psInputProc = null; psInputReady = false }
   if (ws) { try { ws.close() } catch {} ws = null }
   deviceId     = null
   sessionStart = null
@@ -291,12 +300,15 @@ function doConnect() {
           info,
           stats,
           tunnelLayer:  'relay',
-          capabilities: { pty: true, shell, fs: true }
+          capabilities: {
+            pty: true, shell, fs: true,
+            screenControl: true, clipboard: true, multiMonitor: true
+          }
         },
         timestamp: Date.now()
       })
       startHeartbeat()
-      addLog('info', `🖥 PTY Shell: مفعّل | v${AGENT_VERSION}`)
+      addLog('info', `🖥 PTY Shell: مفعّل | v${AGENT_VERSION} | Screen: مفعّل`)
     } catch (e) {
       addLog('error', `خطأ في التسجيل: ${e.message}`)
     }
@@ -354,6 +366,58 @@ function handleMsg(msg) {
       break
     case 'server:fs_request':
       handleFsRequest(msg.payload)
+      break
+
+    // ── Screen Capture ─────────────────────────────────────────────────────
+    case 'server:screen_start':
+      handleScreenStart(msg.payload)
+      break
+    case 'server:screen_stop':
+      handleScreenStop(msg.payload)
+      break
+    case 'server:screen_mouse':
+      injectMouse(msg.payload)
+      break
+    case 'server:screen_key':
+      injectKey(msg.payload)
+      break
+    case 'server:screen_clipboard_read': {
+      const clipText = clipboard.readText()
+      send({ type: 'agent:screen_clipboard', payload: { sessionId: msg.payload?.sessionId, text: clipText }, timestamp: Date.now() })
+      break
+    }
+    case 'server:screen_clipboard_write':
+      if (msg.payload?.text != null) clipboard.writeText(String(msg.payload.text))
+      break
+    case 'server:screen_get_monitors':
+      if (capWin && !capWin.isDestroyed()) capWin.webContents.send('get-monitors', { sessionId: msg.payload?.sessionId })
+      break
+    case 'server:screen_set_monitor':
+      if (capWin && !capWin.isDestroyed()) capWin.webContents.send('set-monitor', msg.payload)
+      break
+    case 'server:screen_set_quality':
+      if (capWin && !capWin.isDestroyed()) capWin.webContents.send('set-quality', msg.payload)
+      break
+    case 'server:screen_control_request': {
+      const { sessionId: scSid, requestId, requesterName } = msg.payload || {}
+      const parentWin = (win && !win.isDestroyed()) ? win : null
+      dialog.showMessageBox(parentWin, {
+        type:      'question',
+        buttons:   ['السماح / Allow', 'رفض / Deny'],
+        defaultId: 1,
+        title:     'طلب التحكم / Remote Control Request',
+        message:   `${requesterName || 'شخص ما'} يطلب التحكم في شاشتك`,
+        detail:    'هل تسمح بالتحكم الكامل بالفأرة ولوحة المفاتيح؟\nAllow full mouse & keyboard control?'
+      }).then(({ response }) => {
+        const type = response === 0 ? 'agent:screen_control_granted' : 'agent:screen_control_denied'
+        send({ type, payload: { sessionId: scSid, requestId }, timestamp: Date.now() })
+        addLog('info', response === 0 ? '✅ منحت إذن التحكم' : '❌ رفضت طلب التحكم')
+      }).catch(() => {
+        send({ type: 'agent:screen_control_denied', payload: { sessionId: scSid, requestId }, timestamp: Date.now() })
+      })
+      break
+    }
+    case 'server:screen_privacy':
       break
   }
 }
@@ -687,6 +751,141 @@ function handlePtyClose(payload) {
   _cleanWinBuf(payload.sessionId)
 }
 
+// ─── Screen Capture (Electron desktopCapturer) ─────────────────────────────
+
+function createCaptureWindow() {
+  if (capWin && !capWin.isDestroyed()) return capWin
+  capWin = new BrowserWindow({
+    show:   false,
+    width:  200,
+    height: 200,
+    webPreferences: {
+      nodeIntegration:  true,
+      contextIsolation: false,
+      offscreen:        false
+    }
+  })
+  capWin.loadFile(path.join(__dirname, 'renderer', 'capture.html'))
+  capWin.on('closed', () => { capWin = null })
+  return capWin
+}
+
+function destroyCaptureWindow() {
+  if (capWin && !capWin.isDestroyed()) { try { capWin.destroy() } catch {} capWin = null }
+  screenSessions.clear()
+}
+
+function handleScreenStart(payload) {
+  const { sessionId, fps, quality, monitorId } = payload
+  addLog('info', `🖥️ Screen: بدء البث (${sessionId.slice(0, 8)})`)
+  screenSessions.set(sessionId, { fps, quality })
+  const cw     = createCaptureWindow()
+  const doSend = () => cw.webContents.send('start-capture', { sessionId, fps, quality, monitorIndex: monitorId || 0 })
+  if (cw.webContents.isLoading()) cw.webContents.once('did-finish-load', doSend)
+  else doSend()
+  if (process.platform === 'win32') ensurePsInput()
+}
+
+function handleScreenStop(payload) {
+  const { sessionId } = payload
+  addLog('info', `🖥️ Screen: إيقاف (${sessionId.slice(0, 8)})`)
+  screenSessions.delete(sessionId)
+  if (capWin && !capWin.isDestroyed()) capWin.webContents.send('stop-capture', { sessionId })
+  send({ type: 'agent:screen_closed', payload: { sessionId }, timestamp: Date.now() })
+  if (screenSessions.size === 0) destroyCaptureWindow()
+}
+
+// ─── Persistent PowerShell process for mouse/keyboard injection ────────────
+function ensurePsInput() {
+  if (process.platform !== 'win32') return
+  if (psInputProc && !psInputProc.killed) return
+  psInputReady = false
+  psInputProc  = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-NoLogo', '-Command', '-'], {
+    stdio:       ['pipe', 'pipe', 'pipe'],
+    windowsHide: true
+  })
+  const init = `
+Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;
+public class WinUI{
+  [DllImport("user32.dll")]public static extern bool SetCursorPos(int x,int y);
+  [DllImport("user32.dll")]public static extern void mouse_event(uint f,int x,int y,int d,IntPtr e);
+  [DllImport("user32.dll")]public static extern void keybd_event(byte vk,byte sc,uint f,IntPtr e);
+  public const uint LD=2,LU=4,RD=8,RU=16,MD=32,MU=64,WH=2048,KU=2;
+}
+'@ -Language CSharp
+Add-Type -AssemblyName System.Windows.Forms
+Write-Host 'PSINPUT_READY'
+`
+  psInputProc.stdin.write(init + '\n')
+  psInputProc.stdout.on('data', d => { if (d.toString().includes('PSINPUT_READY')) psInputReady = true })
+  psInputProc.stderr.on('data', () => {})
+  psInputProc.on('exit', () => { psInputProc = null; psInputReady = false })
+}
+
+function sendPsCmd(cmd) {
+  if (process.platform !== 'win32') return
+  ensurePsInput()
+  if (psInputProc && !psInputProc.killed && psInputReady) {
+    try { psInputProc.stdin.write(cmd + '\n') } catch {}
+    return
+  }
+  const deadline = Date.now() + 5000
+  const poll = setInterval(() => {
+    if (psInputReady && psInputProc && !psInputProc.killed) {
+      clearInterval(poll); try { psInputProc.stdin.write(cmd + '\n') } catch {}
+    } else if (Date.now() > deadline) clearInterval(poll)
+  }, 80)
+}
+
+// ─── Mouse injection ────────────────────────────────────────────────────────
+function injectMouse(payload) {
+  if (process.platform !== 'win32') return
+  const { x, y, type, button, delta } = payload
+  const xi = Math.round(x || 0), yi = Math.round(y || 0)
+
+  if (type === 'move') {
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi})`)
+  } else if (type === 'down' || type === 'up') {
+    const btn  = button === 'right' ? 'R' : button === 'middle' ? 'M' : 'L'
+    const dir  = type === 'down' ? 'D' : 'U'
+    const flag = `[WinUI]::${btn}${dir}`
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event(${flag},0,0,0,[IntPtr]::Zero)`)
+  } else if (type === 'dblclick') {
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event([WinUI]::LD,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LU,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LD,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LU,0,0,0,[IntPtr]::Zero)`)
+  } else if (type === 'wheel' || type === 'scroll') {
+    const wd = Math.round((delta || 0) * -120)
+    sendPsCmd(`[WinUI]::mouse_event([WinUI]::WH,0,0,${wd},[IntPtr]::Zero)`)
+  }
+}
+
+// ─── Key injection ──────────────────────────────────────────────────────────
+const KEY_TO_SENDKEYS = {
+  Enter: '{ENTER}', Backspace: '{BACKSPACE}', Delete: '{DELETE}', Tab: '{TAB}', Escape: '{ESC}',
+  ' ': ' ', ArrowUp: '{UP}', ArrowDown: '{DOWN}', ArrowLeft: '{LEFT}', ArrowRight: '{RIGHT}',
+  Home: '{HOME}', End: '{END}', PageUp: '{PGUP}', PageDown: '{PGDN}', Insert: '{INSERT}',
+  F1: '{F1}', F2: '{F2}', F3: '{F3}', F4: '{F4}', F5: '{F5}', F6: '{F6}',
+  F7: '{F7}', F8: '{F8}', F9: '{F9}', F10: '{F10}', F11: '{F11}', F12: '{F12}',
+  '+': '{+}', '^': '{^}', '%': '{%}', '~': '{~}',
+  '(': '{(}', ')': '{)}', '{': '{{}', '}': '{}}', '[': '{[}', ']': '{]}'
+}
+
+function injectKey(payload) {
+  if (process.platform !== 'win32') return
+  if (payload.type !== 'down') return
+  const { key, modifiers } = payload
+  let sk = KEY_TO_SENDKEYS[key] ?? (key && key.length === 1 ? key : null)
+  if (!sk) return
+
+  let prefix = ''
+  if (modifiers?.ctrl)  prefix += '^'
+  if (modifiers?.alt)   prefix += '%'
+  if (modifiers?.shift) prefix += '+'
+
+  const sendStr = prefix ? `${prefix}(${sk})` : sk
+  sendPsCmd(`[System.Windows.Forms.SendKeys]::SendWait('${sendStr.replace(/'/g, "''")}')`)
+}
+
 function executeCommand(payload) {
   if (payload.type !== 'shell' || !payload.command) return
   const cmd = payload.command
@@ -717,7 +916,7 @@ async function startHeartbeat() {
         type: 'agent:heartbeat',
         payload: {
           deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now(),
-          capabilities: { pty: true, fs: true }
+          capabilities: { pty: true, fs: true, screenControl: true, clipboard: true, multiMonitor: true }
         },
         timestamp: Date.now()
       })
@@ -904,6 +1103,24 @@ ipcMain.handle('get-stats-now', async () => {
 ipcMain.handle('get-device-info', () => {
   const info = getDeviceInfo()
   return { ...info, uptime: Math.floor(os.uptime()) }
+})
+
+// ── Capture Window IPC ─────────────────────────────────────────────────────
+ipcMain.on('screen-frame', (_, p) => {
+  if (ws?.readyState === WebSocket.OPEN) {
+    try { ws.send(JSON.stringify({ type: 'agent:screen_frame', payload: p, timestamp: Date.now() })) } catch {}
+  }
+})
+
+ipcMain.on('screen-error', (_, p) => {
+  addLog('warn', `🖥️ Screen error: ${p.message}`)
+  send({ type: 'agent:screen_error', payload: p, timestamp: Date.now() })
+  screenSessions.delete(p.sessionId)
+  if (screenSessions.size === 0) destroyCaptureWindow()
+})
+
+ipcMain.on('screen-monitors', (_, p) => {
+  send({ type: 'agent:screen_monitors', payload: p, timestamp: Date.now() })
 })
 
 // ─── App Lifecycle ─────────────────────────────────────────────────────────
