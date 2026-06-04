@@ -377,6 +377,20 @@ class DeviceRegistry {
       screenSessions:   this.screenSessions.size
     }
   }
+
+  // ── Zombie sweeper ────────────────────────────────────────────────────────
+  // Returns deviceIds that were found dead and removed from the registry.
+  // Caller is responsible for updating the DB and firing alerts.
+  sweepZombieDevices(): string[] {
+    const swept: string[] = []
+    for (const [deviceId, dev] of this.devices) {
+      if (dev.socket.readyState !== 1 /* WebSocket.OPEN */) {
+        swept.push(deviceId)
+        this.disconnectDevice(deviceId)
+      }
+    }
+    return swept
+  }
 }
 
 export const deviceRegistry = new DeviceRegistry()

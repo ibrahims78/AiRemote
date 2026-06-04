@@ -2,16 +2,16 @@ import type { WebSocket } from 'ws'
 import type { FastifyRequest } from 'fastify'
 import type { AuthTokenPayload } from '@airemote/shared'
 import { deviceRegistry } from './registry'
-import { handleAgentMessage } from './agentHandler'
+import { handleAgentMessage, cleanupDevice } from './agentHandler'
 import { handleClientMessage } from './clientHandler'
 import { updateDeviceStatus } from '../db/devices'
 
 // Ping interval for dead-connection detection.
 // On every incoming agent message we clear pongTimer AND re-arm pingTimer so
 // the cycle stays alive.  If the agent goes truly silent the ping fires after
-// PING_INTERVAL_MS and terminates after PONG_TIMEOUT_MS → max detection = 50s.
-const PING_INTERVAL_MS = 30000
-const PONG_TIMEOUT_MS  = 20000
+// PING_INTERVAL_MS and terminates after PONG_TIMEOUT_MS → max detection = 13s.
+const PING_INTERVAL_MS = 8000
+const PONG_TIMEOUT_MS  = 5000
 
 export function wsHandler(socket: WebSocket, request: FastifyRequest) {
   const clientIp = request.ip
@@ -54,6 +54,7 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
     if (connectionType === 'agent' && connectionId) {
       deviceRegistry.disconnectDevice(connectionId)
       updateDeviceStatus(connectionId, 'offline').catch(() => {})
+      cleanupDevice(connectionId)
       console.log(`📴 Agent disconnected: ${connectionId}`)
     } else if (connectionType === 'client') {
       deviceRegistry.removeClient(socket)

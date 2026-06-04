@@ -6,7 +6,7 @@ import cookie from '@fastify/cookie'
 import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import { initDatabase } from './db/database'
-import { resetAllDevicesOffline } from './db/devices'
+import { resetAllDevicesOffline, updateDeviceStatus } from './db/devices'
 import { authRoutes } from './routes/auth'
 import { deviceRoutes } from './routes/devices'
 import { sessionRoutes } from './routes/sessions'
@@ -26,6 +26,8 @@ import { handleSshWebSocket } from './ws/sshHandler'
 import { handlePtyWebSocket } from './ws/ptyHandler'
 import { handleScreenWebSocket } from './ws/screenHandler'
 import { requireAuthWs } from './middleware/auth'
+import { deviceRegistry } from './ws/registry'
+import { cleanupDevice } from './ws/agentHandler'
 
 export async function buildServer() {
   const app = Fastify({
@@ -39,6 +41,17 @@ export async function buildServer() {
 
   await initDatabase()
   await resetAllDevicesOffline()
+
+  // ── Zombie sweeper — every 12s, purge sockets that closed without a clean FIN
+  // This catches agents killed via SIGKILL or network drops that bypass ping/pong.
+  setInterval(async () => {
+    const swept = deviceRegistry.sweepZombieDevices()
+    for (const deviceId of swept) {
+      await updateDeviceStatus(deviceId, 'offline').catch(() => {})
+      cleanupDevice(deviceId)
+      console.warn(`🧟 Zombie connection swept and marked offline: ${deviceId}`)
+    }
+  }, 12000)
 
   const isProduction = process.env.NODE_ENV === 'production'
 
