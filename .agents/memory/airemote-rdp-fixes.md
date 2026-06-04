@@ -1,9 +1,9 @@
 ---
 name: AiRemote Remote Desktop Critical Fixes
-description: 8 critical bugs that broke AnyDesk-like remote desktop experience — all fixed
+description: Critical bugs fixed + agent-desktop UI improvements for v3.0.0 audit
 ---
 
-## Bugs Fixed
+## Bugs Fixed (RDP Engine)
 
 ### 1. DEFAULT_FPS = 5 → 20 (screenHandler.ts)
 - Server was throttling all sessions to 5 fps by default — extremely choppy
@@ -11,45 +11,64 @@ description: 8 critical bugs that broke AnyDesk-like remote desktop experience �
 
 ### 2. ScreenViewer default preset: 5fps → 30fps
 - `useState(QUALITY_PRESETS[2])` → `QUALITY_PRESETS[4]` (عالي الأداء: 30fps, quality 85)
-- Users no longer need to manually raise quality every session
 
 ### 3. Keyboard keyup missing in ScreenViewer.tsx
 - Only `keydown` was sent as `press` — no `keyup` at all
 - Added `keyup` listener sending `type: 'up'`
-- keydown now sends BOTH `type: 'down'` (for keybd_event held-key) AND `type: 'press'` (for SendKeys text input)
-- This enables: Ctrl+drag, Shift+select, held movement keys
+- keydown now sends BOTH `type: 'down'` AND `type: 'press'`
 
 ### 4. inputControl.ts — persistent PowerShell for Windows
-- Every mouse move spawned a new `powershell.exe` process → massive CPU + lag at 30fps
-- Added `_winPs`/`_winPsReady` persistent stdin process (same pattern as agent-desktop)
-- `sendWinCmd()` writes to stdin; queues until ready on first call
+- Every mouse move spawned a new `powershell.exe` → massive CPU + lag at 30fps
+- Added `_winPs`/`_winPsReady` persistent stdin process
 
 ### 5. inputControl.ts — Windows keybd_event for down/up
-- `SendKeys` only supported `press` (no held keys)
-- Added `WIN_VK` table (virtual-key codes) and `keybd_event` calls for `down`/`up` events
-- Press: still uses SendKeys (layout-aware text)
-- Down/Up: uses keybd_event (enables Shift+select, Ctrl+drag, gaming keys)
+- Added `WIN_VK` table + `keybd_event` calls for `down`/`up` events
 
-### 6. agent-desktop injectMouse: wrong coordinates (CRITICAL BUG)
-- `x,y` from ScreenViewer are relative (0.0–1.0)
-- `xi = Math.round(x || 0)` gave absolute values of 0 or 1 pixel — mouse always at top-left!
-- Fixed: `xi = Math.round(payload.x * capScreenW)`, `yi = Math.round(payload.y * capScreenH)`
-- Added `capScreenW/H` global vars, updated on each `ipcMain.on('screen-frame')` from actual capture dims
+### 6. agent-desktop injectMouse: wrong coordinates (CRITICAL)
+- `x,y` from ScreenViewer are relative (0.0–1.0); was using them as absolute pixels
+- Fixed: multiply by `capScreenW`/`capScreenH` (updated on each `screen-frame` IPC)
 
 ### 7. agent-desktop injectMouse: click not handled
-- `click` event type was silently ignored — clicks didn't work!
-- Added `click` handler: SetCursorPos + mouseDown + mouseUp
+- `click` event type was silently ignored; added SetCursorPos + mouseDown + mouseUp
 
 ### 8. agent-desktop injectKey: only handled 'down' type
-- payload.type 'press' and 'up' were silently ignored
-- Added `WIN_VK_MAP` + `keybd_event` for `down`/`up` events
-- `press` now handled by SendKeys (was ignoring it before)
+- `press` and `up` were silently ignored; added `WIN_VK_MAP` + `keybd_event` routing
+
+## Agent-Desktop UI Improvements (v3.0.0 audit)
+
+### 9. Version labels corrected in renderer
+- index.html titlebar badge: `v2.0.0` → `v3.0.0`
+- index.html footer: `v1.3.0` → `v3.0.0`
+
+### 10. Frame deduplication in capture.html
+- Added `computeFrameHash()`: samples ~250 pixels via `getImageData`, fast djb2-like hash
+- `captureFrame()` skips sending if hash equals last frame — saves bandwidth on static screens
+- `lastFrameHash` reset to 0 on `stopCapture()` and when privacy mode is toggled on
+
+### 11. Privacy Mode — was a no-op stub, now fully implemented
+- `server:screen_privacy` in main.js: forwards `set-privacy` IPC to capWin (stops frames) + sends `screen-privacy` IPC to renderer window
+- capture.html: `set-privacy` IPC sets `privacyMode` flag; captureFrame returns early when set
+- app.js: `onScreenPrivacy` shows/hides privacy badge + shows toast
+
+### 12. Screen Active indicator (new UX)
+- Added amber pulsing "Screen" badge in conn-strip (hidden when no sessions)
+- Added "Screen sharing active" banner below conn-strip (hidden by default)
+- Added purple "Privacy" badge inside banner (shown when privacy mode is on)
+- `broadcastScreenSessions()` called in handleScreenStart, handleScreenStop, destroyCaptureWindow, screen-error IPC — keeps renderer in sync
+- preload.js now exposes `onScreenSessions` + `onScreenPrivacy`
+- app.js handles both with i18n strings (ar + en)
+
+## IPC Channel Map (agent-desktop, complete)
+- main → renderer: `init`, `state`, `log`, `stats`, `public-ip`, `screen-chat`, `screen-sessions`, `screen-privacy`
+- main → capWin: `start-capture`, `stop-capture`, `set-quality`, `get-monitors`, `set-monitor`, `set-privacy`
+- capWin → main: `screen-frame`, `screen-error`, `screen-monitors` (via ipcMain.on)
 
 ## Why
-- These bugs collectively made remote desktop broken on Windows: clicks went to wrong coords,
-  mouse lag was extreme (new PS per event), keyboard shortcuts didn't work, FPS was 5.
+- These bugs collectively made remote desktop broken on Windows + agent UI showed no feedback
+- Privacy mode stub meant the feature was non-functional despite being in the message protocol
 
 ## How to apply
-- Any future change to input injection on Windows must test both `press` (text) and `down`/`up` (shortcuts)
-- Mouse coordinates are always relative 0.0–1.0 from ScreenViewer — always multiply by screen dims
-- Persistent PS process is shared for ALL mouse+keyboard ops — do not spawn new processes
+- Mouse coordinates are always relative 0.0–1.0 — always multiply by capScreenW/H
+- Persistent PS process is shared for ALL mouse+keyboard ops — never spawn new processes
+- Frame dedup uses pixel sampling (not full JPEG comparison) for speed
+- Any new screen session state change in main.js must call broadcastScreenSessions()

@@ -48,6 +48,7 @@ const LANG = {
     deviceInfo:      'معلومات الجهاز',
     settingsTitle:   'الإعدادات',
     connectedToast:  'تم الاتصال بالخادم',
+    screenActive:    'جارٍ مشاركة الشاشة',
   },
   en: {
     stopped:        'Stopped',
@@ -94,6 +95,7 @@ const LANG = {
     deviceInfo:      'Device Info',
     settingsTitle:   'Settings',
     connectedToast:  'Connected to server',
+    screenActive:    'Screen sharing active',
   }
 }
 
@@ -585,6 +587,64 @@ function resetStats() {
 
 // ─── IPC Stats (from heartbeat) ─────────────────────────────────────────────
 airemote.onStats(s => { if (s) applyStats(s) })
+
+// ─── Screen Session Status ───────────────────────────────────────────────────
+let prevScreenCount = 0
+
+if (typeof airemote.onScreenSessions === 'function') {
+  airemote.onScreenSessions(({ count }) => {
+    const sep    = $('strip-screen-sep')
+    const item   = $('strip-screen-item')
+    const banner = $('screen-banner')
+    const bannerText = $('screen-banner-text')
+
+    if (count > 0) {
+      if (sep)    sep.style.display  = ''
+      if (item)   item.style.display = ''
+      if (banner) banner.classList.remove('hidden')
+      if (bannerText) {
+        const t = LANG[currentLang]
+        bannerText.textContent = t.screenActive
+          ? (count > 1 ? `${t.screenActive} (${count})` : t.screenActive)
+          : (count > 1 ? `Screen sharing active (${count})` : 'Screen sharing active')
+      }
+      if (prevScreenCount === 0) {
+        showToast(
+          currentLang === 'ar' ? `🖥️ جارٍ مشاركة الشاشة` : `🖥️ Screen sharing active`,
+          'warn', 3000
+        )
+      }
+    } else {
+      if (sep)    sep.style.display  = 'none'
+      if (item)   item.style.display = 'none'
+      if (banner) banner.classList.add('hidden')
+      const privBadge = $('screen-privacy-badge')
+      if (privBadge) privBadge.classList.add('hidden')
+      if (prevScreenCount > 0) {
+        showToast(
+          currentLang === 'ar' ? `🖥️ انتهت مشاركة الشاشة` : `🖥️ Screen sharing ended`,
+          'info', 2500
+        )
+      }
+    }
+    prevScreenCount = count
+  })
+}
+
+// ─── Privacy Mode Indicator ──────────────────────────────────────────────────
+if (typeof airemote.onScreenPrivacy === 'function') {
+  airemote.onScreenPrivacy(({ enabled }) => {
+    const badge = $('screen-privacy-badge')
+    if (badge) badge.classList.toggle('hidden', !enabled)
+    showToast(
+      enabled
+        ? (currentLang === 'ar' ? '🔒 وضع الخصوصية مُفعَّل' : '🔒 Privacy mode enabled')
+        : (currentLang === 'ar' ? '🔓 وضع الخصوصية مُلغى'  : '🔓 Privacy mode disabled'),
+      enabled ? 'warn' : 'info',
+      2500
+    )
+  })
+}
 
 // ─── Logging ────────────────────────────────────────────────────────────────
 function appendLog(entry) {

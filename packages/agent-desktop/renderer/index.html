@@ -19,7 +19,7 @@
       </svg>
     </div>
     <span class="brand-name">AiRemote Agent</span>
-    <span class="brand-version">v2.0.0</span>
+    <span class="brand-version">v3.0.0</span>
   </div>
 
   <div class="title-status" id="title-status">
@@ -107,6 +107,29 @@
         <span class="conn-strip-lbl">PTY</span>
         <span class="conn-strip-badge conn-strip-badge--green" data-i18n="active">نشط</span>
       </div>
+      <div class="conn-strip-sep" id="strip-screen-sep" style="display:none"></div>
+      <div class="conn-strip-item" id="strip-screen-item" style="display:none">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <path d="M8 21h8M12 17v4"/>
+        </svg>
+        <span class="conn-strip-lbl">Screen</span>
+        <span class="conn-strip-badge conn-strip-badge--amber" id="strip-screen-badge">●</span>
+      </div>
+    </div>
+
+    <!-- ── Screen Active Banner ──────────────────────────────────────────── -->
+    <div id="screen-banner" class="screen-banner hidden">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+      </svg>
+      <span id="screen-banner-text">جارٍ مشاركة الشاشة</span>
+      <span id="screen-privacy-badge" class="privacy-badge hidden">
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        Privacy
+      </span>
     </div>
 
     <!-- ── Section: Device Info (collapsible) ────────────────────────── -->
@@ -349,7 +372,7 @@
     <span class="sep">·</span>
     <span>AiRemote Agent</span>
     <span class="sep">·</span>
-    <span id="footer-ver">v1.3.0</span>
+    <span id="footer-ver">v3.0.0</span>
   </div>
 
 </div><!-- /#app -->

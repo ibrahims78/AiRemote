@@ -440,8 +440,13 @@ function handleMsg(msg) {
       })
       break
     }
-    case 'server:screen_privacy':
+    case 'server:screen_privacy': {
+      const privEnabled = !!msg.payload?.enabled
+      if (capWin && !capWin.isDestroyed()) capWin.webContents.send('set-privacy', { enabled: privEnabled })
+      if (win && !win.isDestroyed()) win.webContents.send('screen-privacy', { enabled: privEnabled })
+      addLog('info', privEnabled ? '🔒 وضع الخصوصية مُفعَّل' : '🔓 وضع الخصوصية مُلغى')
       break
+    }
 
     // ── T006: In-session text chat ──────────────────────────────────────────
     case 'server:screen_chat': {
@@ -876,12 +881,20 @@ function createCaptureWindow() {
 function destroyCaptureWindow() {
   if (capWin && !capWin.isDestroyed()) { try { capWin.destroy() } catch {} capWin = null }
   screenSessions.clear()
+  broadcastScreenSessions()
+}
+
+function broadcastScreenSessions() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('screen-sessions', { count: screenSessions.size })
+  }
 }
 
 function handleScreenStart(payload) {
   const { sessionId, fps, quality, monitorId } = payload
   addLog('info', `🖥️ Screen: بدء البث (${sessionId.slice(0, 8)})`)
   screenSessions.set(sessionId, { fps, quality })
+  broadcastScreenSessions()
   const cw     = createCaptureWindow()
   const doSend = () => cw.webContents.send('start-capture', { sessionId, fps, quality, monitorIndex: monitorId || 0 })
   if (cw.webContents.isLoading()) cw.webContents.once('did-finish-load', doSend)
@@ -893,6 +906,7 @@ function handleScreenStop(payload) {
   const { sessionId } = payload
   addLog('info', `🖥️ Screen: إيقاف (${sessionId.slice(0, 8)})`)
   screenSessions.delete(sessionId)
+  broadcastScreenSessions()
   if (capWin && !capWin.isDestroyed()) capWin.webContents.send('stop-capture', { sessionId })
   send({ type: 'agent:screen_closed', payload: { sessionId }, timestamp: Date.now() })
   if (screenSessions.size === 0) destroyCaptureWindow()
@@ -1280,6 +1294,7 @@ ipcMain.on('screen-error', (_, p) => {
   addLog('warn', `🖥️ Screen error: ${p.message}`)
   send({ type: 'agent:screen_error', payload: p, timestamp: Date.now() })
   screenSessions.delete(p.sessionId)
+  broadcastScreenSessions()
   if (screenSessions.size === 0) destroyCaptureWindow()
 })
 
