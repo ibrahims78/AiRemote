@@ -27,7 +27,7 @@ import {
   Clipboard, ClipboardPaste, EyeOff, Eye,
   Video, Tv2, Mouse, Keyboard, ChevronDown, Circle,
   Upload, Shield, Zap, CheckCircle2,
-  MessageSquare, Send, Download, Activity, X
+  MessageSquare, Send, Download, Activity, X, PlayCircle
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuthStore } from '../store/authStore'
@@ -140,6 +140,9 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   // ── T001: Bandwidth meter ─────────────────────────────────────────────────
   const [bwDisplay,   setBwDisplay]   = useState(0)   // bytes/sec
   const [frameStats,  setFrameStats]  = useState({ keyframes: 0, total: 0 })
+
+  // ── Start gate — user must press "Start" before any WS connection opens ───
+  const [started, setStarted] = useState(false)
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const fpsCountRef        = useRef(0)
@@ -340,6 +343,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
 
   // ── Mount / unmount ───────────────────────────────────────────────────────
   useEffect(() => {
+    if (!started) return   // wait for user to press "Start"
     connect(preset, 0)
     return () => {
       wsRef.current?.close()
@@ -350,7 +354,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       if (permissionTimerRef.current) clearTimeout(permissionTimerRef.current)
       if (bwTimerRef.current)         clearInterval(bwTimerRef.current)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [started]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fullscreen ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -592,8 +596,35 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   return (
     <div ref={containerRef} className="flex flex-col h-full bg-black rounded-xl overflow-hidden relative">
 
+      {/* ── Start splash — shown before user initiates screen sharing ── */}
+      {!started && (
+        <div className="flex flex-col items-center justify-center h-full gap-6 bg-navy-950 rounded-xl select-none">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-20 h-20 rounded-2xl bg-brand-blue/10 border border-brand-blue/20 flex items-center justify-center">
+              <Tv2 size={36} className="text-brand-blue/70" />
+            </div>
+            <div className="text-center">
+              <p className="text-base font-semibold text-slate-200">{deviceName}</p>
+              <p className="text-xs text-slate-500 mt-1">مشاركة الشاشة</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setStarted(true)}
+            className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-brand-blue hover:bg-brand-blue/90 active:scale-95 transition-all text-white font-medium text-sm shadow-lg shadow-brand-blue/20"
+          >
+            <PlayCircle size={18} />
+            بدء مشاركة الشاشة
+          </button>
+
+          <p className="text-xs text-slate-600 max-w-xs text-center">
+            سيتم الاتصال بالجهاز البعيد وبدء البث عند الضغط على الزر
+          </p>
+        </div>
+      )}
+
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-navy-900/95 backdrop-blur border-b border-slate-700/50 z-10 flex-wrap">
+      {started && <div className="flex items-center gap-2 px-3 py-2 bg-navy-900/95 backdrop-blur border-b border-slate-700/50 z-10 flex-wrap">
         <Monitor size={14} className="text-brand-blue shrink-0"/>
         <span className="text-sm font-medium text-slate-200 truncate max-w-[100px]">{deviceName}</span>
 
@@ -812,10 +843,10 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             {fullscreen ? <Minimize2 size={13}/> : <Maximize2 size={13}/>}
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ── Canvas area ── */}
-      <div ref={canvasAreaRef} className="flex-1 relative flex items-center justify-center overflow-hidden bg-slate-950"
+      {started && <div ref={canvasAreaRef} className="flex-1 relative flex items-center justify-center overflow-hidden bg-slate-950"
         onClick={() => { setShowSettings(false); setShowMonitors(false); setShowClipboard(false) }}>
 
         <canvas ref={canvasRef}
@@ -1018,7 +1049,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             </div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   )
 }
