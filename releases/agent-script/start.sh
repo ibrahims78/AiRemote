@@ -1,10 +1,18 @@
 #!/bin/bash
-# AiRemote Agent v1.6.0 — Script Edition
+# AiRemote Agent v3.0.0 — Script Edition
 # يتطلب Node.js 18+
 
 if [ ! -d "node_modules" ]; then
   echo "Installing dependencies..."
   npm install
+fi
+
+if [ -z "$SERVER_URL" ]; then
+  echo ""
+  echo " ERROR: يجب تعيين SERVER_URL"
+  echo " مثال:"
+  echo "   SERVER_URL=wss://your-server.replit.app/ws DEVICE_TOKEN=توكن-جهازك ./start.sh"
+  exit 1
 fi
 
 if [ -z "$DEVICE_TOKEN" ]; then
@@ -15,4 +23,4 @@ if [ -z "$DEVICE_TOKEN" ]; then
   exit 1
 fi
 
-node agent-v1.6.0.js
+node agent-v3.0.0.js
