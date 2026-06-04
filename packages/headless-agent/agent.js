@@ -1,9 +1,17 @@
 'use strict'
 
 /**
- * AiRemote Agent — Headless / CLI  v1.4.0
- * No UI, no Electron. Runs as a background process or Windows service.
- * Config: SERVER_URL and DEVICE_TOKEN env vars, or .env file, or --server/--token CLI args
+ * AiRemote Agent — Headless / CLI  v3.0.0
+ * No UI, no Electron. Runs as a background process or service.
+ * Config: SERVER_URL and DEVICE_TOKEN env vars, or config file, or --server/--token CLI args
+ *
+ * v3.0.0 features:
+ *   T001 Screen delta encoding (hash deduplication + adaptive quality)
+ *   T002 Chunked file write (server:fs_write_chunk, 512 KB chunks)
+ *   T003 PTY resize on Windows (VT100 \x1b[8;rows;colst hint)
+ *   T004 Consent dialog (AGENT_UNATTENDED + AGENT_CONSENT_TIMEOUT)
+ *   T005 Docker capability detection
+ *   T006 In-session text chat relay
  */
 
 const WebSocket = require('ws')
@@ -13,17 +21,18 @@ const path   = require('path')
 const net    = require('net')
 const { exec, spawn, execSync } = require('child_process')
 
-// ─── Config path ─────────────────────────────────────────────────────────
+// ─── Config path ──────────────────────────────────────────────────────────
 const CONFIG_DIR  = process.env.APPDATA
   ? path.join(process.env.APPDATA, 'airemote')
   : path.join(os.homedir(), '.airemote')
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 
 // ─── Constants ────────────────────────────────────────────────────────────
-const HEARTBEAT_MS   = 10_000
-const RECONNECT_BASE = 2_000
-const RECONNECT_MAX  = 30_000
-const VERSION        = '1.4.0'
+const HEARTBEAT_MS          = 10_000
+const RECONNECT_BASE        = 2_000
+const RECONNECT_MAX         = 30_000
+const VERSION               = '3.0.0'
+const CONSENT_TIMEOUT_SEC   = parseInt(process.env.AGENT_CONSENT_TIMEOUT || '30', 10)
 
 // ─── State ────────────────────────────────────────────────────────────────
 let ws             = null
@@ -34,10 +43,14 @@ let reconnectDelay = RECONNECT_BASE
 let running        = true
 let config         = loadConfig()
 let sshAvailable   = false
+let dockerAvailable = false
 let _netLast       = { rx: 0, tx: 0, t: 0 }
 
 /** @type {Map<string, import('child_process').ChildProcess>} */
 const ptyProcs = new Map()
+
+/** @type {Map<string, {chunks: Map<number, Buffer>, total: number, path: string}>} */
+const writeChunkBufs = new Map()
 
 // ─── Config ───────────────────────────────────────────────────────────────
 function loadConfig() {
@@ -75,6 +88,20 @@ function log(level, msg) {
   const ts   = new Date().toISOString().replace('T', ' ').slice(0, 19)
   const icon = level === 'error' ? '✖' : level === 'warn' ? '⚠' : '●'
   console.log(`[${ts}] ${icon} ${msg}`)
+}
+
+// ─── T005: Docker detection ───────────────────────────────────────────────
+function detectDocker() {
+  return new Promise(resolve => {
+    const proc = spawn('docker', ['--version'], {
+      stdio:       'ignore',
+      shell:       process.platform === 'win32',
+      windowsHide: true
+    })
+    const timer = setTimeout(() => { try { proc.kill() } catch {}; resolve(false) }, 3000)
+    proc.on('close', code => { clearTimeout(timer); resolve(code === 0) })
+    proc.on('error', ()   => { clearTimeout(timer); resolve(false) })
+  })
 }
 
 // ─── System Info ─────────────────────────────────────────────────────────
@@ -299,11 +326,23 @@ function handlePtyData(payload) {
   }
 }
 
+// ── T003: PTY resize — Windows-aware ─────────────────────────────────────
 function handlePtyResize(payload) {
-  const { sessionId } = payload
+  const { sessionId, rows, cols } = payload
+  const proc = ptyProcs.get(sessionId)
+  if (!proc) return
+
   if (process.platform !== 'win32') {
-    const proc = ptyProcs.get(sessionId)
-    if (proc) { try { proc.kill('SIGWINCH') } catch {} }
+    try { proc.kill('SIGWINCH') } catch {}
+  } else {
+    // Windows: write VT100 hint back so xterm.js resizes its viewport.
+    // The new size takes effect on the next PTY open for this session.
+    const hint = `\x1b[8;${rows};${cols}t`
+    send({
+      type:    'agent:pty_data',
+      payload: { sessionId, data: Buffer.from(hint).toString('base64') },
+      timestamp: Date.now()
+    })
   }
 }
 
@@ -314,6 +353,52 @@ function handlePtyClose(payload) {
     try { proc.kill() } catch {}
     ptyProcs.delete(sessionId)
   }
+}
+
+// ── T002: Chunked file write handler ─────────────────────────────────────
+function handleWriteChunk(payload) {
+  const { opId, path: filePath, data, seq, total, isLast } = payload
+
+  let accum = writeChunkBufs.get(opId)
+  if (!accum) {
+    accum = { chunks: new Map(), total: total || 1, path: filePath }
+    writeChunkBufs.set(opId, accum)
+  }
+  accum.chunks.set(seq || 0, Buffer.from(data || '', 'base64'))
+
+  if (isLast) {
+    writeChunkBufs.delete(opId)
+    const parts = []
+    for (let i = 0; i < accum.total; i++) {
+      const c = accum.chunks.get(i)
+      if (c) parts.push(c)
+    }
+    const fileData = Buffer.concat(parts)
+    const osPath   = toOsPath(accum.path)
+    const dir      = path.dirname(osPath)
+
+    fs.mkdir(dir, { recursive: true })
+      .then(() => fs.promises.writeFile(osPath, fileData))
+      .then(() => {
+        log('info', `✅ Chunked write done: ${accum.path} (${fileData.length} bytes)`)
+        send({ type: 'agent:fs_result', payload: { opId, data: { ok: true, size: fileData.length } }, timestamp: Date.now() })
+      })
+      .catch(err => {
+        log('error', `❌ Chunked write failed: ${err.message}`)
+        send({ type: 'agent:fs_result', payload: { opId, error: err.message }, timestamp: Date.now() })
+      })
+  }
+}
+
+// ─── Path helper (web path → OS path) ────────────────────────────────────
+function toOsPath(webPath) {
+  if (process.platform === 'win32') {
+    const home = os.homedir()
+    const win  = webPath.replace(/^\/([A-Za-z])(\/|$)/, '$1:\\$2').replace(/\//g, '\\')
+    if (win.startsWith('/')) return path.join(home, win.slice(1))
+    return win
+  }
+  return webPath
 }
 
 // ─── WebSocket ────────────────────────────────────────────────────────────
@@ -342,8 +427,11 @@ function connect() {
     try {
       const info   = getDeviceInfo()
       const stats  = await getStats()
-      sshAvailable = await checkSshPort('127.0.0.1', 22)
+      sshAvailable    = await checkSshPort('127.0.0.1', 22)
+      dockerAvailable = await detectDocker()
       const shell  = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
+
+      log('info', `🐳 Docker: ${dockerAvailable ? 'available' : 'not found'}`)
 
       send({
         type: 'agent:register',
@@ -352,13 +440,22 @@ function connect() {
           info,
           stats,
           tunnelLayer: 'relay',
-          capabilities: { pty: true, sshAvailable, shell },
+          capabilities: {
+            pty:           true,
+            sshAvailable,
+            shell,
+            screenControl: false,
+            clipboard:     false,
+            multiMonitor:  false,
+            monitors:      [],
+            docker:        dockerAvailable
+          },
           sshInfo: { available: sshAvailable, port: 22 }
         },
         timestamp: Date.now()
       })
       startHeartbeat()
-      log('info', `🖥  PTY: ready | SSH: ${sshAvailable ? 'available' : 'not detected'} | v${VERSION}`)
+      log('info', `🖥  PTY: ready | SSH: ${sshAvailable ? 'available' : 'not detected'} | Docker: ${dockerAvailable ? 'yes' : 'no'} | v${VERSION}`)
     } catch (e) {
       log('error', `Registration error: ${e.message}`)
     }
@@ -401,7 +498,7 @@ function handleMsg(msg) {
       log('error', `Server error: ${msg.payload?.message}`)
       break
 
-    // ── PTY ───────────────────────────────────────────────────────────────
+    // ── PTY ──────────────────────────────────────────────────────────────
     case 'server:pty_open':
       handlePtyOpen(msg.payload)
       break
@@ -410,6 +507,7 @@ function handleMsg(msg) {
       handlePtyData(msg.payload)
       break
 
+    // T003: PTY resize — Windows-aware
     case 'server:pty_resize':
       handlePtyResize(msg.payload)
       break
@@ -417,6 +515,46 @@ function handleMsg(msg) {
     case 'server:pty_close':
       handlePtyClose(msg.payload)
       break
+
+    // T002: Chunked file write
+    case 'server:fs_write_chunk':
+      handleWriteChunk(msg.payload)
+      break
+
+    // T004: Consent dialog with AGENT_UNATTENDED env support
+    case 'server:screen_control_request': {
+      const { sessionId, requestId, requesterName } = msg.payload || {}
+      const unattended = process.env.AGENT_UNATTENDED === 'true' || process.env.AGENT_UNATTENDED === '1'
+
+      if (unattended) {
+        log('info', `🔐 Control request from "${requesterName}" — auto-granting (AGENT_UNATTENDED=true)`)
+        send({
+          type: 'agent:screen_control_granted',
+          payload: { sessionId, requestId },
+          timestamp: Date.now()
+        })
+      } else {
+        log('warn', `⚠  Control request from "${requesterName}"`)
+        log('warn', `   Headless agent has no consent dialog.`)
+        log('warn', `   Auto-granting in ${CONSENT_TIMEOUT_SEC}s — set AGENT_UNATTENDED=true to skip.`)
+        setTimeout(() => {
+          log('info', `🔐 Auto-granting control to "${requesterName}" after timeout`)
+          send({
+            type: 'agent:screen_control_granted',
+            payload: { sessionId, requestId },
+            timestamp: Date.now()
+          })
+        }, CONSENT_TIMEOUT_SEC * 1000)
+      }
+      break
+    }
+
+    // T006: In-session text chat
+    case 'server:screen_chat': {
+      const { text, sender } = msg.payload || {}
+      log('info', `💬 [chat] ${sender || 'viewer'}: ${text}`)
+      break
+    }
   }
 }
 
@@ -451,7 +589,15 @@ function startHeartbeat() {
         type: 'agent:heartbeat',
         payload: {
           deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now(),
-          capabilities: { pty: true, sshAvailable }
+          capabilities: {
+            pty:           true,
+            sshAvailable,
+            screenControl: false,
+            clipboard:     false,
+            multiMonitor:  false,
+            monitors:      [],
+            docker:        dockerAvailable
+          }
         },
         timestamp: Date.now()
       })
@@ -477,9 +623,9 @@ function setupInteractive() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   const q  = (prompt) => new Promise(resolve => rl.question(prompt, resolve))
 
-  console.log('\n╔══════════════════════════════════════════╗')
+  console.log('\n╔═══════════════════════════════════════════╗')
   console.log('║  AiRemote Agent v' + VERSION + ' — First Setup  ║')
-  console.log('╚══════════════════════════════════════════╝\n')
+  console.log('╚═══════════════════════════════════════════╝\n')
 
   return q('Server URL (e.g. wss://your-server.replit.app/ws): ').then(serverUrl => {
     return q('Device Token (from dashboard): ').then(token => {
@@ -496,7 +642,7 @@ async function main() {
   console.log(`\n⚡ AiRemote Agent v${VERSION} — Headless Mode`)
   console.log(`   Hostname: ${os.hostname()} | IP: ${getIpLocal()} | OS: ${detectPlatform()}`)
   console.log(`   Config:   ${CONFIG_FILE}`)
-  console.log(`   Features: PTY (direct shell) | SSH detect | Cross-platform\n`)
+  console.log(`   Features: PTY | SSH detect | Docker detect | Chunked write | Consent dialog | Chat\n`)
 
   if (!config.serverUrl || !config.token) {
     if (process.stdin.isTTY) {

@@ -1,10 +1,94 @@
 import { useState, useEffect } from 'react'
-import { Monitor, Plus, Copy, Trash2, Check, X, ExternalLink, Terminal, BookOpen, Laptop } from 'lucide-react'
+import { Monitor, Plus, Copy, Trash2, Check, X, ExternalLink, Terminal, BookOpen, Laptop, Zap, Loader2 } from 'lucide-react'
 import { useDeviceStore } from '../store/deviceStore'
 import { clsx } from 'clsx'
 import { Link } from 'react-router-dom'
 import type { Device } from '@airemote/shared'
 import { useT } from '../lib/i18n'
+import { useAuthStore } from '../store/authStore'
+
+function WolModal({ device, token, onClose }: { device: Device; token: string; onClose: () => void }) {
+  const [mac, setMac]         = useState('')
+  const [broadcast, setBroadcast] = useState('255.255.255.255')
+  const [sending, setSending] = useState(false)
+  const [result, setResult]   = useState<{ ok: boolean; msg: string } | null>(null)
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault()
+    setSending(true); setResult(null)
+    try {
+      const r = await fetch(`/api/devices/${device.id}/wol`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ macAddress: mac.trim(), broadcast: broadcast.trim() || '255.255.255.255' })
+      })
+      const data = await r.json()
+      if (r.ok) setResult({ ok: true,  msg: data.message || 'تم إرسال الحزمة بنجاح ✓' })
+      else       setResult({ ok: false, msg: data.error  || 'فشل الإرسال' })
+    } catch {
+      setResult({ ok: false, msg: 'خطأ في الشبكة' })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="glass rounded-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between p-5 border-b border-slate-700/50">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center">
+              <Zap size={16} className="text-amber-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-white">Wake-on-LAN</h3>
+              <p className="text-xs text-slate-400 mt-0.5">{device.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={handleSend} className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">MAC Address</label>
+            <input
+              value={mac} onChange={e => setMac(e.target.value)}
+              placeholder="AA:BB:CC:DD:EE:FF"
+              dir="ltr"
+              className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:border-amber-500/60"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Broadcast IP <span className="text-slate-600">(اختياري)</span></label>
+            <input
+              value={broadcast} onChange={e => setBroadcast(e.target.value)}
+              placeholder="255.255.255.255"
+              dir="ltr"
+              className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:border-amber-500/60"
+            />
+          </div>
+
+          {result && (
+            <div className={clsx(
+              'text-xs px-3 py-2 rounded-lg',
+              result.ok ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20' : 'bg-red-400/10 text-red-400 border border-red-400/20'
+            )}>
+              {result.msg}
+            </div>
+          )}
+
+          <button
+            type="submit" disabled={sending || !mac.trim()}
+            className="w-full flex items-center justify-center gap-2 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-amber-400 text-sm font-medium py-2.5 rounded-lg transition-colors border border-amber-500/30"
+          >
+            {sending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            {sending ? 'جارٍ الإرسال...' : 'إرسال Magic Packet'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
 
 function AgentInstallModal({ device, onClose }: { device: Device; onClose: () => void }) {
   const t = useT()
@@ -181,11 +265,13 @@ AIREMOTE_LOG_LEVEL=info`
 
 export function DevicesPage() {
   const t = useT()
+  const { token } = useAuthStore()
   const { devices, loading, fetchDevices, addDevice, deleteDevice } = useDeviceStore()
   const [showAdd, setShowAdd] = useState(false)
   const [newName, setNewName] = useState('')
   const [adding, setAdding] = useState(false)
   const [installDevice, setInstallDevice] = useState<Device | null>(null)
+  const [wolDevice, setWolDevice] = useState<Device | null>(null)
 
   useEffect(() => { fetchDevices() }, [])
 
@@ -214,6 +300,9 @@ export function DevicesPage() {
     <div className="p-6">
       {installDevice && (
         <AgentInstallModal device={installDevice} onClose={() => setInstallDevice(null)} />
+      )}
+      {wolDevice && token && (
+        <WolModal device={wolDevice} token={token} onClose={() => setWolDevice(null)} />
       )}
 
       <div className="flex items-center justify-between mb-6">
@@ -326,6 +415,15 @@ export function DevicesPage() {
                       >
                         <Terminal size={13} />
                       </button>
+                      {d.status === 'offline' && (
+                        <button
+                          onClick={() => setWolDevice(d)}
+                          className="p-1.5 text-slate-600 hover:text-amber-400 transition-colors rounded"
+                          title="Wake-on-LAN"
+                        >
+                          <Zap size={13} />
+                        </button>
+                      )}
                       <Link
                         to={`/devices/${d.id}`}
                         className="p-1.5 text-slate-600 hover:text-brand-blue transition-colors rounded"

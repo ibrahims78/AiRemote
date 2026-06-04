@@ -1,23 +1,3 @@
-- [AiRemote Stack Constraints](airemote-stack.md) — better-sqlite3 fails in Nix sandbox; use @libsql/client; all DB calls must be async
-- [AiRemote Workflow Setup](airemote-workflows.md) — Server port 3001 (console), Dashboard port 5000 (webview); SSH proxy on /ssh in vite config
-- [AiRemote Package Structure](airemote-packages.md) — 5 workspace packages; ai-engine must be built before server; add as workspace:* dep when needed
-- [AiRemote Fastify Multipart Version](airemote-multipart.md) — @fastify/multipart@8 required for Fastify 4.x; v9+ causes FST_ERR_PLUGIN_VERSION_MISMATCH
-- [AiRemote Phase 1 Complete](airemote-phase1.md) — All 14 bugs/gaps fixed; server rebuilt; both workflows running; BUILD_REPORT at airemote/.local/BUILD_REPORT.md
-- [AiRemote Phase 2 Complete](airemote-phase2.md) — AI command execution, CommandRunner, device context in AI, agent install modal; exec endpoint at POST /api/devices/:id/exec
-- [AiRemote UI System](airemote-ui-system.md) — Dark/light theme via html.light class; AR/EN i18n via useT() hook (reactive Zustand); all 9 pages updated
-- [AiRemote Agent Desktop UI](airemote-agent-ui.md) — Collapsible sections (.coll-sec/collapsed); IP bug: main.js error/timeout must send public-ip IPC; build: portable NSIS fails on Linux — use python3 zip of win-unpacked instead
-- [AiRemote Downloads System](airemote-downloads.md) — GET /api/downloads/list + POST /api/downloads/build/:id + GET /api/downloads/build/:id/status; Build button in AgentDownloads.tsx polls every 2.5s; win-gui is a ZIP not exe
-- [AiRemote Phase 3 Complete](airemote-phase3.md) — All 11 roadmap features done; otplib v13 API, tags double-parse bug, ALTER TABLE migrations, @fastify/rate-limit@8
-- [AiRemote PTY Terminal](airemote-pty.md) — v1.2.0: PTY via child_process.spawn (no node-pty); /pty WS endpoint; shared must be rebuilt before server; pkg binary at releases/agent-headless/
-- [AiRemote Agent-proxied FS](airemote-agent-fs.md) — Files tab uses server:fs_request/agent:fs_result over WS; no SSH needed; Windows drives listed at path=/
-- [AiRemote xterm.js Listener Cleanup](airemote-xterm-cleanup.md) — onData/onResize return IDisposable; store and call .dispose() to remove; offData/offResize do NOT exist in xterm.js
-- [AiRemote Chunked FS Download](airemote-chunked-download.md) — Large file download via read_chunked op + agent:fs_chunk messages (512KB each); sendFsDownload() in agentHandler; WSMessageType must include agent:fs_chunk
-- [AiRemote GitHub Releases](airemote-github-releases.md) — POST /api/github/config (stored in settings table key github_config); POST /api/github/publish/:id (id or 'all'); polls /publish/:publishId/status; GitHubRelease.tsx in Settings
-- [AiRemote Network Stats Fix](airemote-network-stats.md) — esbuild drops win32 branch in readRawNetworkBytes when building on Linux; must patch agent-v1.4.0.js directly + add PowerShell WMI fallback
-- [AiRemote AI Streaming & Device Context](airemote-ai-streaming.md) — POST /api/ai/chat/stream SSE endpoint; chatStream() on all 3 providers; buildDeviceContext() in ai.ts; auto-exec toggle + suggestion chips in AiChatPanel
-- [AiRemote Screen Sharing](airemote-screen-sharing.md) — v1.6.0: MJPEG-over-WS; /screen WS endpoint; screenCapture.ts multi-platform; ScreenViewer.tsx canvas; agentHandler routes by sessionId not socket
-- [AiRemote v2.0.0 Audit](airemote-v2-audit.md) — 12 bugs fixed: cliclick dd/du, Windows execFileAsync, clipboard spawn+stdin, scrot resize, caps registration, heartbeat caps, ping-pong; 0 TS errors
-- [AiRemote Electron Screen Sharing](airemote-electron-screen.md) — desktopCapturer in hidden BrowserWindow (capture.html, nodeIntegration:true); persistent PowerShell stdin process for mouse/key injection; ZIP rebuilt via asar repack + python3 zip
-- [AiRemote WS Ping Timeout During Screen Share](airemote-ws-ping-fix.md) — agent misses WS-level pong during heavy frame bursts; fix: any incoming agent message clears pongTimer in handler.ts; also raise PING_INTERVAL_MS=60000 PONG_TIMEOUT_MS=20000
-- [AiRemote JWT Migration](airemote-jwt-migration.md) — @fastify/jwt replaced with custom plugin using jsonwebtoken; fast-jwt 3.x and 4.x blocked by Replit firewall; plugin at packages/server/src/plugins/jwt.ts
-- [AiRemote v3.1.0 Features](airemote-v310.md) — 12 pro features: delta encoding, chunked upload >50MB, WoL, recording, chat, docker cap, consent timeout, webhooks; see topic file for protocol details
+- [AiRemote monorepo setup](airemote-setup.md) — pnpm workspaces, Fastify :3001, Vite React :5000, LibSQL at ./data/airemote.db
+- [WoL implementation](wol-impl.md) — WoL endpoint POST /api/devices/:id/wol exists in server; WolModal + Zap button added to DevicesPage (shows only for offline devices)
+- [agent-desktop IPC bridge](agent-desktop-ipc.md) — screen-chat IPC: main.js → win.webContents.send('screen-chat') → preload.js onScreenChat → renderer appendLog + Notification

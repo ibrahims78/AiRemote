@@ -612,6 +612,19 @@ function appendLog(entry) {
 
 airemote.onLog(entry => appendLog(entry))
 
+// ─── T006: In-session chat notifications ─────────────────────────────────────
+if (typeof airemote.onScreenChat === 'function') {
+  airemote.onScreenChat(({ text, sender, ts }) => {
+    appendLog({ level: 'info', msg: `💬 ${sender}: ${text}`, ts: ts || Date.now() })
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('AiRemote — رسالة دردشة', { body: `${sender}: ${text}`, silent: false })
+    }
+  })
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {})
+  }
+}
+
 function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;')

@@ -14,9 +14,10 @@ contextBridge.exposeInMainWorld('airemote', {
   getStatsNow:   ()    => ipcRenderer.invoke('get-stats-now'),
   getDeviceInfo: ()    => ipcRenderer.invoke('get-device-info'),
 
-  onInit:        (fn)  => ipcRenderer.on('init',      (_, d) => fn(d)),
-  onState:       (fn)  => ipcRenderer.on('state',     (_, d) => fn(d)),
-  onLog:         (fn)  => ipcRenderer.on('log',       (_, d) => fn(d)),
-  onStats:       (fn)  => ipcRenderer.on('stats',     (_, d) => fn(d)),
-  onPublicIp:    (fn)  => ipcRenderer.on('public-ip', (_, d) => fn(d)),
+  onInit:        (fn)  => ipcRenderer.on('init',        (_, d) => fn(d)),
+  onState:       (fn)  => ipcRenderer.on('state',       (_, d) => fn(d)),
+  onLog:         (fn)  => ipcRenderer.on('log',         (_, d) => fn(d)),
+  onStats:       (fn)  => ipcRenderer.on('stats',       (_, d) => fn(d)),
+  onPublicIp:    (fn)  => ipcRenderer.on('public-ip',   (_, d) => fn(d)),
+  onScreenChat:  (fn)  => ipcRenderer.on('screen-chat', (_, d) => fn(d)),
 })
