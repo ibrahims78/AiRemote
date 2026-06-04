@@ -125,7 +125,7 @@ const RELEASE_DEFS: ReleaseDef[] = [
     filename:  `agent-v${AGENT_VERSION}.js`,
     dir:       'agent-script',
     platform:  'any',
-    size_hint: '~168 KB',
+    size_hint: '~97 KB',
   },
   {
     id:        'script-pkg',
@@ -138,7 +138,7 @@ const RELEASE_DEFS: ReleaseDef[] = [
     filename:  `agent-script-v${AGENT_VERSION}.zip`,
     dir:       'agent-script',
     platform:  'any',
-    size_hint: '~168 KB',
+    size_hint: '~34 KB',
     buildCmd: {
       cwd:  path.join(REPO_ROOT, 'releases', 'agent-script'),
       cmd:  'python3',
