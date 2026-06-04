@@ -4427,6 +4427,81 @@ var import_os3 = __toESM(require("os"));
 var execAsync2 = (0, import_util2.promisify)(import_child_process3.exec);
 var execFileAsync = (0, import_util2.promisify)(import_child_process3.execFile);
 var PLATFORM = process.platform;
+
+// ── Persistent PowerShell process for Windows screen capture ──────────────
+// Replaces per-frame powershell.exe spawning (~1-2s startup) with a single
+// long-lived process that accepts commands over stdin → enables real fps.
+var _arPsCapProc = null;
+var _arPsCapQueue = [];
+var _arPsCapBuf = "";
+var _arPsCapScriptPath = import_path.default.join(import_os3.default.tmpdir(), "airemote_cap.ps1");
+var _arPsCapScriptWritten = false;
+function _arGetPsCap() {
+  if (_arPsCapProc && !_arPsCapProc.killed) return _arPsCapProc;
+  if (!_arPsCapScriptWritten) {
+    var script = [
+      "Add-Type -AssemblyName System.Windows.Forms,System.Drawing",
+      "$arEnc=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders()|Where-Object{$_.MimeType -eq 'image/jpeg'}",
+      "while($true){",
+      "  $ln=[Console]::In.ReadLine()",
+      "  if($null -eq $ln){break}",
+      "  $p=$ln.Split('|')",
+      "  try{",
+      "    $ql=[long]$p[0];$mw=[int]$p[1];$bx=[int]$p[2];$by=[int]$p[3];$bw=[int]$p[4];$bh=[int]$p[5];$op=$p[6].Trim()",
+      "    if($bw -le 0){$sc=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;$bx=$sc.X;$by=$sc.Y;$bw=$sc.Width;$bh=$sc.Height}",
+      "    $bmp=New-Object System.Drawing.Bitmap($bw,$bh)",
+      "    $g=[System.Drawing.Graphics]::FromImage($bmp)",
+      "    $g.CopyFromScreen($bx,$by,0,0,(New-Object System.Drawing.Size($bw,$bh)))",
+      "    $g.Dispose()",
+      "    $nw=[Math]::Min($bw,$mw);$nh=[int]($bh*$nw/$bw)",
+      "    $th=New-Object System.Drawing.Bitmap($nw,$nh)",
+      "    $tg=[System.Drawing.Graphics]::FromImage($th)",
+      "    $tg.DrawImage($bmp,0,0,$nw,$nh);$tg.Dispose();$bmp.Dispose()",
+      "    $qp=New-Object System.Drawing.Imaging.EncoderParameters(1)",
+      "    $qp.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality,$ql)",
+      "    $th.Save($op,$arEnc,$qp);$th.Dispose()",
+      "    Write-Host 'OK'",
+      "  }catch{Write-Host ('ERR:'+$_.Exception.Message)}",
+      "  [Console]::Out.Flush()",
+      "}"
+    ].join("\r\n");
+    require("fs").writeFileSync(_arPsCapScriptPath, script, "utf8");
+    _arPsCapScriptWritten = true;
+  }
+  _arPsCapProc = import_child_process3.spawn(
+    "powershell.exe",
+    ["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-File", _arPsCapScriptPath],
+    { stdio: ["pipe", "pipe", "pipe"] }
+  );
+  _arPsCapProc.stdout.setEncoding("utf8");
+  _arPsCapBuf = "";
+  _arPsCapProc.stdout.on("data", function(c) {
+    _arPsCapBuf += c;
+    var ls = _arPsCapBuf.split("\n"); _arPsCapBuf = ls.pop();
+    for (var i = 0; i < ls.length; i++) {
+      var t = ls[i].trim(); if (!t) continue;
+      var cb = _arPsCapQueue.shift(); if (cb) cb(t);
+    }
+  });
+  _arPsCapProc.on("exit", function() {
+    _arPsCapProc = null;
+    var q = _arPsCapQueue.splice(0);
+    for (var i = 0; i < q.length; i++) q[i]("ERR:ps-cap exited");
+  });
+  if (_arPsCapProc.stderr) _arPsCapProc.stderr.on("data", function(d) { console.error("[psCap]", d.toString().trim()); });
+  console.log("[screen] Persistent PS capture process started");
+  return _arPsCapProc;
+}
+async function _arCaptureWin(quality, maxWidth, mon, hasMultiMon, outPath) {
+  var bx = hasMultiMon && mon ? mon.x : 0;
+  var by = hasMultiMon && mon ? mon.y : 0;
+  var bw = hasMultiMon && mon ? mon.width : 0;
+  var bh = hasMultiMon && mon ? mon.height : 0;
+  return new Promise(function(resolve, reject) {
+    _arPsCapQueue.push(function(r) { r === "OK" ? resolve() : reject(new Error(r.replace("ERR:", ""))); });
+    _arGetPsCap().stdin.write(quality + "|" + maxWidth + "|" + bx + "|" + by + "|" + bw + "|" + bh + "|" + outPath + "\n");
+  });
+}
 var TMP_FRAME = import_path.default.join(import_os3.default.tmpdir(), `airemote_frame_${process.pid}.jpg`);
 var detectedBackend = null;
 function withTimeoutCapture(p, ms, label) {
@@ -4535,41 +4610,9 @@ async function captureScreen(opts = {}) {
         jpegBuf = raw;
         break;
       }
-      // ── Windows PowerShell ────────────────────────────────────────────────
+      // ── Windows PowerShell (persistent process — no per-frame spawn) ─────
       case "powershell": {
-        const boundsCode = hasMultiMon ? `$bounds = New-Object System.Drawing.Rectangle(${mon.x}, ${mon.y}, ${mon.width}, ${mon.height})` : `$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds`;
-        const ps = `
-Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-${boundsCode}
-$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-$g.Dispose()
-$newW = [Math]::Min($bounds.Width, ${maxWidth})
-$ratio = $newW / $bounds.Width
-$newH = [int]($bounds.Height * $ratio)
-$thumb = New-Object System.Drawing.Bitmap($newW, $newH)
-$tg = [System.Drawing.Graphics]::FromImage($thumb)
-$tg.DrawImage($bmp, 0, 0, $newW, $newH)
-$tg.Dispose()
-$bmp.Dispose()
-$enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
-$params = New-Object System.Drawing.Imaging.EncoderParameters(1)
-$params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]${quality})
-$thumb.Save("${TMP_FRAME.replace(/\\/g, "\\\\")}",  $enc, $params)
-$thumb.Dispose()
-`.trim();
-        await withTimeoutCapture(
-          execFileAsync("powershell.exe", [
-            "-NonInteractive",
-            "-NoProfile",
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            ps
-          ]),
-          8e3, "powershell"
-        );
+        await withTimeoutCapture(_arCaptureWin(quality, maxWidth, mon, hasMultiMon, TMP_FRAME), 12e3, "powershell");
         jpegBuf = await import_promises.default.readFile(TMP_FRAME);
         break;
       }
@@ -4611,6 +4654,103 @@ var import_util3 = require("util");
 var execAsync3 = (0, import_util3.promisify)(import_child_process4.exec);
 var execFileAsync2 = (0, import_util3.promisify)(import_child_process4.execFile);
 var PLATFORM2 = process.platform;
+
+// ── Persistent PowerShell process for Windows mouse/keyboard control ───────
+// One long-lived PS process handles all input events via stdin commands,
+// eliminating the ~1s per-event spawn cost.
+var _arPsMouseProc = null;
+var _arPsMouseQueue = [];
+var _arPsMouseBuf = "";
+var _arPsMouseScriptPath = require("path").join(require("os").tmpdir(), "airemote_mouse.ps1");
+var _arPsMouseScriptWritten = false;
+function _arGetPsMouse() {
+  if (_arPsMouseProc && !_arPsMouseProc.killed) return _arPsMouseProc;
+  if (!_arPsMouseScriptWritten) {
+    var script = [
+      "Add-Type -AssemblyName System.Windows.Forms",
+      "Add-Type -TypeDefinition @\"",
+      "using System;",
+      "using System.Runtime.InteropServices;",
+      "public class AR_Mouse {",
+      "  [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int x, int y);",
+      "  [DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int x, int y, int d, int e);",
+      "}",
+      "\"@",
+      "while ($true) {",
+      "  $ln = [Console]::In.ReadLine()",
+      "  if ($null -eq $ln) { break }",
+      "  $p = $ln.Split('|')",
+      "  try {",
+      "    $t = $p[0]; $ax = [int]$p[1]; $ay = [int]$p[2]",
+      "    if ($t -eq 'move') { [AR_Mouse]::SetCursorPos($ax, $ay) }",
+      "    elseif ($t -eq 'click') {",
+      "      [AR_Mouse]::SetCursorPos($ax, $ay)",
+      "      if ($p[3] -eq '2') { $f1 = 0x8; $f2 = 0x10 }",
+      "      elseif ($p[3] -eq '1') { $f1 = 0x20; $f2 = 0x40 }",
+      "      else { $f1 = 0x2; $f2 = 0x4 }",
+      "      [AR_Mouse]::mouse_event($f1, 0, 0, 0, 0); [AR_Mouse]::mouse_event($f2, 0, 0, 0, 0)",
+      "    } elseif ($t -eq 'dblclick') {",
+      "      [AR_Mouse]::SetCursorPos($ax, $ay)",
+      "      [AR_Mouse]::mouse_event(0x2, 0, 0, 0, 0); [AR_Mouse]::mouse_event(0x4, 0, 0, 0, 0)",
+      "      Start-Sleep -Milliseconds 50",
+      "      [AR_Mouse]::mouse_event(0x2, 0, 0, 0, 0); [AR_Mouse]::mouse_event(0x4, 0, 0, 0, 0)",
+      "    } elseif ($t -eq 'down') {",
+      "      [AR_Mouse]::SetCursorPos($ax, $ay)",
+      "      if ($p[3] -eq '2') { [AR_Mouse]::mouse_event(0x8, 0, 0, 0, 0) }",
+      "      else { [AR_Mouse]::mouse_event(0x2, 0, 0, 0, 0) }",
+      "    } elseif ($t -eq 'up') {",
+      "      [AR_Mouse]::SetCursorPos($ax, $ay)",
+      "      if ($p[3] -eq '2') { [AR_Mouse]::mouse_event(0x10, 0, 0, 0, 0) }",
+      "      else { [AR_Mouse]::mouse_event(0x4, 0, 0, 0, 0) }",
+      "    } elseif ($t -eq 'scroll') {",
+      "      [AR_Mouse]::SetCursorPos($ax, $ay)",
+      "      [AR_Mouse]::mouse_event(0x800, 0, 0, [int]$p[3], 0)",
+      "    }",
+      "    Write-Host 'OK'",
+      "  } catch { Write-Host ('ERR:' + $_.Exception.Message) }",
+      "  [Console]::Out.Flush()",
+      "}"
+    ].join("\r\n");
+    require("fs").writeFileSync(_arPsMouseScriptPath, script, "utf8");
+    _arPsMouseScriptWritten = true;
+  }
+  _arPsMouseProc = import_child_process4.spawn(
+    "powershell.exe",
+    ["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-File", _arPsMouseScriptPath],
+    { stdio: ["pipe", "pipe", "pipe"] }
+  );
+  _arPsMouseProc.stdout.setEncoding("utf8");
+  _arPsMouseBuf = "";
+  _arPsMouseProc.stdout.on("data", function(c) {
+    _arPsMouseBuf += c;
+    var ls = _arPsMouseBuf.split("\n"); _arPsMouseBuf = ls.pop();
+    for (var i = 0; i < ls.length; i++) {
+      var t = ls[i].trim(); if (!t) continue;
+      var cb = _arPsMouseQueue.shift(); if (cb) cb(t);
+    }
+  });
+  _arPsMouseProc.on("exit", function() {
+    _arPsMouseProc = null;
+    var q = _arPsMouseQueue.splice(0);
+    for (var i = 0; i < q.length; i++) q[i]("ERR:ps-mouse exited");
+  });
+  if (_arPsMouseProc.stderr) _arPsMouseProc.stderr.on("data", function(d) { console.error("[psMouse]", d.toString().trim()); });
+  console.log("[input] Persistent PS mouse process started");
+  return _arPsMouseProc;
+}
+async function _arMouseWin(evt, ax, ay, btn) {
+  var cmd;
+  if (evt.type === "scroll") {
+    var delta = (evt.deltaY != null ? evt.deltaY : 0) > 0 ? -120 : 120;
+    cmd = "scroll|" + ax + "|" + ay + "|" + delta + "\n";
+  } else {
+    cmd = evt.type + "|" + ax + "|" + ay + "|" + btn + "\n";
+  }
+  return new Promise(function(resolve, reject) {
+    _arPsMouseQueue.push(function(r) { r === "OK" ? resolve() : reject(new Error(r.replace("ERR:", ""))); });
+    _arGetPsMouse().stdin.write(cmd);
+  });
+}
 var _hasXdotool = null;
 var _hasCliclick = null;
 async function hasXdotool() {
@@ -4700,71 +4840,8 @@ async function controlMouseLinux(evt, ax, ay, btn) {
   }
 }
 async function controlMouseWindows(evt, ax, ay, btn) {
-  const btnName = PS_BUTTON[btn] ?? "Left";
-  let ps = `Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-`;
-  switch (evt.type) {
-    case "move":
-      ps += `[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})`;
-      break;
-    case "click":
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class Mouse { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[Mouse]::mouse_event(0x${btnName === "Left" ? "2" : btnName === "Right" ? "8" : "20"}, 0, 0, 0, 0)
-[Mouse]::mouse_event(0x${btnName === "Left" ? "4" : btnName === "Right" ? "10" : "40"}, 0, 0, 0, 0)
-`;
-      break;
-    case "dblclick":
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class Mouse2 { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[Mouse2]::mouse_event(0x2, 0, 0, 0, 0); [Mouse2]::mouse_event(0x4, 0, 0, 0, 0)
-Start-Sleep -Milliseconds 50
-[Mouse2]::mouse_event(0x2, 0, 0, 0, 0); [Mouse2]::mouse_event(0x4, 0, 0, 0, 0)
-`;
-      break;
-    case "down":
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class MouseD { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[MouseD]::mouse_event(0x${btnName === "Left" ? "2" : "8"}, 0, 0, 0, 0)
-`;
-      break;
-    case "up":
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class MouseU { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[MouseU]::mouse_event(0x${btnName === "Left" ? "4" : "10"}, 0, 0, 0, 0)
-`;
-      break;
-    case "scroll": {
-      const delta = (evt.deltaY ?? 0) > 0 ? -120 : 120;
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class MouseS { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[MouseS]::mouse_event(0x800, 0, 0, ${delta}, 0)
-`;
-      break;
-    }
-  }
   try {
-    await execFileAsync2("powershell.exe", ["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps], { timeout: 3e3 });
+    await _arMouseWin(evt, ax, ay, btn);
   } catch (err) {
     console.error("[input] PowerShell mouse error:", err.message);
   }
