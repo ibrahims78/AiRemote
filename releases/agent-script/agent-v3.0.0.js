@@ -1,12 +1,437 @@
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/package.json
+var require_package = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/package.json"(exports2, module2) {
+    module2.exports = {
+      name: "dotenv",
+      version: "16.6.1",
+      description: "Loads environment variables from .env file",
+      main: "lib/main.js",
+      types: "lib/main.d.ts",
+      exports: {
+        ".": {
+          types: "./lib/main.d.ts",
+          require: "./lib/main.js",
+          default: "./lib/main.js"
+        },
+        "./config": "./config.js",
+        "./config.js": "./config.js",
+        "./lib/env-options": "./lib/env-options.js",
+        "./lib/env-options.js": "./lib/env-options.js",
+        "./lib/cli-options": "./lib/cli-options.js",
+        "./lib/cli-options.js": "./lib/cli-options.js",
+        "./package.json": "./package.json"
+      },
+      scripts: {
+        "dts-check": "tsc --project tests/types/tsconfig.json",
+        lint: "standard",
+        pretest: "npm run lint && npm run dts-check",
+        test: "tap run --allow-empty-coverage --disable-coverage --timeout=60000",
+        "test:coverage": "tap run --show-full-coverage --timeout=60000 --coverage-report=text --coverage-report=lcov",
+        prerelease: "npm test",
+        release: "standard-version"
+      },
+      repository: {
+        type: "git",
+        url: "git://github.com/motdotla/dotenv.git"
+      },
+      homepage: "https://github.com/motdotla/dotenv#readme",
+      funding: "https://dotenvx.com",
+      keywords: [
+        "dotenv",
+        "env",
+        ".env",
+        "environment",
+        "variables",
+        "config",
+        "settings"
+      ],
+      readmeFilename: "README.md",
+      license: "BSD-2-Clause",
+      devDependencies: {
+        "@types/node": "^18.11.3",
+        decache: "^4.6.2",
+        sinon: "^14.0.1",
+        standard: "^17.0.0",
+        "standard-version": "^9.5.0",
+        tap: "^19.2.0",
+        typescript: "^4.8.4"
+      },
+      engines: {
+        node: ">=12"
+      },
+      browser: {
+        fs: false
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/main.js
+var require_main = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/main.js"(exports2, module2) {
+    var fs4 = require("fs");
+    var path3 = require("path");
+    var os4 = require("os");
+    var crypto = require("crypto");
+    var packageJson = require_package();
+    var version = packageJson.version;
+    var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+    function parse(src) {
+      const obj = {};
+      let lines = src.toString();
+      lines = lines.replace(/\r\n?/mg, "\n");
+      let match;
+      while ((match = LINE.exec(lines)) != null) {
+        const key = match[1];
+        let value = match[2] || "";
+        value = value.trim();
+        const maybeQuote = value[0];
+        value = value.replace(/^(['"`])([\s\S]*)\1$/mg, "$2");
+        if (maybeQuote === '"') {
+          value = value.replace(/\\n/g, "\n");
+          value = value.replace(/\\r/g, "\r");
+        }
+        obj[key] = value;
+      }
+      return obj;
+    }
+    function _parseVault(options) {
+      options = options || {};
+      const vaultPath = _vaultPath(options);
+      options.path = vaultPath;
+      const result = DotenvModule.configDotenv(options);
+      if (!result.parsed) {
+        const err = new Error(`MISSING_DATA: Cannot parse ${vaultPath} for an unknown reason`);
+        err.code = "MISSING_DATA";
+        throw err;
+      }
+      const keys = _dotenvKey(options).split(",");
+      const length = keys.length;
+      let decrypted;
+      for (let i = 0; i < length; i++) {
+        try {
+          const key = keys[i].trim();
+          const attrs = _instructions(result, key);
+          decrypted = DotenvModule.decrypt(attrs.ciphertext, attrs.key);
+          break;
+        } catch (error) {
+          if (i + 1 >= length) {
+            throw error;
+          }
+        }
+      }
+      return DotenvModule.parse(decrypted);
+    }
+    function _warn(message) {
+      console.log(`[dotenv@${version}][WARN] ${message}`);
+    }
+    function _debug(message) {
+      console.log(`[dotenv@${version}][DEBUG] ${message}`);
+    }
+    function _log(message) {
+      console.log(`[dotenv@${version}] ${message}`);
+    }
+    function _dotenvKey(options) {
+      if (options && options.DOTENV_KEY && options.DOTENV_KEY.length > 0) {
+        return options.DOTENV_KEY;
+      }
+      if (process.env.DOTENV_KEY && process.env.DOTENV_KEY.length > 0) {
+        return process.env.DOTENV_KEY;
+      }
+      return "";
+    }
+    function _instructions(result, dotenvKey) {
+      let uri;
+      try {
+        uri = new URL(dotenvKey);
+      } catch (error) {
+        if (error.code === "ERR_INVALID_URL") {
+          const err = new Error("INVALID_DOTENV_KEY: Wrong format. Must be in valid uri format like dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development");
+          err.code = "INVALID_DOTENV_KEY";
+          throw err;
+        }
+        throw error;
+      }
+      const key = uri.password;
+      if (!key) {
+        const err = new Error("INVALID_DOTENV_KEY: Missing key part");
+        err.code = "INVALID_DOTENV_KEY";
+        throw err;
+      }
+      const environment = uri.searchParams.get("environment");
+      if (!environment) {
+        const err = new Error("INVALID_DOTENV_KEY: Missing environment part");
+        err.code = "INVALID_DOTENV_KEY";
+        throw err;
+      }
+      const environmentKey = `DOTENV_VAULT_${environment.toUpperCase()}`;
+      const ciphertext = result.parsed[environmentKey];
+      if (!ciphertext) {
+        const err = new Error(`NOT_FOUND_DOTENV_ENVIRONMENT: Cannot locate environment ${environmentKey} in your .env.vault file.`);
+        err.code = "NOT_FOUND_DOTENV_ENVIRONMENT";
+        throw err;
+      }
+      return { ciphertext, key };
+    }
+    function _vaultPath(options) {
+      let possibleVaultPath = null;
+      if (options && options.path && options.path.length > 0) {
+        if (Array.isArray(options.path)) {
+          for (const filepath of options.path) {
+            if (fs4.existsSync(filepath)) {
+              possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
+            }
+          }
+        } else {
+          possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
+        }
+      } else {
+        possibleVaultPath = path3.resolve(process.cwd(), ".env.vault");
+      }
+      if (fs4.existsSync(possibleVaultPath)) {
+        return possibleVaultPath;
+      }
+      return null;
+    }
+    function _resolveHome(envPath) {
+      return envPath[0] === "~" ? path3.join(os4.homedir(), envPath.slice(1)) : envPath;
+    }
+    function _configVault(options) {
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (debug || !quiet) {
+        _log("Loading env from encrypted .env.vault");
+      }
+      const parsed = DotenvModule._parseVault(options);
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsed, options);
+      return { parsed };
+    }
+    function configDotenv(options) {
+      const dotenvPath = path3.resolve(process.cwd(), ".env");
+      let encoding = "utf8";
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (options && options.encoding) {
+        encoding = options.encoding;
+      } else {
+        if (debug) {
+          _debug("No encoding is specified. UTF-8 is used by default");
+        }
+      }
+      let optionPaths = [dotenvPath];
+      if (options && options.path) {
+        if (!Array.isArray(options.path)) {
+          optionPaths = [_resolveHome(options.path)];
+        } else {
+          optionPaths = [];
+          for (const filepath of options.path) {
+            optionPaths.push(_resolveHome(filepath));
+          }
+        }
+      }
+      let lastError;
+      const parsedAll = {};
+      for (const path4 of optionPaths) {
+        try {
+          const parsed = DotenvModule.parse(fs4.readFileSync(path4, { encoding }));
+          DotenvModule.populate(parsedAll, parsed, options);
+        } catch (e) {
+          if (debug) {
+            _debug(`Failed to load ${path4} ${e.message}`);
+          }
+          lastError = e;
+        }
+      }
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsedAll, options);
+      if (debug || !quiet) {
+        const keysCount = Object.keys(parsedAll).length;
+        const shortPaths = [];
+        for (const filePath of optionPaths) {
+          try {
+            const relative = path3.relative(process.cwd(), filePath);
+            shortPaths.push(relative);
+          } catch (e) {
+            if (debug) {
+              _debug(`Failed to load ${filePath} ${e.message}`);
+            }
+            lastError = e;
+          }
+        }
+        _log(`injecting env (${keysCount}) from ${shortPaths.join(",")}`);
+      }
+      if (lastError) {
+        return { parsed: parsedAll, error: lastError };
+      } else {
+        return { parsed: parsedAll };
+      }
+    }
+    function config(options) {
+      if (_dotenvKey(options).length === 0) {
+        return DotenvModule.configDotenv(options);
+      }
+      const vaultPath = _vaultPath(options);
+      if (!vaultPath) {
+        _warn(`You set DOTENV_KEY but you are missing a .env.vault file at ${vaultPath}. Did you forget to build it?`);
+        return DotenvModule.configDotenv(options);
+      }
+      return DotenvModule._configVault(options);
+    }
+    function decrypt(encrypted, keyStr) {
+      const key = Buffer.from(keyStr.slice(-64), "hex");
+      let ciphertext = Buffer.from(encrypted, "base64");
+      const nonce = ciphertext.subarray(0, 12);
+      const authTag = ciphertext.subarray(-16);
+      ciphertext = ciphertext.subarray(12, -16);
+      try {
+        const aesgcm = crypto.createDecipheriv("aes-256-gcm", key, nonce);
+        aesgcm.setAuthTag(authTag);
+        return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
+      } catch (error) {
+        const isRange = error instanceof RangeError;
+        const invalidKeyLength = error.message === "Invalid key length";
+        const decryptionFailed = error.message === "Unsupported state or unable to authenticate data";
+        if (isRange || invalidKeyLength) {
+          const err = new Error("INVALID_DOTENV_KEY: It must be 64 characters long (or more)");
+          err.code = "INVALID_DOTENV_KEY";
+          throw err;
+        } else if (decryptionFailed) {
+          const err = new Error("DECRYPTION_FAILED: Please check your DOTENV_KEY");
+          err.code = "DECRYPTION_FAILED";
+          throw err;
+        } else {
+          throw error;
+        }
+      }
+    }
+    function populate(processEnv, parsed, options = {}) {
+      const debug = Boolean(options && options.debug);
+      const override = Boolean(options && options.override);
+      if (typeof parsed !== "object") {
+        const err = new Error("OBJECT_REQUIRED: Please check the processEnv argument being passed to populate");
+        err.code = "OBJECT_REQUIRED";
+        throw err;
+      }
+      for (const key of Object.keys(parsed)) {
+        if (Object.prototype.hasOwnProperty.call(processEnv, key)) {
+          if (override === true) {
+            processEnv[key] = parsed[key];
+          }
+          if (debug) {
+            if (override === true) {
+              _debug(`"${key}" is already defined and WAS overwritten`);
+            } else {
+              _debug(`"${key}" is already defined and was NOT overwritten`);
+            }
+          }
+        } else {
+          processEnv[key] = parsed[key];
+        }
+      }
+    }
+    var DotenvModule = {
+      configDotenv,
+      _configVault,
+      _parseVault,
+      config,
+      decrypt,
+      parse,
+      populate
+    };
+    module2.exports.configDotenv = DotenvModule.configDotenv;
+    module2.exports._configVault = DotenvModule._configVault;
+    module2.exports._parseVault = DotenvModule._parseVault;
+    module2.exports.config = DotenvModule.config;
+    module2.exports.decrypt = DotenvModule.decrypt;
+    module2.exports.parse = DotenvModule.parse;
+    module2.exports.populate = DotenvModule.populate;
+    module2.exports = DotenvModule;
+  }
+});
+
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/env-options.js
+var require_env_options = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/env-options.js"(exports2, module2) {
+    var options = {};
+    if (process.env.DOTENV_CONFIG_ENCODING != null) {
+      options.encoding = process.env.DOTENV_CONFIG_ENCODING;
+    }
+    if (process.env.DOTENV_CONFIG_PATH != null) {
+      options.path = process.env.DOTENV_CONFIG_PATH;
+    }
+    if (process.env.DOTENV_CONFIG_QUIET != null) {
+      options.quiet = process.env.DOTENV_CONFIG_QUIET;
+    }
+    if (process.env.DOTENV_CONFIG_DEBUG != null) {
+      options.debug = process.env.DOTENV_CONFIG_DEBUG;
+    }
+    if (process.env.DOTENV_CONFIG_OVERRIDE != null) {
+      options.override = process.env.DOTENV_CONFIG_OVERRIDE;
+    }
+    if (process.env.DOTENV_CONFIG_DOTENV_KEY != null) {
+      options.DOTENV_KEY = process.env.DOTENV_CONFIG_DOTENV_KEY;
+    }
+    module2.exports = options;
+  }
+});
+
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/cli-options.js
+var require_cli_options = __commonJS({
+  "../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/cli-options.js"(exports2, module2) {
+    var re = /^dotenv_config_(encoding|path|quiet|debug|override|DOTENV_KEY)=(.+)$/;
+    module2.exports = function optionMatcher(args) {
+      const options = args.reduce(function(acc, cur) {
+        const matches = cur.match(re);
+        if (matches) {
+          acc[matches[1]] = matches[2];
+        }
+        return acc;
+      }, {});
+      if (!("quiet" in options)) {
+        options.quiet = "true";
+      }
+      return options;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/constants.js"(exports2, module2) {
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
@@ -27,9 +452,9 @@ var require_constants = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/buffer-util.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/buffer-util.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/buffer-util.js"(exports2, module2) {
     "use strict";
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
@@ -102,9 +527,9 @@ var require_buffer_util = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/limiter.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/limiter.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/limiter.js"(exports2, module2) {
     "use strict";
     var kDone = /* @__PURE__ */ Symbol("kDone");
     var kRun = /* @__PURE__ */ Symbol("kRun");
@@ -152,9 +577,9 @@ var require_limiter = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/permessage-deflate.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/permessage-deflate.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/permessage-deflate.js"(exports2, module2) {
     "use strict";
     var zlib = require("zlib");
     var bufferUtil = require_buffer_util();
@@ -168,7 +593,7 @@ var require_permessage_deflate = __commonJS({
     var kBuffers = /* @__PURE__ */ Symbol("buffers");
     var kError = /* @__PURE__ */ Symbol("error");
     var zlibLimiter;
-    var PerMessageDeflate = class {
+    var PerMessageDeflate2 = class {
       /**
        * Creates a PerMessageDeflate instance.
        *
@@ -506,7 +931,7 @@ var require_permessage_deflate = __commonJS({
         });
       }
     };
-    module2.exports = PerMessageDeflate;
+    module2.exports = PerMessageDeflate2;
     function deflateOnData(chunk) {
       this[kBuffers].push(chunk);
       this[kTotalLength] += chunk.length;
@@ -535,9 +960,9 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/validation.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/validation.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/validation.js"(exports2, module2) {
     "use strict";
     var { isUtf8 } = require("buffer");
     var { hasBlob } = require_constants();
@@ -736,12 +1161,12 @@ var require_validation = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/receiver.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/receiver.js
 var require_receiver = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/receiver.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/receiver.js"(exports2, module2) {
     "use strict";
     var { Writable } = require("stream");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var {
       BINARY_TYPES,
       EMPTY_BUFFER,
@@ -758,7 +1183,7 @@ var require_receiver = __commonJS({
     var GET_DATA = 4;
     var INFLATING = 5;
     var DEFER_EVENT = 6;
-    var Receiver = class extends Writable {
+    var Receiver2 = class extends Writable {
       /**
        * Creates a Receiver instance.
        *
@@ -926,7 +1351,7 @@ var require_receiver = __commonJS({
           return;
         }
         const compressed = (buf[0] & 64) === 64;
-        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+        if (compressed && !this._extensions[PerMessageDeflate2.extensionName]) {
           const error = this.createError(
             RangeError,
             "RSV1 must be clear",
@@ -1181,7 +1606,7 @@ var require_receiver = __commonJS({
        * @private
        */
       decompress(data, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         perMessageDeflate.decompress(data, this._fin, (err, buf) => {
           if (err) return cb(err);
           if (buf.length) {
@@ -1364,20 +1789,20 @@ var require_receiver = __commonJS({
         return err;
       }
     };
-    module2.exports = Receiver;
+    module2.exports = Receiver2;
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/sender.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/sender.js
 var require_sender = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/sender.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/sender.js"(exports2, module2) {
     "use strict";
     var { Duplex } = require("stream");
     var { randomFillSync } = require("crypto");
     var {
       types: { isUint8Array }
     } = require("util");
-    var PerMessageDeflate = require_permessage_deflate();
+    var PerMessageDeflate2 = require_permessage_deflate();
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
     var { isBlob, isValidStatusCode } = require_validation();
     var { mask: applyMask, toBuffer } = require_buffer_util();
@@ -1389,7 +1814,7 @@ var require_sender = __commonJS({
     var DEFAULT = 0;
     var DEFLATING = 1;
     var GET_BLOB_DATA = 2;
-    var Sender = class _Sender {
+    var Sender2 = class _Sender {
       /**
        * Creates a Sender instance.
        *
@@ -1663,7 +2088,7 @@ var require_sender = __commonJS({
        * @public
        */
       send(data, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
@@ -1787,7 +2212,7 @@ var require_sender = __commonJS({
           this.sendFrame(_Sender.frame(data, options), cb);
           return;
         }
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate = this._extensions[PerMessageDeflate2.extensionName];
         this._bufferedBytes += options[kByteLength];
         this._state = DEFLATING;
         perMessageDeflate.compress(data, options.fin, (_, buf) => {
@@ -1845,7 +2270,7 @@ var require_sender = __commonJS({
         }
       }
     };
-    module2.exports = Sender;
+    module2.exports = Sender2;
     function callCallbacks(sender, err, cb) {
       if (typeof cb === "function") cb(err);
       for (let i = 0; i < sender._queue.length; i++) {
@@ -1861,9 +2286,9 @@ var require_sender = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/event-target.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/event-target.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/event-target.js"(exports2, module2) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
     var kCode = /* @__PURE__ */ Symbol("kCode");
@@ -2090,9 +2515,9 @@ var require_event_target = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/extension.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/extension.js
 var require_extension = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/extension.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/extension.js"(exports2, module2) {
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name, elem) {
@@ -2225,11 +2650,11 @@ var require_extension = __commonJS({
       return offers;
     }
     function format(extensions) {
-      return Object.keys(extensions).map((extension) => {
-        let configurations = extensions[extension];
+      return Object.keys(extensions).map((extension2) => {
+        let configurations = extensions[extension2];
         if (!Array.isArray(configurations)) configurations = [configurations];
         return configurations.map((params) => {
-          return [extension].concat(
+          return [extension2].concat(
             Object.keys(params).map((k) => {
               let values = params[k];
               if (!Array.isArray(values)) values = [values];
@@ -2243,21 +2668,21 @@ var require_extension = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket.js
 var require_websocket = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket.js"(exports2, module2) {
     "use strict";
     var EventEmitter = require("events");
     var https = require("https");
     var http = require("http");
-    var net2 = require("net");
+    var net = require("net");
     var tls = require("tls");
     var { randomBytes, createHash } = require("crypto");
     var { Duplex, Readable } = require("stream");
-    var { URL } = require("url");
-    var PerMessageDeflate = require_permessage_deflate();
-    var Receiver = require_receiver();
-    var Sender = require_sender();
+    var { URL: URL2 } = require("url");
+    var PerMessageDeflate2 = require_permessage_deflate();
+    var Receiver2 = require_receiver();
+    var Sender2 = require_sender();
     var { isBlob } = require_validation();
     var {
       BINARY_TYPES,
@@ -2424,7 +2849,7 @@ var require_websocket = __commonJS({
        * @private
        */
       setSocket(socket, head, options) {
-        const receiver = new Receiver({
+        const receiver = new Receiver2({
           allowSynchronousEvents: options.allowSynchronousEvents,
           binaryType: this.binaryType,
           extensions: this._extensions,
@@ -2434,7 +2859,7 @@ var require_websocket = __commonJS({
           maxPayload: options.maxPayload,
           skipUTF8Validation: options.skipUTF8Validation
         });
-        const sender = new Sender(socket, this._extensions, options.generateMask);
+        const sender = new Sender2(socket, this._extensions, options.generateMask);
         this._receiver = receiver;
         this._sender = sender;
         this._socket = socket;
@@ -2469,8 +2894,8 @@ var require_websocket = __commonJS({
           this.emit("close", this._closeCode, this._closeMessage);
           return;
         }
-        if (this._extensions[PerMessageDeflate.extensionName]) {
-          this._extensions[PerMessageDeflate.extensionName].cleanup();
+        if (this._extensions[PerMessageDeflate2.extensionName]) {
+          this._extensions[PerMessageDeflate2.extensionName].cleanup();
         }
         this._receiver.removeAllListeners();
         this._readyState = _WebSocket.CLOSED;
@@ -2632,7 +3057,7 @@ var require_websocket = __commonJS({
           fin: true,
           ...options
         };
-        if (!this._extensions[PerMessageDeflate.extensionName]) {
+        if (!this._extensions[PerMessageDeflate2.extensionName]) {
           opts.compress = false;
         }
         this._sender.send(data || EMPTY_BUFFER, opts, cb);
@@ -2755,11 +3180,11 @@ var require_websocket = __commonJS({
         );
       }
       let parsedUrl;
-      if (address instanceof URL) {
+      if (address instanceof URL2) {
         parsedUrl = address;
       } else {
         try {
-          parsedUrl = new URL(address);
+          parsedUrl = new URL2(address);
         } catch {
           throw new SyntaxError(`Invalid URL: ${address}`);
         }
@@ -2808,13 +3233,13 @@ var require_websocket = __commonJS({
       opts.path = parsedUrl.pathname + parsedUrl.search;
       opts.timeout = opts.handshakeTimeout;
       if (opts.perMessageDeflate) {
-        perMessageDeflate = new PerMessageDeflate({
+        perMessageDeflate = new PerMessageDeflate2({
           ...opts.perMessageDeflate,
           isServer: false,
           maxPayload: opts.maxPayload
         });
         opts.headers["Sec-WebSocket-Extensions"] = format({
-          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+          [PerMessageDeflate2.extensionName]: perMessageDeflate.offer()
         });
       }
       if (protocols.length) {
@@ -2896,7 +3321,7 @@ var require_websocket = __commonJS({
           req.abort();
           let addr;
           try {
-            addr = new URL(location, address);
+            addr = new URL2(location, address);
           } catch (e) {
             const err = new SyntaxError(`Invalid URL: ${location}`);
             emitErrorAndClose(websocket, err);
@@ -2957,19 +3382,19 @@ var require_websocket = __commonJS({
             return;
           }
           const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
             const message = "Server indicated an extension that was not requested";
             abortHandshake(websocket, socket, message);
             return;
           }
           try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+            perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
             return;
           }
-          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+          websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
         }
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
@@ -2994,12 +3419,12 @@ var require_websocket = __commonJS({
     }
     function netConnect(options) {
       options.path = options.socketPath;
-      return net2.connect(options);
+      return net.connect(options);
     }
     function tlsConnect(options) {
       options.path = void 0;
       if (!options.servername && options.servername !== "") {
-        options.servername = net2.isIP(options.host) ? "" : options.host;
+        options.servername = net.isIP(options.host) ? "" : options.host;
       }
       return tls.connect(options);
     }
@@ -3139,9 +3564,9 @@ var require_websocket = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/stream.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/stream.js
 var require_stream = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/stream.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/stream.js"(exports2, module2) {
     "use strict";
     var WebSocket2 = require_websocket();
     var { Duplex } = require("stream");
@@ -3160,7 +3585,7 @@ var require_stream = __commonJS({
         this.emit("error", err);
       }
     }
-    function createWebSocketStream(ws2, options) {
+    function createWebSocketStream2(ws, options) {
       let terminateOnDestroy = true;
       const duplex = new Duplex({
         ...options,
@@ -3169,77 +3594,77 @@ var require_stream = __commonJS({
         objectMode: false,
         writableObjectMode: false
       });
-      ws2.on("message", function message(msg, isBinary) {
+      ws.on("message", function message(msg, isBinary) {
         const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
-        if (!duplex.push(data)) ws2.pause();
+        if (!duplex.push(data)) ws.pause();
       });
-      ws2.once("error", function error(err) {
+      ws.once("error", function error(err) {
         if (duplex.destroyed) return;
         terminateOnDestroy = false;
         duplex.destroy(err);
       });
-      ws2.once("close", function close() {
+      ws.once("close", function close() {
         if (duplex.destroyed) return;
         duplex.push(null);
       });
       duplex._destroy = function(err, callback) {
-        if (ws2.readyState === ws2.CLOSED) {
+        if (ws.readyState === ws.CLOSED) {
           callback(err);
           process.nextTick(emitClose, duplex);
           return;
         }
         let called = false;
-        ws2.once("error", function error(err2) {
+        ws.once("error", function error(err2) {
           called = true;
           callback(err2);
         });
-        ws2.once("close", function close() {
+        ws.once("close", function close() {
           if (!called) callback(err);
           process.nextTick(emitClose, duplex);
         });
-        if (terminateOnDestroy) ws2.terminate();
+        if (terminateOnDestroy) ws.terminate();
       };
       duplex._final = function(callback) {
-        if (ws2.readyState === ws2.CONNECTING) {
-          ws2.once("open", function open() {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
             duplex._final(callback);
           });
           return;
         }
-        if (ws2._socket === null) return;
-        if (ws2._socket._writableState.finished) {
+        if (ws._socket === null) return;
+        if (ws._socket._writableState.finished) {
           callback();
           if (duplex._readableState.endEmitted) duplex.destroy();
         } else {
-          ws2._socket.once("finish", function finish() {
+          ws._socket.once("finish", function finish() {
             callback();
           });
-          ws2.close();
+          ws.close();
         }
       };
       duplex._read = function() {
-        if (ws2.isPaused) ws2.resume();
+        if (ws.isPaused) ws.resume();
       };
       duplex._write = function(chunk, encoding, callback) {
-        if (ws2.readyState === ws2.CONNECTING) {
-          ws2.once("open", function open() {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
             duplex._write(chunk, encoding, callback);
           });
           return;
         }
-        ws2.send(chunk, callback);
+        ws.send(chunk, callback);
       };
       duplex.on("end", duplexOnEnd);
       duplex.on("error", duplexOnError);
       return duplex;
     }
-    module2.exports = createWebSocketStream;
+    module2.exports = createWebSocketStream2;
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/subprotocol.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/subprotocol.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/subprotocol.js"(exports2, module2) {
     "use strict";
     var { tokenChars } = require_validation();
     function parse(header) {
@@ -3282,24 +3707,24 @@ var require_subprotocol = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket-server.js
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket-server.js"(exports2, module2) {
+  "../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/lib/websocket-server.js"(exports2, module2) {
     "use strict";
     var EventEmitter = require("events");
     var http = require("http");
     var { Duplex } = require("stream");
     var { createHash } = require("crypto");
-    var extension = require_extension();
-    var PerMessageDeflate = require_permessage_deflate();
-    var subprotocol = require_subprotocol();
+    var extension2 = require_extension();
+    var PerMessageDeflate2 = require_permessage_deflate();
+    var subprotocol2 = require_subprotocol();
     var WebSocket2 = require_websocket();
     var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
     var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
     var RUNNING = 0;
     var CLOSING = 1;
     var CLOSED = 2;
-    var WebSocketServer = class extends EventEmitter {
+    var WebSocketServer2 = class extends EventEmitter {
       /**
        * Create a `WebSocketServer` instance.
        *
@@ -3521,7 +3946,7 @@ var require_websocket_server = __commonJS({
         let protocols = /* @__PURE__ */ new Set();
         if (secWebSocketProtocol !== void 0) {
           try {
-            protocols = subprotocol.parse(secWebSocketProtocol);
+            protocols = subprotocol2.parse(secWebSocketProtocol);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Protocol header";
             abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
@@ -3531,16 +3956,16 @@ var require_websocket_server = __commonJS({
         const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
         const extensions = {};
         if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
-          const perMessageDeflate = new PerMessageDeflate({
+          const perMessageDeflate = new PerMessageDeflate2({
             ...this.options.perMessageDeflate,
             isServer: true,
             maxPayload: this.options.maxPayload
           });
           try {
-            const offers = extension.parse(secWebSocketExtensions);
-            if (offers[PerMessageDeflate.extensionName]) {
-              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
-              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+            const offers = extension2.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate2.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate2.extensionName]);
+              extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
             }
           } catch (err) {
             const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
@@ -3603,26 +4028,26 @@ var require_websocket_server = __commonJS({
           "Connection: Upgrade",
           `Sec-WebSocket-Accept: ${digest}`
         ];
-        const ws2 = new this.options.WebSocket(null, void 0, this.options);
+        const ws = new this.options.WebSocket(null, void 0, this.options);
         if (protocols.size) {
           const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
           if (protocol) {
             headers.push(`Sec-WebSocket-Protocol: ${protocol}`);
-            ws2._protocol = protocol;
+            ws._protocol = protocol;
           }
         }
-        if (extensions[PerMessageDeflate.extensionName]) {
-          const params = extensions[PerMessageDeflate.extensionName].params;
-          const value = extension.format({
-            [PerMessageDeflate.extensionName]: [params]
+        if (extensions[PerMessageDeflate2.extensionName]) {
+          const params = extensions[PerMessageDeflate2.extensionName].params;
+          const value = extension2.format({
+            [PerMessageDeflate2.extensionName]: [params]
           });
           headers.push(`Sec-WebSocket-Extensions: ${value}`);
-          ws2._extensions = extensions;
+          ws._extensions = extensions;
         }
         this.emit("headers", headers, req);
         socket.write(headers.concat("\r\n").join("\r\n"));
         socket.removeListener("error", socketOnError);
-        ws2.setSocket(socket, head, {
+        ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
           maxBufferedChunks: this.options.maxBufferedChunks,
           maxFragments: this.options.maxFragments,
@@ -3630,18 +4055,18 @@ var require_websocket_server = __commonJS({
           skipUTF8Validation: this.options.skipUTF8Validation
         });
         if (this.clients) {
-          this.clients.add(ws2);
-          ws2.on("close", () => {
-            this.clients.delete(ws2);
+          this.clients.add(ws);
+          ws.on("close", () => {
+            this.clients.delete(ws);
             if (this._shouldEmitClose && !this.clients.size) {
               process.nextTick(emitClose, this);
             }
           });
         }
-        cb(ws2, req);
+        cb(ws, req);
       }
     };
-    module2.exports = WebSocketServer;
+    module2.exports = WebSocketServer2;
     function addListeners(server, map) {
       for (const event of Object.keys(map)) server.on(event, map[event]);
       return function removeListeners() {
@@ -3683,678 +4108,2039 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// node_modules/.pnpm/ws@8.21.0/node_modules/ws/index.js
-var require_ws = __commonJS({
-  "node_modules/.pnpm/ws@8.21.0/node_modules/ws/index.js"(exports2, module2) {
-    "use strict";
-    var createWebSocketStream = require_stream();
-    var extension = require_extension();
-    var PerMessageDeflate = require_permessage_deflate();
-    var Receiver = require_receiver();
-    var Sender = require_sender();
-    var subprotocol = require_subprotocol();
-    var WebSocket2 = require_websocket();
-    var WebSocketServer = require_websocket_server();
-    WebSocket2.createWebSocketStream = createWebSocketStream;
-    WebSocket2.extension = extension;
-    WebSocket2.PerMessageDeflate = PerMessageDeflate;
-    WebSocket2.Receiver = Receiver;
-    WebSocket2.Sender = Sender;
-    WebSocket2.Server = WebSocketServer;
-    WebSocket2.subprotocol = subprotocol;
-    WebSocket2.WebSocket = WebSocket2;
-    WebSocket2.WebSocketServer = WebSocketServer;
-    module2.exports = WebSocket2;
-  }
-});
+// ../../node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/config.js
+(function() {
+  require_main().config(
+    Object.assign(
+      {},
+      require_env_options(),
+      require_cli_options()(process.argv)
+    )
+  );
+})();
 
-// packages/headless-agent/agent.js
-var WebSocket = require_ws();
-var os = require("os");
-var fs = require("fs");
-var path = require("path");
-var net = require("net");
-var { exec, spawn, execSync } = require("child_process");
-var CONFIG_DIR = process.env.APPDATA ? path.join(process.env.APPDATA, "airemote") : path.join(os.homedir(), ".airemote");
-var CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
-var HEARTBEAT_MS = 1e4;
-var RECONNECT_BASE = 2e3;
-var RECONNECT_MAX = 3e4;
-var VERSION = "3.0.0";
-var CONSENT_TIMEOUT_SEC = parseInt(process.env.AGENT_CONSENT_TIMEOUT || "30", 10);
-var ws = null;
-var deviceId = null;
-var heartbeatTimer = null;
-var reconnectTimer = null;
-var reconnectDelay = RECONNECT_BASE;
-var running = true;
-var config = loadConfig();
-var sshAvailable = false;
-var dockerAvailable = false;
-var _netLast = { rx: 0, tx: 0, t: 0 };
-var ptyProcs = /* @__PURE__ */ new Map();
-var writeChunkBufs = /* @__PURE__ */ new Map();
-function loadConfig() {
-  const args = process.argv.slice(2);
-  const get = (flag) => {
-    const i = args.indexOf(flag);
-    return i !== -1 ? args[i + 1] : null;
-  };
-  const cliServer = get("--server");
-  const cliToken = get("--token");
-  const envServer = process.env.SERVER_URL;
-  const envToken = process.env.DEVICE_TOKEN;
-  let fileCfg = {};
-  try {
-    if (fs.existsSync(CONFIG_FILE))
-      fileCfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
-  } catch {
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs
+var import_stream = __toESM(require_stream(), 1);
+var import_extension = __toESM(require_extension(), 1);
+var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
+var import_receiver = __toESM(require_receiver(), 1);
+var import_sender = __toESM(require_sender(), 1);
+var import_subprotocol = __toESM(require_subprotocol(), 1);
+var import_websocket = __toESM(require_websocket(), 1);
+var import_websocket_server = __toESM(require_websocket_server(), 1);
+var wrapper_default = import_websocket.default;
+
+// src/agent.ts
+var import_child_process5 = require("child_process");
+var import_promises2 = __toESM(require("fs/promises"));
+var import_path2 = __toESM(require("path"));
+
+// src/system/info.ts
+var import_os = __toESM(require("os"));
+async function getDeviceInfo() {
+  const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+  const networkInterfaces = import_os.default.networkInterfaces();
+  let ipLocal = "127.0.0.1";
+  for (const [, ifaces] of Object.entries(networkInterfaces)) {
+    if (!ifaces) continue;
+    for (const iface of ifaces) {
+      if (!iface.internal && iface.family === "IPv4") {
+        ipLocal = iface.address;
+        break;
+      }
+    }
+    if (ipLocal !== "127.0.0.1") break;
   }
   return {
-    serverUrl: cliServer || envServer || fileCfg.serverUrl || "",
-    token: cliToken || envToken || fileCfg.token || ""
+    id: "",
+    name: process.env.DEVICE_NAME || import_os.default.hostname(),
+    hostname: import_os.default.hostname(),
+    platform,
+    arch: import_os.default.arch(),
+    osVersion: `${import_os.default.type()} ${import_os.default.release()}`,
+    ipLocal,
+    agentVersion: "1.0.0"
   };
 }
-function saveConfig(cfg) {
-  try {
-    if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf8");
-    log("info", `\u{1F4BE} Config saved: ${CONFIG_FILE}`);
-  } catch (e) {
-    log("warn", `Could not save config: ${e.message}`);
-  }
+
+// src/system/stats.ts
+var import_os2 = __toESM(require("os"));
+var import_fs = __toESM(require("fs"));
+var import_child_process = require("child_process");
+var lastNetworkBytes = { rx: 0, tx: 0, time: Date.now() };
+var networkInitialized = false;
+async function getDeviceStats() {
+  const cpuPercent = await getCpuUsage();
+  const memInfo = getMemoryInfo();
+  const diskInfo = getDiskInfo();
+  const networkInfo = getNetworkInfo();
+  return {
+    cpuPercent,
+    ramPercent: memInfo.percent,
+    ramUsedMb: memInfo.usedMb,
+    ramTotalMb: memInfo.totalMb,
+    diskPercent: diskInfo.percent,
+    diskUsedGb: diskInfo.usedGb,
+    diskTotalGb: diskInfo.totalGb,
+    networkUpKbps: networkInfo.upKbps,
+    networkDownKbps: networkInfo.downKbps,
+    uptime: Math.floor(import_os2.default.uptime())
+  };
 }
-function log(level, msg) {
-  const ts = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 19);
-  const icon = level === "error" ? "\u2716" : level === "warn" ? "\u26A0" : "\u25CF";
-  console.log(`[${ts}] ${icon} ${msg}`);
-}
-function detectDocker() {
+function getCpuUsage() {
   return new Promise((resolve) => {
-    const proc = spawn("docker", ["--version"], {
-      stdio: "ignore",
-      shell: process.platform === "win32",
-      windowsHide: true
-    });
-    const timer = setTimeout(() => {
-      try {
-        proc.kill();
-      } catch {
+    const cpus1 = import_os2.default.cpus();
+    setTimeout(() => {
+      const cpus2 = import_os2.default.cpus();
+      let totalIdle = 0;
+      let totalTick = 0;
+      for (let i = 0; i < cpus1.length; i++) {
+        const cpu1 = cpus1[i];
+        const cpu2 = cpus2[i];
+        const idle = cpu2.times.idle - cpu1.times.idle;
+        const total = cpu2.times.user - cpu1.times.user + (cpu2.times.nice - cpu1.times.nice) + (cpu2.times.sys - cpu1.times.sys) + (cpu2.times.irq - cpu1.times.irq) + idle;
+        totalIdle += idle;
+        totalTick += total;
       }
-      ;
-      resolve(false);
-    }, 3e3);
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolve(code === 0);
-    });
-    proc.on("error", () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
+      const percent = totalTick === 0 ? 0 : Math.round((1 - totalIdle / totalTick) * 100);
+      resolve(Math.min(100, Math.max(0, percent)));
+    }, 100);
   });
 }
-function getIpLocal() {
-  const nets = os.networkInterfaces();
-  for (const ifaces of Object.values(nets)) {
-    for (const iface of ifaces) {
-      if (!iface.internal && iface.family === "IPv4") return iface.address;
+function getMemoryInfo() {
+  const totalMb = Math.round(import_os2.default.totalmem() / 1024 / 1024);
+  const freeMb = Math.round(import_os2.default.freemem() / 1024 / 1024);
+  const usedMb = totalMb - freeMb;
+  const percent = Math.round(usedMb / totalMb * 100);
+  return { totalMb, usedMb, freeMb, percent };
+}
+function getDiskInfo() {
+  try {
+    if (process.platform === "win32") {
+      const out = (0, import_child_process.execSync)(
+        `wmic logicaldisk where "DeviceID='C:'" get Size,FreeSpace /value`,
+        { timeout: 5e3, stdio: ["pipe", "pipe", "ignore"] }
+      ).toString();
+      const freeMatch = out.match(/FreeSpace=(\d+)/);
+      const sizeMatch = out.match(/Size=(\d+)/);
+      if (freeMatch && sizeMatch) {
+        const total = parseInt(sizeMatch[1]);
+        const free = parseInt(freeMatch[1]);
+        const used = total - free;
+        return {
+          totalGb: Math.round(total / 1073741824 * 10) / 10,
+          usedGb: Math.round(used / 1073741824 * 10) / 10,
+          percent: Math.round(used / total * 100)
+        };
+      }
+    } else {
+      const out = (0, import_child_process.execSync)("df -k /", { timeout: 5e3, stdio: ["pipe", "pipe", "ignore"] }).toString();
+      const lines = out.trim().split("\n");
+      const dataLine = lines.find((l, i) => i > 0 && /\d+/.test(l));
+      if (dataLine) {
+        const parts = dataLine.trim().split(/\s+/);
+        const totalKb = parseInt(parts[1]);
+        const usedKb = parseInt(parts[2]);
+        const pctStr = parts[4]?.replace("%", "");
+        const percent = pctStr ? parseInt(pctStr) : Math.round(usedKb / totalKb * 100);
+        return {
+          totalGb: Math.round(totalKb / 1048576 * 10) / 10,
+          usedGb: Math.round(usedKb / 1048576 * 10) / 10,
+          percent: isNaN(percent) ? 0 : percent
+        };
+      }
     }
+  } catch {
   }
-  return "127.0.0.1";
+  return { percent: 0, usedGb: 0, totalGb: 0 };
 }
-function detectPlatform() {
-  const p = process.platform;
-  if (p === "win32") return "windows";
-  if (p === "darwin") return "macos";
-  return "linux";
-}
-function getDeviceInfo() {
-  return {
-    hostname: os.hostname(),
-    platform: detectPlatform(),
-    arch: os.arch(),
-    osVersion: `${os.type()} ${os.release()}`,
-    ipLocal: getIpLocal(),
-    ipPublic: "",
-    agentVersion: VERSION
-  };
-}
-function readNetBytes() {
+function readRawNetworkBytes() {
   try {
     if (process.platform === "linux") {
-      const lines = fs.readFileSync("/proc/net/dev", "utf8").trim().split("\n").slice(2);
+      const content = import_fs.default.readFileSync("/proc/net/dev", "utf8");
+      const lines = content.trim().split("\n").slice(2);
       let rx = 0, tx = 0;
       for (const line of lines) {
-        const t = line.trim();
-        if (!t) continue;
-        const col = t.indexOf(":");
-        if (col === -1) continue;
-        if (t.slice(0, col).trim() === "lo") continue;
-        const n = t.slice(col + 1).trim().split(/\s+/).map(Number);
-        rx += n[0] || 0;
-        tx += n[8] || 0;
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const colonPos = trimmed.indexOf(":");
+        if (colonPos === -1) continue;
+        const iface = trimmed.slice(0, colonPos).trim();
+        if (iface === "lo") continue;
+        const nums = trimmed.slice(colonPos + 1).trim().split(/\s+/).map(Number);
+        rx += nums[0] || 0;
+        tx += nums[8] || 0;
       }
       return { rx, tx };
     }
     if (process.platform === "darwin") {
-      const lines = execSync("netstat -ib", { timeout: 3e3 }).toString().split("\n");
+      const out = (0, import_child_process.execSync)("netstat -ib", { timeout: 3e3, stdio: ["pipe", "pipe", "ignore"] }).toString();
+      const lines = out.trim().split("\n").slice(1);
       let rx = 0, tx = 0;
       const seen = /* @__PURE__ */ new Set();
-      for (const line of lines.slice(1)) {
-        const p = line.trim().split(/\s+/);
-        if (p.length < 10) continue;
-        const iface = p[0].replace(/\d+$/, "");
-        if (seen.has(iface) || iface === "lo") continue;
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        const iface = parts[0];
+        if (iface.startsWith("lo") || seen.has(iface)) continue;
         seen.add(iface);
-        rx += parseInt(p[6]) || 0;
-        tx += parseInt(p[9]) || 0;
+        rx += parseInt(parts[6]) || 0;
+        tx += parseInt(parts[9]) || 0;
       }
       return { rx, tx };
     }
     if (process.platform === "win32") {
-      const out = execSync("netstat -e", { timeout: 3e3 }).toString();
-      const line = out.split("\n").find((l) => /^\s*bytes\s+\d/i.test(l));
-      if (line) {
-        const p = line.trim().split(/\s+/);
-        return { rx: parseInt(p[1]) || 0, tx: parseInt(p[2]) || 0 };
+      try {
+        const out = (0, import_child_process.execSync)("netstat -e", { timeout: 3e3, stdio: ["pipe", "pipe", "ignore"] }).toString();
+        const bytesLine = out.split("\n").find((l) => /^\s*bytes\s+\d/i.test(l));
+        if (bytesLine) {
+          const parts = bytesLine.trim().split(/\s+/);
+          const rx2 = parseInt(parts[1]) || 0;
+          const tx2 = parseInt(parts[2]) || 0;
+          if (rx2 > 0 || tx2 > 0) return { rx: rx2, tx: tx2 };
+        }
+      } catch {
       }
+      const psOut = (0, import_child_process.execSync)(
+        'powershell -NoProfile -Command "$a=Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface;$a|ForEach-Object{$_.BytesReceivedPersec,$_.BytesSentPersec}"',
+        { timeout: 5e3, stdio: ["pipe", "pipe", "ignore"] }
+      ).toString().trim();
+      const nums = psOut.split(/\s+/).map((n) => parseInt(n.replace(/[^\d]/g, "")) || 0);
+      let rx = 0, tx = 0;
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        rx += nums[i];
+        tx += nums[i + 1];
+      }
+      if (rx > 0 || tx > 0) return { rx, tx };
     }
   } catch {
   }
   return { rx: 0, tx: 0 };
 }
-function getNetKbps() {
+function getNetworkInfo() {
   const now = Date.now();
-  const b = readNetBytes();
-  if (_netLast.t === 0) {
-    _netLast = { ...b, t: now };
-    return { up: 0, down: 0 };
+  const bytes = readRawNetworkBytes();
+  if (!networkInitialized) {
+    networkInitialized = true;
+    lastNetworkBytes = { rx: bytes.rx, tx: bytes.tx, time: now };
+    return { downKbps: 0, upKbps: 0 };
   }
-  const elapsed = (now - _netLast.t) / 1e3;
-  if (elapsed < 0.5) return { up: 0, down: 0 };
-  const down = Math.max(0, Math.round((b.rx - _netLast.rx) / elapsed / 1024 * 100) / 100);
-  const up = Math.max(0, Math.round((b.tx - _netLast.tx) / elapsed / 1024 * 100) / 100);
-  _netLast = { ...b, t: now };
-  return { up, down };
+  const elapsed = (now - lastNetworkBytes.time) / 1e3;
+  let downKbps = 0;
+  let upKbps = 0;
+  if (elapsed > 0 && bytes.rx >= lastNetworkBytes.rx && bytes.tx >= lastNetworkBytes.tx) {
+    const rxDiff = bytes.rx - lastNetworkBytes.rx;
+    const txDiff = bytes.tx - lastNetworkBytes.tx;
+    downKbps = Math.max(0, Math.round(rxDiff / elapsed / 1024 * 100) / 100);
+    upKbps = Math.max(0, Math.round(txDiff / elapsed / 1024 * 100) / 100);
+  }
+  lastNetworkBytes = { rx: bytes.rx, tx: bytes.tx, time: now };
+  return { downKbps, upKbps };
 }
-function getCpuPercent() {
-  return new Promise((resolve) => {
-    const c1 = os.cpus();
-    setTimeout(() => {
-      const c2 = os.cpus();
-      let idle = 0, total = 0;
-      for (let i = 0; i < c1.length; i++) {
-        idle += c2[i].times.idle - c1[i].times.idle;
-        total += Object.values(c2[i].times).reduce((a, b) => a + b, 0) - Object.values(c1[i].times).reduce((a, b) => a + b, 0);
-      }
-      resolve(total === 0 ? 0 : Math.round((1 - idle / total) * 100));
-    }, 200);
-  });
-}
-function runCmd(cmd, timeout = 5e3) {
-  return new Promise((resolve, reject) => {
-    exec(cmd, { timeout }, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(stdout);
-    });
-  });
-}
-async function getDiskInfo() {
-  if (process.platform === "win32") {
-    try {
-      const out = await runCmd(
-        'powershell -NoProfile -Command "Get-PSDrive C | Select-Object Used,Free | ConvertTo-Json"',
-        4e3
-      );
-      const d = JSON.parse(out.trim());
-      const used = d.Used || 0, free = d.Free || 1;
+
+// src/system/executor.ts
+var import_child_process2 = require("child_process");
+var import_util = require("util");
+var execAsync = (0, import_util.promisify)(import_child_process2.exec);
+var BLOCKED_PATTERNS = [
+  // Recursive delete of root or home
+  { re: /rm\s+-[rRf]{1,3}\s+\/(\s|$)/, reason: "rm -rf / blocked" },
+  { re: /rm\s+-[rRf]{1,3}\s+~\/(\s|$)/, reason: "rm -rf ~/ blocked" },
+  { re: /rm\s+-[rRf]{1,3}\s+\.\s*$/, reason: "rm -rf . blocked" },
+  // Low-level disk format / wipe
+  { re: /\bmkfs\b/, reason: "mkfs blocked" },
+  { re: /\bdd\b.*\bof=\/dev\/(sd[a-z]|hd[a-z]|nvme[0-9])/i, reason: "dd to disk blocked" },
+  { re: />\s*\/dev\/(sd[a-z]|hd[a-z]|nvme[0-9])/i, reason: "redirect to disk blocked" },
+  // Partition table destruction
+  { re: /\bfdisk\b.*\/dev\//, reason: "fdisk blocked" },
+  { re: /\bparted\b.*\/dev\/.*(rm|mklabel)/, reason: "parted destructive op blocked" },
+  { re: /\bshred\b.*\/dev\//, reason: "shred on device blocked" },
+  // Windows destructive format
+  { re: /\bformat\s+[a-z]:\s*\/[qyp]/i, reason: "Windows format blocked" },
+  // Immediate shutdown / halt
+  { re: /\bshutdown\s+(-h\s+now|\/s\s*\/t\s*0)/i, reason: "immediate shutdown blocked" },
+  { re: /\b(halt|poweroff)\b/, reason: "halt/poweroff blocked" },
+  // Fork bomb
+  { re: /:\(\)\s*\{.*\|.*&\s*\}/, reason: "fork bomb blocked" },
+  // Overwrite critical Linux files
+  {
+    re: />\s*\/(etc\/(passwd|shadow|hosts|sudoers|crontab)|boot\/)/,
+    reason: "overwrite of critical file blocked"
+  },
+  // Remote code execution via pipe (curl/wget | sh/bash)
+  { re: /\b(curl|wget)\b.+\|\s*(ba)?sh\b/i, reason: "curl/wget pipe to shell blocked" },
+  { re: /\b(curl|wget)\b.+\|\s*bash\b/i, reason: "curl pipe to bash blocked" },
+  // Windows registry destruction
+  {
+    re: /\breg\s+(delete|add)\s+HKLM\\(SYSTEM|SOFTWARE|SECURITY|SAM)/i,
+    reason: "Windows registry destruction blocked"
+  },
+  // Wipe Windows system files
+  { re: /\bdel\s+\/[sfq]+\s+%WINDIR%/i, reason: "Windows system dir wipe blocked" },
+  { re: /\brd\s+\/s\s+\/q\s+%WINDIR%/i, reason: "Windows system dir remove blocked" },
+  // chmod 777 on root or system dirs
+  { re: /chmod\s+-R\s+[0-7]*7+\s+\/(\s|$)/, reason: "chmod 777 on / blocked" },
+  { re: /chmod\s+-R\s+[0-7]*7+\s+\/etc\b/, reason: "chmod on /etc blocked" }
+];
+async function executeCommand(command) {
+  const trimmed = command.trim();
+  for (const { re, reason } of BLOCKED_PATTERNS) {
+    if (re.test(trimmed)) {
+      console.warn(`[executor] BLOCKED: ${reason} \u2014 "${trimmed.slice(0, 80)}"`);
       return {
-        pct: Math.round(used / (used + free) * 100),
-        usedGb: Math.round(used / 1073741824),
-        totalGb: Math.round((used + free) / 1073741824)
+        stdout: "",
+        stderr: `Command blocked by security policy: ${reason}`,
+        exitCode: 1,
+        duration: 0
       };
-    } catch {
-      return { pct: 0, usedGb: 0, totalGb: 0 };
     }
   }
+  const start = Date.now();
   try {
-    const out = await runCmd("df -BG / | tail -1 | awk '{print $2,$3,$5}'", 3e3);
-    const parts = out.trim().split(/\s+/);
-    const total = parseInt(parts[0]) || 1;
-    const used = parseInt(parts[1]) || 0;
-    const pct = parseInt(parts[2]) || 0;
-    return { pct, usedGb: used, totalGb: total };
-  } catch {
-    return { pct: 0, usedGb: 0, totalGb: 0 };
+    const { stdout, stderr } = await execAsync(trimmed, {
+      timeout: 3e4,
+      maxBuffer: 1024 * 1024 * 5,
+      shell: process.platform === "win32" ? "cmd.exe" : "/bin/bash"
+    });
+    return {
+      stdout: stdout.trim(),
+      stderr: stderr.trim(),
+      exitCode: 0,
+      duration: Date.now() - start
+    };
+  } catch (err) {
+    const error = err;
+    return {
+      stdout: error.stdout?.trim() || "",
+      stderr: error.stderr?.trim() || error.message,
+      exitCode: typeof error.code === "number" ? error.code : 1,
+      duration: Date.now() - start
+    };
   }
 }
-async function getStats() {
-  const cpuPercent = await getCpuPercent();
-  const total = os.totalmem(), free = os.freemem();
-  const ramTotalMb = Math.round(total / 1048576);
-  const ramUsedMb = Math.round((total - free) / 1048576);
-  const ramPercent = Math.round(ramUsedMb / ramTotalMb * 100);
-  const disk = await getDiskInfo();
-  const net2 = getNetKbps();
-  return {
-    cpuPercent,
-    ramPercent,
-    ramUsedMb,
-    ramTotalMb,
-    diskPercent: disk.pct,
-    diskUsedGb: disk.usedGb,
-    diskTotalGb: disk.totalGb,
-    networkUpKbps: net2.up,
-    networkDownKbps: net2.down,
-    uptime: Math.floor(os.uptime())
-  };
+
+// src/system/screenCapture.ts
+var import_child_process3 = require("child_process");
+var import_util2 = require("util");
+var import_promises = __toESM(require("fs/promises"));
+var import_path = __toESM(require("path"));
+var import_os3 = __toESM(require("os"));
+var execAsync2 = (0, import_util2.promisify)(import_child_process3.exec);
+var execFileAsync = (0, import_util2.promisify)(import_child_process3.execFile);
+var PLATFORM = process.platform;
+var TMP_FRAME = import_path.default.join(import_os3.default.tmpdir(), `airemote_frame_${process.pid}.jpg`);
+var detectedBackend = null;
+function withTimeout(p, ms, label) {
+  return Promise.race([
+    p,
+    new Promise(
+      (_, reject) => setTimeout(() => reject(new Error(`[screen] ${label} timed out after ${ms}ms`)), ms)
+    )
+  ]);
 }
-function checkSshPort(host, port) {
-  return new Promise((resolve) => {
-    const sock = new net.Socket();
-    sock.setTimeout(3e3);
-    sock.connect(port, host, () => {
-      sock.destroy();
-      resolve(true);
-    });
-    sock.on("error", () => {
-      sock.destroy();
-      resolve(false);
-    });
-    sock.on("timeout", () => {
-      sock.destroy();
-      resolve(false);
-    });
+async function detectBackend() {
+  if (detectedBackend !== null) return detectedBackend;
+  if (PLATFORM === "darwin") {
+    detectedBackend = "screencapture";
+    return detectedBackend;
+  }
+  if (PLATFORM === "win32") {
+    detectedBackend = "powershell";
+    return detectedBackend;
+  }
+  if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    console.warn("[screen] No display found (DISPLAY/WAYLAND_DISPLAY not set) \u2014 screen capture unavailable");
+    detectedBackend = "none";
+    return detectedBackend;
+  }
+  const tools = [
+    { cmd: "scrot", backend: "scrot" },
+    { cmd: "import", backend: "import" },
+    // ImageMagick
+    { cmd: "xwd", backend: "xwd" }
+  ];
+  for (const { cmd, backend } of tools) {
+    try {
+      await execAsync2(`which ${cmd}`);
+      detectedBackend = backend;
+      console.log(`[screen] Using backend: ${backend}`);
+      return detectedBackend;
+    } catch {
+    }
+  }
+  detectedBackend = "none";
+  console.warn("[screen] No screen capture backend found (install scrot or imagemagick)");
+  return detectedBackend;
+}
+var DEFAULT_OPTIONS = { quality: 65, maxWidth: 1280, monitorId: 0 };
+async function captureScreen(opts = {}) {
+  const { quality, maxWidth, monitorId = 0, monitors } = { ...DEFAULT_OPTIONS, ...opts };
+  const backend = await detectBackend();
+  if (backend === "none") return null;
+  const mon = monitors?.find((m) => m.id === monitorId);
+  const hasMultiMon = monitors && monitors.length > 1 && mon;
+  try {
+    let jpegBuf;
+    switch (backend) {
+      // ── scrot (Linux) ──────────────────────────────────────────────────────
+      case "scrot": {
+        const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ":0" };
+        const cmd = hasMultiMon ? `scrot --quality ${quality} --silent -a ${mon.x},${mon.y},${mon.width},${mon.height} "${TMP_FRAME}"` : `scrot --quality ${quality} --silent "${TMP_FRAME}"`;
+        await withTimeout(execAsync2(cmd, { env: envX }), 5e3, "scrot");
+        try {
+          await withTimeout(
+            execAsync2(`convert "${TMP_FRAME}" -resize ${maxWidth}x\\> -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+            3e3,
+            "convert"
+          );
+        } catch {
+        }
+        jpegBuf = await import_promises.default.readFile(TMP_FRAME);
+        break;
+      }
+      // ── ImageMagick import (Linux with X11) ────────────────────────────────
+      case "import": {
+        const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ":0" };
+        const cropArg = hasMultiMon ? `-crop ${mon.width}x${mon.height}+${mon.x}+${mon.y} +repage` : "";
+        await withTimeout(
+          execAsync2(`import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+          5e3,
+          "import"
+        );
+        jpegBuf = await import_promises.default.readFile(TMP_FRAME);
+        break;
+      }
+      // ── xwd + convert (Linux fallback) ────────────────────────────────────
+      case "xwd": {
+        const { stdout } = await withTimeout(
+          execAsync2(
+            `xwd -root -silent | convert xwd:- -resize ${maxWidth}x -quality ${quality} jpg:-`,
+            { maxBuffer: 20 * 1024 * 1024, env: { ...process.env, DISPLAY: process.env.DISPLAY || ":0" } }
+          ),
+          8e3,
+          "xwd"
+        );
+        jpegBuf = Buffer.from(stdout, "binary");
+        break;
+      }
+      // ── macOS screencapture ───────────────────────────────────────────────
+      case "screencapture": {
+        const displayArg = hasMultiMon ? `-D ${monitorId + 1}` : "";
+        await withTimeout(execAsync2(`screencapture -x ${displayArg} -t jpg "${TMP_FRAME}"`), 5e3, "screencapture");
+        let raw = await import_promises.default.readFile(TMP_FRAME);
+        try {
+          await withTimeout(
+            execAsync2(`convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`),
+            3e3,
+            "convert"
+          );
+          raw = await import_promises.default.readFile(TMP_FRAME);
+        } catch {
+        }
+        jpegBuf = raw;
+        break;
+      }
+      // ── Windows PowerShell ────────────────────────────────────────────────
+      case "powershell": {
+        const boundsCode = hasMultiMon ? `$bounds = New-Object System.Drawing.Rectangle(${mon.x}, ${mon.y}, ${mon.width}, ${mon.height})` : `$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds`;
+        const ps = `
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+${boundsCode}
+$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+$g.Dispose()
+$newW = [Math]::Min($bounds.Width, ${maxWidth})
+$ratio = $newW / $bounds.Width
+$newH = [int]($bounds.Height * $ratio)
+$thumb = New-Object System.Drawing.Bitmap($newW, $newH)
+$tg = [System.Drawing.Graphics]::FromImage($thumb)
+$tg.DrawImage($bmp, 0, 0, $newW, $newH)
+$tg.Dispose()
+$bmp.Dispose()
+$enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
+$params = New-Object System.Drawing.Imaging.EncoderParameters(1)
+$params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]${quality})
+$thumb.Save("${TMP_FRAME.replace(/\\/g, "\\\\")}",  $enc, $params)
+$thumb.Dispose()
+`.trim();
+        await withTimeout(
+          execFileAsync("powershell.exe", [
+            "-NonInteractive",
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            ps
+          ]),
+          8e3,
+          "powershell"
+        );
+        jpegBuf = await import_promises.default.readFile(TMP_FRAME);
+        break;
+      }
+      default:
+        return null;
+    }
+    const { width, height } = parseJpegDimensions(jpegBuf);
+    return { data: jpegBuf, width, height };
+  } catch (err) {
+    console.error(`[screen] Capture failed (${backend}):`, err.message);
+    return null;
+  }
+}
+function parseJpegDimensions(buf) {
+  let i = 2;
+  while (i < buf.length - 9) {
+    if (buf[i] !== 255) break;
+    const marker = buf[i + 1];
+    const len = buf.readUInt16BE(i + 2);
+    if (marker === 192 || marker === 193 || marker === 194) {
+      const height = buf.readUInt16BE(i + 5);
+      const width = buf.readUInt16BE(i + 7);
+      return { width, height };
+    }
+    i += 2 + len;
+  }
+  return { width: 1280, height: 720 };
+}
+process.on("exit", () => {
+  try {
+    require("fs").unlinkSync(TMP_FRAME);
+  } catch {
+  }
+});
+
+// src/system/inputControl.ts
+var import_child_process4 = require("child_process");
+var import_util3 = require("util");
+var execAsync3 = (0, import_util3.promisify)(import_child_process4.exec);
+var execFileAsync2 = (0, import_util3.promisify)(import_child_process4.execFile);
+var PLATFORM2 = process.platform;
+var _winPs = null;
+var _winPsReady = false;
+function ensureWinPs() {
+  if (PLATFORM2 !== "win32") return;
+  if (_winPs && !_winPs.killed && _winPsReady) return;
+  _winPsReady = false;
+  _winPs = (0, import_child_process4.spawn)("powershell.exe", ["-NoProfile", "-NonInteractive", "-NoLogo", "-Command", "-"], {
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true
+  });
+  const init = `
+Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;
+public class WinIC{
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f,int x,int y,int d,IntPtr e);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte vk,byte sc,uint flags,IntPtr extra);
+  public const uint LD=2,LU=4,RD=8,RU=16,MD=32,MU=64,WH=2048,KEYUP=2;
+}
+'@ -Language CSharp
+Add-Type -AssemblyName System.Windows.Forms
+Write-Host 'WINIC_READY'
+`;
+  _winPs.stdin.write(init + "\n");
+  _winPs.stdout.on("data", (d) => {
+    if (d.toString().includes("WINIC_READY")) _winPsReady = true;
+  });
+  _winPs.stderr.on("data", () => {
+  });
+  _winPs.on("exit", () => {
+    _winPs = null;
+    _winPsReady = false;
   });
 }
-function resolveShell(hint) {
-  if (process.platform === "win32") {
-    if (hint === "cmd") return { cmd: "cmd.exe", args: [] };
-    return { cmd: "powershell.exe", args: ["-NoLogo", "-NoProfile"] };
-  }
-  if (hint === "bash") return { cmd: "/bin/bash", args: ["--login"] };
-  if (hint === "sh") return { cmd: "/bin/sh", args: [] };
-  if (hint === "zsh") return { cmd: "/bin/zsh", args: ["--login"] };
-  const sh = process.env.SHELL || "/bin/bash";
-  return { cmd: sh, args: ["--login"] };
-}
-function handlePtyOpen(payload) {
-  const { sessionId, rows = 24, cols = 80, shell: hint = "auto" } = payload;
-  log("info", `\u{1F5A5}  PTY request (session ${sessionId.slice(0, 8)})`);
-  const { cmd, args } = resolveShell(hint);
-  try {
-    const proc = spawn(cmd, args, {
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        COLUMNS: String(cols),
-        LINES: String(rows),
-        COLORTERM: "truecolor"
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: false,
-      windowsHide: false
-    });
-    ptyProcs.set(sessionId, proc);
-    send({ type: "agent:pty_opened", payload: { sessionId }, timestamp: Date.now() });
-    proc.stdout.on("data", (data) => {
-      send({ type: "agent:pty_data", payload: { sessionId, data: data.toString("base64") }, timestamp: Date.now() });
-    });
-    proc.stderr.on("data", (data) => {
-      send({ type: "agent:pty_data", payload: { sessionId, data: data.toString("base64") }, timestamp: Date.now() });
-    });
-    proc.on("close", () => {
-      send({ type: "agent:pty_closed", payload: { sessionId }, timestamp: Date.now() });
-      ptyProcs.delete(sessionId);
-      log("info", `\u{1F5A5}  PTY closed: ${sessionId.slice(0, 8)}`);
-    });
-    proc.on("error", (err) => {
-      send({ type: "agent:pty_error", payload: { sessionId, message: err.message }, timestamp: Date.now() });
-      ptyProcs.delete(sessionId);
-    });
-  } catch (e) {
-    send({ type: "agent:pty_error", payload: { sessionId, message: `Failed to spawn: ${e.message}` }, timestamp: Date.now() });
-  }
-}
-function handlePtyData(payload) {
-  const { sessionId, data } = payload;
-  const proc = ptyProcs.get(sessionId);
-  if (proc?.stdin?.writable) {
-    proc.stdin.write(Buffer.from(data, "base64"));
-  }
-}
-function handlePtyResize(payload) {
-  const { sessionId, rows, cols } = payload;
-  const proc = ptyProcs.get(sessionId);
-  if (!proc) return;
-  if (process.platform !== "win32") {
+function sendWinCmd(cmd) {
+  ensureWinPs();
+  if (_winPs && !_winPs.killed && _winPsReady) {
     try {
-      proc.kill("SIGWINCH");
+      _winPs.stdin.write(cmd + "\n");
     } catch {
     }
-  } else {
-    const hint = `\x1B[8;${rows};${cols}t`;
-    send({
-      type: "agent:pty_data",
-      payload: { sessionId, data: Buffer.from(hint).toString("base64") },
-      timestamp: Date.now()
-    });
-  }
-}
-function handlePtyClose(payload) {
-  const { sessionId } = payload;
-  const proc = ptyProcs.get(sessionId);
-  if (proc) {
-    try {
-      proc.kill();
-    } catch {
-    }
-    ptyProcs.delete(sessionId);
-  }
-}
-function handleWriteChunk(payload) {
-  const { opId, path: filePath, data, seq, total, isLast } = payload;
-  let accum = writeChunkBufs.get(opId);
-  if (!accum) {
-    accum = { chunks: /* @__PURE__ */ new Map(), total: total || 1, path: filePath };
-    writeChunkBufs.set(opId, accum);
-  }
-  accum.chunks.set(seq || 0, Buffer.from(data || "", "base64"));
-  if (isLast) {
-    writeChunkBufs.delete(opId);
-    const parts = [];
-    for (let i = 0; i < accum.total; i++) {
-      const c = accum.chunks.get(i);
-      if (c) parts.push(c);
-    }
-    const fileData = Buffer.concat(parts);
-    const osPath = toOsPath(accum.path);
-    const dir = path.dirname(osPath);
-    fs.mkdir(dir, { recursive: true }).then(() => fs.promises.writeFile(osPath, fileData)).then(() => {
-      log("info", `\u2705 Chunked write done: ${accum.path} (${fileData.length} bytes)`);
-      send({ type: "agent:fs_result", payload: { opId, data: { ok: true, size: fileData.length } }, timestamp: Date.now() });
-    }).catch((err) => {
-      log("error", `\u274C Chunked write failed: ${err.message}`);
-      send({ type: "agent:fs_result", payload: { opId, error: err.message }, timestamp: Date.now() });
-    });
-  }
-}
-function toOsPath(webPath) {
-  if (process.platform === "win32") {
-    const home = os.homedir();
-    const win = webPath.replace(/^\/([A-Za-z])(\/|$)/, "$1:\\$2").replace(/\//g, "\\");
-    if (win.startsWith("/")) return path.join(home, win.slice(1));
-    return win;
-  }
-  return webPath;
-}
-function send(msg) {
-  if (ws?.readyState === WebSocket.OPEN) {
-    try {
-      ws.send(JSON.stringify(msg));
-    } catch {
-    }
-  }
-}
-function connect() {
-  if (!running) return;
-  const url = config.serverUrl.trim();
-  log("info", `\u{1F50C} Connecting to ${url} ...`);
-  try {
-    ws = new WebSocket(url, { rejectUnauthorized: false });
-  } catch (e) {
-    log("error", `Failed to create socket: ${e.message}`);
-    scheduleReconnect();
     return;
   }
-  ws.on("open", async () => {
-    reconnectDelay = RECONNECT_BASE;
-    log("info", "\u2705 Connected \u2014 registering...");
-    try {
-      const info = getDeviceInfo();
-      const stats = await getStats();
-      sshAvailable = await checkSshPort("127.0.0.1", 22);
-      dockerAvailable = await detectDocker();
-      const shell = process.platform === "win32" ? "powershell" : process.env.SHELL || "/bin/bash";
-      log("info", `\u{1F433} Docker: ${dockerAvailable ? "available" : "not found"}`);
-      send({
-        type: "agent:register",
-        payload: {
-          token: config.token.trim(),
-          info,
-          stats,
-          tunnelLayer: "relay",
-          capabilities: {
-            pty: true,
-            sshAvailable,
-            shell,
-            screenControl: false,
-            clipboard: false,
-            multiMonitor: false,
-            monitors: [],
-            docker: dockerAvailable
-          },
-          sshInfo: { available: sshAvailable, port: 22 }
-        },
-        timestamp: Date.now()
-      });
-      startHeartbeat();
-      log("info", `\u{1F5A5}  PTY: ready | SSH: ${sshAvailable ? "available" : "not detected"} | Docker: ${dockerAvailable ? "yes" : "no"} | v${VERSION}`);
-    } catch (e) {
-      log("error", `Registration error: ${e.message}`);
-    }
-  });
-  ws.on("message", (data) => {
-    try {
-      handleMsg(JSON.parse(data.toString()));
-    } catch {
-    }
-  });
-  ws.on("close", (code) => {
-    clearTimers();
-    if (running) {
-      log("warn", `Disconnected (${code}) \u2014 reconnecting...`);
-      scheduleReconnect();
-    }
-  });
-  ws.on("error", (err) => {
-    log("error", `Socket error: ${err.message}`);
-  });
-}
-function handleMsg(msg) {
-  switch (msg.type) {
-    case "server:registered":
-      deviceId = msg.payload?.deviceId;
-      log("info", `\u2705 Registered \u2014 Device ID: ${deviceId?.slice(0, 12)}...`);
-      break;
-    case "server:command":
-      executeCommand(msg.payload);
-      break;
-    case "server:ping":
-      send({ type: "agent:pong", payload: {}, timestamp: Date.now() });
-      break;
-    case "server:error":
-      log("error", `Server error: ${msg.payload?.message}`);
-      break;
-    // ── PTY ──────────────────────────────────────────────────────────────
-    case "server:pty_open":
-      handlePtyOpen(msg.payload);
-      break;
-    case "server:pty_data":
-      handlePtyData(msg.payload);
-      break;
-    // T003: PTY resize — Windows-aware
-    case "server:pty_resize":
-      handlePtyResize(msg.payload);
-      break;
-    case "server:pty_close":
-      handlePtyClose(msg.payload);
-      break;
-    // T002: Chunked file write
-    case "server:fs_write_chunk":
-      handleWriteChunk(msg.payload);
-      break;
-    // T004: Consent dialog with AGENT_UNATTENDED env support
-    case "server:screen_control_request": {
-      const { sessionId, requestId, requesterName } = msg.payload || {};
-      const unattended = process.env.AGENT_UNATTENDED === "true" || process.env.AGENT_UNATTENDED === "1";
-      if (unattended) {
-        log("info", `\u{1F510} Control request from "${requesterName}" \u2014 auto-granting (AGENT_UNATTENDED=true)`);
-        send({
-          type: "agent:screen_control_granted",
-          payload: { sessionId, requestId },
-          timestamp: Date.now()
-        });
-      } else {
-        log("warn", `\u26A0  Control request from "${requesterName}"`);
-        log("warn", `   Headless agent has no consent dialog.`);
-        log("warn", `   Auto-granting in ${CONSENT_TIMEOUT_SEC}s \u2014 set AGENT_UNATTENDED=true to skip.`);
-        setTimeout(() => {
-          log("info", `\u{1F510} Auto-granting control to "${requesterName}" after timeout`);
-          send({
-            type: "agent:screen_control_granted",
-            payload: { sessionId, requestId },
-            timestamp: Date.now()
-          });
-        }, CONSENT_TIMEOUT_SEC * 1e3);
+  const deadline = Date.now() + 5e3;
+  const poll = setInterval(() => {
+    if (_winPsReady && _winPs && !_winPs.killed) {
+      clearInterval(poll);
+      try {
+        _winPs.stdin.write(cmd + "\n");
+      } catch {
       }
+    } else if (Date.now() > deadline) {
+      clearInterval(poll);
+    }
+  }, 80);
+}
+var WIN_VK = {
+  "backspace": 8,
+  "tab": 9,
+  "enter": 13,
+  "return": 13,
+  "shift": 16,
+  "control": 17,
+  "ctrl": 17,
+  "alt": 18,
+  "pause": 19,
+  "capslock": 20,
+  "escape": 27,
+  "esc": 27,
+  " ": 32,
+  "space": 32,
+  "pageup": 33,
+  "pagedown": 34,
+  "end": 35,
+  "home": 36,
+  "arrowleft": 37,
+  "arrowup": 38,
+  "arrowright": 39,
+  "arrowdown": 40,
+  "insert": 45,
+  "delete": 46,
+  "0": 48,
+  "1": 49,
+  "2": 50,
+  "3": 51,
+  "4": 52,
+  "5": 53,
+  "6": 54,
+  "7": 55,
+  "8": 56,
+  "9": 57,
+  "a": 65,
+  "b": 66,
+  "c": 67,
+  "d": 68,
+  "e": 69,
+  "f": 70,
+  "g": 71,
+  "h": 72,
+  "i": 73,
+  "j": 74,
+  "k": 75,
+  "l": 76,
+  "m": 77,
+  "n": 78,
+  "o": 79,
+  "p": 80,
+  "q": 81,
+  "r": 82,
+  "s": 83,
+  "t": 84,
+  "u": 85,
+  "v": 86,
+  "w": 87,
+  "x": 88,
+  "y": 89,
+  "z": 90,
+  "meta": 91,
+  "win": 91,
+  "contextmenu": 93,
+  "f1": 112,
+  "f2": 113,
+  "f3": 114,
+  "f4": 115,
+  "f5": 116,
+  "f6": 117,
+  "f7": 118,
+  "f8": 119,
+  "f9": 120,
+  "f10": 121,
+  "f11": 122,
+  "f12": 123,
+  "numlock": 144,
+  "scrolllock": 145,
+  "printscreen": 44,
+  ";": 186,
+  "=": 187,
+  ",": 188,
+  "-": 189,
+  ".": 190,
+  "/": 191,
+  "`": 192,
+  "[": 219,
+  "\\": 220,
+  "]": 221,
+  "'": 222
+};
+var _hasXdotool = null;
+var _hasCliclick = null;
+async function hasXdotool() {
+  if (_hasXdotool !== null) return _hasXdotool;
+  try {
+    await execAsync3("which xdotool");
+    _hasXdotool = true;
+  } catch {
+    _hasXdotool = false;
+  }
+  return _hasXdotool;
+}
+async function hasCliclick() {
+  if (_hasCliclick !== null) return _hasCliclick;
+  try {
+    await execAsync3("which cliclick");
+    _hasCliclick = true;
+  } catch {
+    _hasCliclick = false;
+  }
+  return _hasCliclick;
+}
+var _screenW = 1920;
+var _screenH = 1080;
+function setScreenResolution(w, h) {
+  _screenW = w;
+  _screenH = h;
+}
+function toAbsX(relX) {
+  return Math.round(relX * _screenW);
+}
+function toAbsY(relY) {
+  return Math.round(relY * _screenH);
+}
+var XDOTOOL_BUTTON = { 0: 1, 1: 2, 2: 3 };
+async function controlMouse(evt) {
+  const ax = toAbsX(evt.x);
+  const ay = toAbsY(evt.y);
+  const btn = evt.button ?? 0;
+  if (PLATFORM2 === "linux") {
+    await controlMouseLinux(evt, ax, ay, btn);
+  } else if (PLATFORM2 === "win32") {
+    await controlMouseWindows(evt, ax, ay, btn);
+  } else if (PLATFORM2 === "darwin") {
+    await controlMouseMac(evt, ax, ay, btn);
+  }
+}
+async function controlMouseLinux(evt, ax, ay, btn) {
+  const xb = XDOTOOL_BUTTON[btn] ?? 1;
+  const display = process.env.DISPLAY || ":0";
+  const env = { ...process.env, DISPLAY: display };
+  try {
+    switch (evt.type) {
+      case "move":
+        await execAsync3(`xdotool mousemove ${ax} ${ay}`, { env, timeout: 1e3 });
+        break;
+      case "down":
+        await execAsync3(`xdotool mousemove ${ax} ${ay} mousedown ${xb}`, { env, timeout: 1e3 });
+        break;
+      case "up":
+        await execAsync3(`xdotool mousemove ${ax} ${ay} mouseup ${xb}`, { env, timeout: 1e3 });
+        break;
+      case "click":
+        await execAsync3(`xdotool mousemove ${ax} ${ay} click ${xb}`, { env, timeout: 1e3 });
+        break;
+      case "dblclick":
+        await execAsync3(`xdotool mousemove ${ax} ${ay} click --repeat 2 ${xb}`, { env, timeout: 1e3 });
+        break;
+      case "scroll": {
+        const dir = (evt.deltaY ?? 0) > 0 ? 5 : 4;
+        await execAsync3(`xdotool mousemove ${ax} ${ay} click ${dir}`, { env, timeout: 1e3 });
+        break;
+      }
+    }
+  } catch (err) {
+    const available = await hasXdotool();
+    if (!available) {
+      console.warn("[input] xdotool not available. Install with: sudo apt install xdotool");
+    } else {
+      console.error("[input] xdotool error:", err.message);
+    }
+  }
+}
+async function controlMouseWindows(evt, ax, ay, btn) {
+  switch (evt.type) {
+    case "move":
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay})`);
+      break;
+    case "click": {
+      const ld = btn === 2 ? "[WinIC]::RD" : btn === 1 ? "[WinIC]::MD" : "[WinIC]::LD";
+      const lu = btn === 2 ? "[WinIC]::RU" : btn === 1 ? "[WinIC]::MU" : "[WinIC]::LU";
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event(${ld},0,0,0,[IntPtr]::Zero);[WinIC]::mouse_event(${lu},0,0,0,[IntPtr]::Zero)`);
       break;
     }
-    // T006: In-session text chat
-    case "server:screen_chat": {
-      const { text, sender } = msg.payload || {};
-      log("info", `\u{1F4AC} [chat] ${sender || "viewer"}: ${text}`);
+    case "dblclick":
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event([WinIC]::LD,0,0,0,[IntPtr]::Zero);[WinIC]::mouse_event([WinIC]::LU,0,0,0,[IntPtr]::Zero);Start-Sleep -Milliseconds 40;[WinIC]::mouse_event([WinIC]::LD,0,0,0,[IntPtr]::Zero);[WinIC]::mouse_event([WinIC]::LU,0,0,0,[IntPtr]::Zero)`);
+      break;
+    case "down": {
+      const df = btn === 2 ? "[WinIC]::RD" : btn === 1 ? "[WinIC]::MD" : "[WinIC]::LD";
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event(${df},0,0,0,[IntPtr]::Zero)`);
+      break;
+    }
+    case "up": {
+      const uf = btn === 2 ? "[WinIC]::RU" : btn === 1 ? "[WinIC]::MU" : "[WinIC]::LU";
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event(${uf},0,0,0,[IntPtr]::Zero)`);
+      break;
+    }
+    case "scroll": {
+      const wd = (evt.deltaY ?? 0) > 0 ? -120 : 120;
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event([WinIC]::WH,0,0,${wd},[IntPtr]::Zero)`);
       break;
     }
   }
 }
-function executeCommand(payload) {
-  if (payload.type !== "shell" || !payload.command) return;
-  const cmd = payload.command;
-  log("info", `\u25B6 exec: ${cmd}`);
-  const t0 = Date.now();
-  const shellOpt = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
-  exec(cmd, { shell: shellOpt, timeout: 3e4, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-    log(err ? "error" : "info", `\u2714 done in ${Date.now() - t0}ms (exit ${err?.code ?? 0})`);
-    send({
+async function controlMouseMac(evt, ax, ay, btn) {
+  const available = await hasCliclick();
+  if (available) {
+    try {
+      switch (evt.type) {
+        case "move":
+          await execAsync3(`cliclick m:${ax},${ay}`, { timeout: 1e3 });
+          break;
+        case "click":
+          await execAsync3(`cliclick ${btn === 2 ? "rc" : "c"}:${ax},${ay}`, { timeout: 1e3 });
+          break;
+        case "dblclick":
+          await execAsync3(`cliclick dc:${ax},${ay}`, { timeout: 1e3 });
+          break;
+        case "down":
+          await execAsync3(`cliclick dd:${ax},${ay}`, { timeout: 1e3 });
+          break;
+        case "up":
+          await execAsync3(`cliclick du:${ax},${ay}`, { timeout: 1e3 });
+          break;
+        case "scroll": {
+          const scrollDir = (evt.deltaY ?? 0) > 0 ? "-3" : "3";
+          await execAsync3(`cliclick m:${ax},${ay}`, { timeout: 1e3 });
+          await execAsync3(`osascript -e 'tell application "System Events" to scroll ${scrollDir}'`, { timeout: 1e3 });
+          break;
+        }
+      }
+    } catch (err) {
+      console.error("[input] cliclick error:", err.message);
+    }
+  } else {
+    const script = `tell application "System Events" to set the mouse location to {${ax}, ${ay}}`;
+    try {
+      await execAsync3(`osascript -e '${script}'`, { timeout: 2e3 });
+    } catch (err) {
+      console.error("[input] osascript error:", err.message);
+    }
+  }
+}
+var XDOTOOL_KEY_MAP = {
+  "enter": "Return",
+  "return": "Return",
+  "escape": "Escape",
+  "esc": "Escape",
+  "tab": "Tab",
+  "space": "space",
+  "backspace": "BackSpace",
+  "delete": "Delete",
+  "insert": "Insert",
+  "home": "Home",
+  "end": "End",
+  "pageup": "Page_Up",
+  "pagedown": "Page_Down",
+  "arrowup": "Up",
+  "up": "Up",
+  "arrowdown": "Down",
+  "down": "Down",
+  "arrowleft": "Left",
+  "left": "Left",
+  "arrowright": "Right",
+  "right": "Right",
+  "f1": "F1",
+  "f2": "F2",
+  "f3": "F3",
+  "f4": "F4",
+  "f5": "F5",
+  "f6": "F6",
+  "f7": "F7",
+  "f8": "F8",
+  "f9": "F9",
+  "f10": "F10",
+  "f11": "F11",
+  "f12": "F12",
+  "ctrl": "ctrl",
+  "control": "ctrl",
+  "alt": "alt",
+  "shift": "shift",
+  "meta": "super",
+  "win": "super",
+  "capslock": "Caps_Lock",
+  "numlock": "Num_Lock",
+  "printscreen": "Print"
+};
+var PS_KEY_MAP = {
+  "enter": "{ENTER}",
+  "return": "{ENTER}",
+  "escape": "{ESC}",
+  "esc": "{ESC}",
+  "tab": "{TAB}",
+  "space": " ",
+  "backspace": "{BACKSPACE}",
+  "delete": "{DELETE}",
+  "insert": "{INSERT}",
+  "home": "{HOME}",
+  "end": "{END}",
+  "pageup": "{PGUP}",
+  "pagedown": "{PGDN}",
+  "arrowup": "{UP}",
+  "up": "{UP}",
+  "arrowdown": "{DOWN}",
+  "down": "{DOWN}",
+  "arrowleft": "{LEFT}",
+  "left": "{LEFT}",
+  "arrowright": "{RIGHT}",
+  "right": "{RIGHT}",
+  "f1": "{F1}",
+  "f2": "{F2}",
+  "f3": "{F3}",
+  "f4": "{F4}",
+  "f5": "{F5}",
+  "f6": "{F6}",
+  "f7": "{F7}",
+  "f8": "{F8}",
+  "f9": "{F9}",
+  "f10": "{F10}",
+  "f11": "{F11}",
+  "f12": "{F12}",
+  "capslock": "{CAPSLOCK}"
+};
+function buildXdotoolKeyCombo(key, mods) {
+  const base = XDOTOOL_KEY_MAP[key.toLowerCase()] ?? key.toLowerCase();
+  const modParts = [];
+  if (mods.includes("ctrl")) modParts.push("ctrl");
+  if (mods.includes("alt")) modParts.push("alt");
+  if (mods.includes("shift")) modParts.push("shift");
+  if (mods.includes("meta")) modParts.push("super");
+  return modParts.length > 0 ? `${modParts.join("+")}+${base}` : base;
+}
+function buildPsKeyCombo(key, mods) {
+  const base = PS_KEY_MAP[key.toLowerCase()] ?? key;
+  let combo = "";
+  if (mods.includes("ctrl")) combo += "^";
+  if (mods.includes("alt")) combo += "%";
+  if (mods.includes("shift")) combo += "+";
+  combo += base;
+  return combo;
+}
+async function controlKeyboard(evt) {
+  const mods = evt.modifiers ?? [];
+  if (PLATFORM2 === "linux") {
+    await controlKeyboardLinux(evt, mods);
+  } else if (PLATFORM2 === "win32") {
+    await controlKeyboardWindows(evt, mods);
+  } else if (PLATFORM2 === "darwin") {
+    await controlKeyboardMac(evt, mods);
+  }
+}
+async function controlKeyboardLinux(evt, mods) {
+  const display = process.env.DISPLAY || ":0";
+  const env = { ...process.env, DISPLAY: display };
+  const keyCombo = buildXdotoolKeyCombo(evt.key, mods);
+  try {
+    switch (evt.type) {
+      case "press":
+        await execAsync3(`xdotool key ${keyCombo}`, { env, timeout: 1e3 });
+        break;
+      case "down":
+        await execAsync3(`xdotool keydown ${keyCombo}`, { env, timeout: 1e3 });
+        break;
+      case "up":
+        await execAsync3(`xdotool keyup ${keyCombo}`, { env, timeout: 1e3 });
+        break;
+    }
+  } catch (err) {
+    console.error("[input] xdotool key error:", err.message);
+  }
+}
+async function controlKeyboardWindows(evt, mods) {
+  const keyLower = evt.key.toLowerCase();
+  if (evt.type === "press") {
+    const keyCombo = buildPsKeyCombo(evt.key, mods);
+    const escaped = keyCombo.replace(/'/g, "''");
+    sendWinCmd(`[System.Windows.Forms.SendKeys]::SendWait('${escaped}')`);
+    return;
+  }
+  const vk = WIN_VK[keyLower] ?? (evt.key.length === 1 ? evt.key.toUpperCase().charCodeAt(0) : null);
+  if (!vk) return;
+  const kflag = evt.type === "up" ? "[WinIC]::KEYUP" : "0";
+  const modVks = [];
+  if (mods.includes("ctrl")) modVks.push(17);
+  if (mods.includes("alt")) modVks.push(18);
+  if (mods.includes("shift")) modVks.push(16);
+  if (mods.includes("meta")) modVks.push(91);
+  const cmds = [];
+  if (evt.type === "down") {
+    modVks.forEach((mv) => cmds.push(`[WinIC]::keybd_event(${mv},0,0,[IntPtr]::Zero)`));
+    cmds.push(`[WinIC]::keybd_event(${vk},0,0,[IntPtr]::Zero)`);
+  } else {
+    cmds.push(`[WinIC]::keybd_event(${vk},0,${kflag},[IntPtr]::Zero)`);
+    modVks.reverse().forEach((mv) => cmds.push(`[WinIC]::keybd_event(${mv},0,[WinIC]::KEYUP,[IntPtr]::Zero)`));
+  }
+  sendWinCmd(cmds.join(";"));
+}
+async function controlKeyboardMac(evt, mods) {
+  if (evt.type !== "press") return;
+  const keyName = XDOTOOL_KEY_MAP[evt.key.toLowerCase()] ?? evt.key;
+  let script = "";
+  if (mods.length > 0) {
+    const modUsing = mods.map((m) => {
+      if (m === "ctrl") return "control down";
+      if (m === "alt") return "option down";
+      if (m === "shift") return "shift down";
+      if (m === "meta") return "command down";
+      return m;
+    });
+    script = `tell application "System Events" to keystroke "${keyName}" using {${modUsing.join(", ")}}`;
+  } else {
+    script = `tell application "System Events" to keystroke "${keyName}"`;
+  }
+  try {
+    await execAsync3(`osascript -e '${script}'`, { timeout: 2e3 });
+  } catch (err) {
+    console.error("[input] osascript key error:", err.message);
+  }
+}
+async function readClipboard() {
+  try {
+    if (PLATFORM2 === "linux") {
+      const display = process.env.DISPLAY || ":0";
+      const env = { ...process.env, DISPLAY: display };
+      try {
+        const { stdout } = await execAsync3("xclip -selection clipboard -o", { env, timeout: 3e3 });
+        return stdout;
+      } catch {
+        const { stdout } = await execAsync3("xsel --clipboard --output", { env, timeout: 3e3 });
+        return stdout;
+      }
+    } else if (PLATFORM2 === "win32") {
+      const ps = `Get-Clipboard`;
+      const { stdout } = await execAsync3(
+        `powershell.exe -NonInteractive -NoProfile -Command "${ps}"`,
+        { timeout: 3e3 }
+      );
+      return stdout.trim();
+    } else if (PLATFORM2 === "darwin") {
+      const { stdout } = await execAsync3("pbpaste", { timeout: 3e3 });
+      return stdout;
+    }
+  } catch (err) {
+    console.error("[clipboard] read error:", err.message);
+  }
+  return "";
+}
+async function writeClipboard(text) {
+  try {
+    const buf = Buffer.from(text, "utf8");
+    if (PLATFORM2 === "linux") {
+      const display = process.env.DISPLAY || ":0";
+      const env = { ...process.env, DISPLAY: display };
+      await new Promise((resolve) => {
+        const proc = (0, import_child_process4.spawn)("xclip", ["-selection", "clipboard"], { env });
+        proc.stdin.write(buf);
+        proc.stdin.end();
+        proc.on("close", () => resolve());
+        proc.on("error", () => {
+          const proc2 = (0, import_child_process4.spawn)("xsel", ["--clipboard", "--input"], { env });
+          proc2.stdin.write(buf);
+          proc2.stdin.end();
+          proc2.on("close", () => resolve());
+          proc2.on("error", () => resolve());
+        });
+      });
+    } else if (PLATFORM2 === "darwin") {
+      await new Promise((resolve) => {
+        const proc = (0, import_child_process4.spawn)("pbcopy", []);
+        proc.stdin.write(buf);
+        proc.stdin.end();
+        proc.on("close", () => resolve());
+        proc.on("error", () => resolve());
+      });
+    } else if (PLATFORM2 === "win32") {
+      const b64 = buf.toString("base64");
+      const ps = `$t=[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'));Set-Clipboard -Value $t`;
+      await execFileAsync2("powershell.exe", ["-NonInteractive", "-NoProfile", "-Command", ps], { timeout: 3e3 });
+    }
+  } catch (err) {
+    console.error("[clipboard] write error:", err.message);
+  }
+}
+async function enablePrivacyMode() {
+  try {
+    if (PLATFORM2 === "linux") {
+      const display = process.env.DISPLAY || ":0";
+      const env = { ...process.env, DISPLAY: display };
+      try {
+        await execAsync3(`xrandr --output $(xrandr | grep " connected" | head -1 | cut -d" " -f1) --brightness 0`, { env, timeout: 3e3 });
+      } catch {
+        await execAsync3("xset dpms force off", { env, timeout: 2e3 });
+      }
+    } else if (PLATFORM2 === "win32") {
+      const ps = `
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public class WinAPI {
+  [DllImport("user32.dll")] public static extern bool LockWorkStation();
+}
+"@
+[WinAPI]::LockWorkStation()
+`;
+      await execFileAsync2("powershell.exe", ["-NonInteractive", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps], { timeout: 3e3 });
+    } else if (PLATFORM2 === "darwin") {
+      await execAsync3(`osascript -e 'tell application "System Events" to sleep'`, { timeout: 3e3 });
+    }
+    console.log("[privacy] Privacy mode ENABLED");
+  } catch (err) {
+    console.error("[privacy] enable error:", err.message);
+  }
+}
+async function disablePrivacyMode() {
+  try {
+    if (PLATFORM2 === "linux") {
+      const display = process.env.DISPLAY || ":0";
+      const env = { ...process.env, DISPLAY: display };
+      try {
+        await execAsync3(`xrandr --output $(xrandr | grep " connected" | head -1 | cut -d" " -f1) --brightness 1`, { env, timeout: 3e3 });
+      } catch {
+        await execAsync3("xset dpms force on", { env, timeout: 2e3 });
+      }
+    } else if (PLATFORM2 === "win32") {
+    } else if (PLATFORM2 === "darwin") {
+      await execAsync3(`caffeinate -u -t 1`, { timeout: 3e3 });
+    }
+    console.log("[privacy] Privacy mode DISABLED");
+  } catch (err) {
+    console.error("[privacy] disable error:", err.message);
+  }
+}
+async function listMonitors() {
+  try {
+    if (PLATFORM2 === "linux") {
+      return await listMonitorsLinux();
+    } else if (PLATFORM2 === "win32") {
+      return await listMonitorsWindows();
+    } else if (PLATFORM2 === "darwin") {
+      return await listMonitorsMac();
+    }
+  } catch (err) {
+    console.error("[monitors] list error:", err.message);
+  }
+  return [{ id: 0, x: 0, y: 0, width: _screenW, height: _screenH, primary: true, name: "Primary" }];
+}
+async function listMonitorsLinux() {
+  const display = process.env.DISPLAY || ":0";
+  const env = { ...process.env, DISPLAY: display };
+  const { stdout } = await execAsync3("xrandr --query", { env, timeout: 5e3 });
+  const monitors = [];
+  let id = 0;
+  const lines = stdout.split("\n");
+  for (const line of lines) {
+    const m = line.match(/^(\S+)\s+connected\s+(?:primary\s+)?(\d+)x(\d+)\+(\d+)\+(\d+)/);
+    if (m) {
+      monitors.push({
+        id: id++,
+        name: m[1],
+        width: parseInt(m[2]),
+        height: parseInt(m[3]),
+        x: parseInt(m[4]),
+        y: parseInt(m[5]),
+        primary: line.includes(" primary ")
+      });
+    }
+  }
+  return monitors.length > 0 ? monitors : [{ id: 0, x: 0, y: 0, width: _screenW, height: _screenH, primary: true, name: "Primary" }];
+}
+async function listMonitorsWindows() {
+  const ps = `
+Add-Type -AssemblyName System.Windows.Forms
+$screens = [System.Windows.Forms.Screen]::AllScreens
+$result = $screens | ForEach-Object {
+  "$($_.Bounds.X),$($_.Bounds.Y),$($_.Bounds.Width),$($_.Bounds.Height),$($_.Primary),$($_.DeviceName)"
+}
+$result -join "|"
+`;
+  const { stdout } = await execFileAsync2("powershell.exe", ["-NonInteractive", "-NoProfile", "-Command", ps], { timeout: 5e3 });
+  const monitors = [];
+  stdout.trim().split("|").forEach((part, idx) => {
+    const [x, y, w, h, primary, name] = part.split(",");
+    monitors.push({
+      id: idx,
+      x: parseInt(x),
+      y: parseInt(y),
+      width: parseInt(w),
+      height: parseInt(h),
+      primary: primary?.toLowerCase() === "true",
+      name: name?.replace("\\\\.\\", "").trim() || `Monitor ${idx + 1}`
+    });
+  });
+  return monitors.length > 0 ? monitors : [{ id: 0, x: 0, y: 0, width: _screenW, height: _screenH, primary: true, name: "Primary" }];
+}
+async function listMonitorsMac() {
+  try {
+    const script = `
+system_profiler SPDisplaysDataType | grep Resolution
+`;
+    const { stdout } = await execAsync3(script, { timeout: 5e3 });
+    const monitors = [];
+    let id = 0;
+    const lines = stdout.split("\n").filter((l) => l.includes("Resolution"));
+    for (const line of lines) {
+      const m = line.match(/(\d+)\s*x\s*(\d+)/);
+      if (m) {
+        monitors.push({
+          id: id++,
+          x: 0,
+          y: 0,
+          width: parseInt(m[1]),
+          height: parseInt(m[2]),
+          primary: id === 1,
+          name: `Display ${id}`
+        });
+      }
+    }
+    return monitors.length > 0 ? monitors : [{ id: 0, x: 0, y: 0, width: _screenW, height: _screenH, primary: true, name: "Primary" }];
+  } catch {
+    return [{ id: 0, x: 0, y: 0, width: _screenW, height: _screenH, primary: true, name: "Primary" }];
+  }
+}
+async function isControlAvailable() {
+  if (PLATFORM2 === "linux") return await hasXdotool();
+  if (PLATFORM2 === "win32") return true;
+  if (PLATFORM2 === "darwin") return true;
+  return false;
+}
+
+// src/agent.ts
+var AGENT_VERSION = "3.0.0";
+var HEARTBEAT_INTERVAL = 4e3;
+var RECONNECT_BASE_DELAY = 2e3;
+var RECONNECT_MAX_DELAY = 3e4;
+var CONSENT_TIMEOUT_SEC = parseInt(process.env.AGENT_CONSENT_TIMEOUT || "30", 10);
+function computeFrameHash(buf) {
+  const SKIP = 300;
+  if (buf.length < SKIP + 64) return `t${buf.length}`;
+  const payload = buf.length - SKIP;
+  const step = Math.max(1, Math.floor(payload / 128));
+  let h = buf.length;
+  for (let i = 0; i < 128; i++) {
+    const pos = SKIP + i * step;
+    if (pos >= buf.length) break;
+    h = Math.imul(h, 31) + buf[pos] | 0;
+  }
+  return `${buf.length}:${(h >>> 0).toString(16)}`;
+}
+var AgentService = class {
+  constructor(serverUrl2, token) {
+    this.serverUrl = serverUrl2;
+    this.token = token;
+    this.ws = null;
+    this.deviceId = null;
+    this.heartbeatTimer = null;
+    this.reconnectTimer = null;
+    this.reconnectDelay = RECONNECT_BASE_DELAY;
+    this.running = false;
+    this.ptyProcs = /* @__PURE__ */ new Map();
+    this.screenTimers = /* @__PURE__ */ new Map();
+    this.screenSeq = /* @__PURE__ */ new Map();
+    this.screenMonitorId = /* @__PURE__ */ new Map();
+    this.controlAvailable = false;
+    this.cachedMonitors = [];
+    this.privacyMode = false;
+    this.dockerAvailable = false;
+    this.writeChunkBuffers = /* @__PURE__ */ new Map();
+  }
+  start() {
+    this.running = true;
+    this.connect();
+  }
+  stop() {
+    this.running = false;
+    this.clearTimers();
+    for (const [, p] of this.ptyProcs) {
+      try {
+        p.proc.kill();
+      } catch {
+      }
+    }
+    this.ptyProcs.clear();
+    for (const [sessionId] of this.screenTimers) {
+      this.stopScreenCapture(sessionId);
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    console.log("\u{1F6D1} Agent stopped");
+  }
+  connect() {
+    if (!this.running) return;
+    console.log(`\u{1F50C} Connecting to ${this.serverUrl}...`);
+    this.ws = new wrapper_default(this.serverUrl);
+    this.ws.on("open", () => this.onOpen());
+    this.ws.on("message", (data) => this.onMessage(data));
+    this.ws.on("close", () => this.onClose());
+    this.ws.on("error", (err) => this.onError(err));
+  }
+  async onOpen() {
+    console.log("\u2705 Connected to server");
+    this.reconnectDelay = RECONNECT_BASE_DELAY;
+    const info = await getDeviceInfo();
+    const stats = await getDeviceStats();
+    const shell = process.platform === "win32" ? "powershell" : process.env.SHELL || "/bin/bash";
+    this.controlAvailable = await isControlAvailable();
+    try {
+      this.cachedMonitors = await listMonitors();
+    } catch {
+      this.cachedMonitors = [];
+    }
+    const primary = this.cachedMonitors.find((m) => m.primary) ?? this.cachedMonitors[0];
+    if (primary) setScreenResolution(primary.width, primary.height);
+    this.dockerAvailable = await this.detectDocker();
+    console.log(`\u{1F433} Docker available: ${this.dockerAvailable}`);
+    const payload = {
+      token: this.token,
+      info: { ...info, agentVersion: AGENT_VERSION },
+      stats,
+      tunnelLayer: "relay",
+      capabilities: {
+        pty: true,
+        sshAvailable: false,
+        shell,
+        screenControl: this.controlAvailable,
+        clipboard: true,
+        multiMonitor: this.cachedMonitors.length > 1,
+        monitors: this.cachedMonitors,
+        docker: this.dockerAvailable
+      },
+      sshInfo: { available: false, port: 22 }
+    };
+    this.send({ type: "agent:register", payload, timestamp: Date.now() });
+    this.startHeartbeat();
+  }
+  // ── T005: Docker detection ────────────────────────────────────────────────
+  detectDocker() {
+    return new Promise((resolve) => {
+      const proc = (0, import_child_process5.spawn)("docker", ["--version"], {
+        stdio: "ignore",
+        shell: process.platform === "win32",
+        windowsHide: true
+      });
+      const timer = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {
+        }
+        resolve(false);
+      }, 3e3);
+      proc.on("close", (code) => {
+        clearTimeout(timer);
+        resolve(code === 0);
+      });
+      proc.on("error", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
+  }
+  onMessage(data) {
+    try {
+      const message = JSON.parse(data.toString());
+      switch (message.type) {
+        case "server:registered": {
+          const p = message.payload;
+          this.deviceId = p.deviceId;
+          console.log(`\u2705 Registered as device: ${this.deviceId}`);
+          break;
+        }
+        case "server:command": {
+          const p = message.payload;
+          this.handleCommand(p);
+          break;
+        }
+        case "server:pty_open": {
+          const p = message.payload;
+          this.handlePtyOpen(p);
+          break;
+        }
+        case "server:pty_data": {
+          const p = message.payload;
+          const pty = this.ptyProcs.get(p.sessionId);
+          if (pty?.proc.stdin?.writable) {
+            pty.proc.stdin.write(Buffer.from(p.data, "base64"));
+          }
+          break;
+        }
+        // ── T003: PTY resize — Windows-aware ────────────────────────────────
+        case "server:pty_resize": {
+          const p = message.payload;
+          const pty = this.ptyProcs.get(p.sessionId);
+          if (pty) {
+            pty.rows = p.rows;
+            pty.cols = p.cols;
+            if (process.platform !== "win32") {
+              try {
+                pty.proc.kill("SIGWINCH");
+              } catch {
+              }
+            } else {
+              const hint = `\x1B[8;${p.rows};${p.cols}t`;
+              this.send({
+                type: "agent:pty_data",
+                payload: { sessionId: p.sessionId, data: Buffer.from(hint).toString("base64") },
+                timestamp: Date.now()
+              });
+            }
+          }
+          break;
+        }
+        case "server:pty_close": {
+          const p = message.payload;
+          this.closePty(p.sessionId);
+          break;
+        }
+        case "server:fs_request": {
+          const p = message.payload;
+          this.handleFsRequest(p);
+          break;
+        }
+        // ── T002: Chunked write (multi-message protocol) ─────────────────────
+        case "server:fs_write_chunk": {
+          const p = message.payload;
+          this.handleWriteChunk(p);
+          break;
+        }
+        case "server:screen_start": {
+          const p = message.payload;
+          this.handleScreenStart(p);
+          break;
+        }
+        case "server:screen_stop": {
+          const p = message.payload;
+          this.stopScreenCapture(p.sessionId);
+          break;
+        }
+        // ── Remote Control ─────────────────────────────────────────────────
+        case "server:screen_mouse": {
+          const p = message.payload;
+          if (this.controlAvailable) {
+            controlMouse({
+              type: p.type,
+              x: p.x,
+              y: p.y,
+              button: p.button,
+              deltaY: p.deltaY
+            }).catch((err) => console.error("[agent] mouse error:", err.message));
+          }
+          break;
+        }
+        case "server:screen_key": {
+          const p = message.payload;
+          if (this.controlAvailable) {
+            controlKeyboard({
+              type: p.type,
+              key: p.key,
+              modifiers: p.modifiers
+            }).catch((err) => console.error("[agent] key error:", err.message));
+          }
+          break;
+        }
+        case "server:screen_clipboard_read": {
+          const p = message.payload;
+          readClipboard().then((text) => {
+            this.send({
+              type: "agent:screen_clipboard",
+              payload: { sessionId: p.sessionId, text },
+              timestamp: Date.now()
+            });
+          }).catch((err) => console.error("[agent] clipboard read error:", err.message));
+          break;
+        }
+        case "server:screen_clipboard_write": {
+          const p = message.payload;
+          writeClipboard(p.text).catch((err) => console.error("[agent] clipboard write error:", err.message));
+          break;
+        }
+        case "server:screen_get_monitors": {
+          const p = message.payload;
+          listMonitors().then((monitors) => {
+            this.cachedMonitors = monitors;
+            this.send({
+              type: "agent:screen_monitors",
+              payload: { sessionId: p.sessionId, monitors },
+              timestamp: Date.now()
+            });
+          }).catch((err) => console.error("[agent] monitors error:", err.message));
+          break;
+        }
+        case "server:screen_set_monitor": {
+          const p = message.payload;
+          this.screenMonitorId.set(p.sessionId, p.monitorId);
+          const mon = this.cachedMonitors.find((m) => m.id === p.monitorId);
+          if (mon) setScreenResolution(mon.width, mon.height);
+          console.log(`[agent] Monitor set to ${p.monitorId} for session ${p.sessionId}`);
+          break;
+        }
+        case "server:screen_privacy": {
+          const p = message.payload;
+          if (p.enable) {
+            this.privacyMode = true;
+            enablePrivacyMode().catch((err) => console.error("[agent] privacy enable error:", err.message));
+          } else {
+            this.privacyMode = false;
+            disablePrivacyMode().catch((err) => console.error("[agent] privacy disable error:", err.message));
+          }
+          break;
+        }
+        // ── T006: In-session text chat ───────────────────────────────────────
+        case "server:screen_chat": {
+          const p = message.payload;
+          console.log(`\u{1F4AC} [chat] ${p.sender}: ${p.text}`);
+          break;
+        }
+        // ── T004: Consent dialog with AGENT_UNATTENDED env support ────────────
+        case "server:screen_control_request": {
+          const p = message.payload;
+          const unattended = process.env.AGENT_UNATTENDED === "true" || process.env.AGENT_UNATTENDED === "1";
+          if (unattended) {
+            console.log(`\u{1F510} Control request from "${p.requesterName}" \u2014 auto-granting (AGENT_UNATTENDED=true)`);
+            this.send({
+              type: "agent:screen_control_granted",
+              payload: { sessionId: p.sessionId, requestId: p.requestId },
+              timestamp: Date.now()
+            });
+          } else {
+            console.warn(`\u26A0\uFE0F  Control request from "${p.requesterName}"`);
+            console.warn(`   Headless agent has no consent dialog.`);
+            console.warn(`   Auto-granting in ${CONSENT_TIMEOUT_SEC}s \u2014 set AGENT_UNATTENDED=true to skip the delay.`);
+            const { sessionId, requestId } = p;
+            setTimeout(() => {
+              console.log(`\u{1F510} Auto-granting control to "${p.requesterName}" after timeout`);
+              this.send({
+                type: "agent:screen_control_granted",
+                payload: { sessionId, requestId },
+                timestamp: Date.now()
+              });
+            }, CONSENT_TIMEOUT_SEC * 1e3);
+          }
+          break;
+        }
+        case "server:error": {
+          const p = message.payload;
+          console.error(`\u274C Server error: ${p.message}`);
+          break;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to parse message:", err);
+    }
+  }
+  // ── T002: Chunked write handler ───────────────────────────────────────────
+  handleWriteChunk(p) {
+    let accum = this.writeChunkBuffers.get(p.opId);
+    if (!accum) {
+      accum = { chunks: /* @__PURE__ */ new Map(), total: p.total, path: p.path };
+      this.writeChunkBuffers.set(p.opId, accum);
+    }
+    accum.chunks.set(p.seq, Buffer.from(p.data, "base64"));
+    if (p.isLast) {
+      this.writeChunkBuffers.delete(p.opId);
+      const osPath = this.toOsPath(accum.path);
+      const parts = [];
+      for (let i = 0; i < accum.total; i++) {
+        const chunk = accum.chunks.get(i);
+        if (chunk) parts.push(chunk);
+      }
+      const fileData = Buffer.concat(parts);
+      const dir = import_path2.default.dirname(osPath);
+      import_promises2.default.mkdir(dir, { recursive: true }).then(() => import_promises2.default.writeFile(osPath, fileData)).then(() => {
+        console.log(`\u2705 Chunked write done: ${accum.path} (${fileData.length} bytes)`);
+        this.send({
+          type: "agent:fs_result",
+          payload: { opId: p.opId, data: { ok: true, size: fileData.length } },
+          timestamp: Date.now()
+        });
+      }).catch((err) => {
+        console.error(`\u274C Chunked write failed: ${err.message}`);
+        this.send({
+          type: "agent:fs_result",
+          payload: { opId: p.opId, error: err.message },
+          timestamp: Date.now()
+        });
+      });
+    }
+  }
+  // ── PTY (Direct Shell) ────────────────────────────────────────────────────
+  handlePtyOpen(p) {
+    const { sessionId, rows = 24, cols = 80, shell: shellHint = "auto" } = p;
+    console.log(`\u{1F5A5}\uFE0F  PTY request (session ${sessionId}, shell=${shellHint})`);
+    const { cmd, args } = this.resolveShell(shellHint);
+    const env = {
+      ...process.env,
+      TERM: "xterm-256color",
+      COLUMNS: String(cols),
+      LINES: String(rows),
+      COLORTERM: "truecolor"
+    };
+    try {
+      let proc;
+      if (process.platform !== "win32") {
+        const shellCmd = args.length > 0 ? `${cmd} ${args.join(" ")}` : cmd;
+        const scriptArgs = process.platform === "darwin" ? ["-q", "/dev/null", cmd, ...args] : ["-q", "-c", shellCmd, "/dev/null"];
+        proc = (0, import_child_process5.spawn)("script", scriptArgs, {
+          env: { ...env, SHELL: cmd },
+          stdio: ["pipe", "pipe", "pipe"],
+          shell: false
+        });
+      } else {
+        proc = (0, import_child_process5.spawn)(cmd, args, {
+          env,
+          stdio: ["pipe", "pipe", "pipe"],
+          shell: false,
+          windowsHide: false
+        });
+      }
+      this.ptyProcs.set(sessionId, { proc, sessionId, rows, cols, shell: shellHint });
+      this.send({
+        type: "agent:pty_opened",
+        payload: { sessionId },
+        timestamp: Date.now()
+      });
+      proc.stdout?.on("data", (data) => {
+        this.send({
+          type: "agent:pty_data",
+          payload: { sessionId, data: data.toString("base64") },
+          timestamp: Date.now()
+        });
+      });
+      proc.stderr?.on("data", (data) => {
+        this.send({
+          type: "agent:pty_data",
+          payload: { sessionId, data: data.toString("base64") },
+          timestamp: Date.now()
+        });
+      });
+      proc.on("close", () => {
+        this.send({
+          type: "agent:pty_closed",
+          payload: { sessionId },
+          timestamp: Date.now()
+        });
+        this.ptyProcs.delete(sessionId);
+        console.log(`\u{1F5A5}\uFE0F  PTY closed: session ${sessionId}`);
+      });
+      proc.on("error", (err) => {
+        this.send({
+          type: "agent:pty_error",
+          payload: { sessionId, message: err.message },
+          timestamp: Date.now()
+        });
+        this.ptyProcs.delete(sessionId);
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.send({
+        type: "agent:pty_error",
+        payload: { sessionId, message: `Failed to spawn shell: ${msg}` },
+        timestamp: Date.now()
+      });
+    }
+  }
+  resolveShell(hint) {
+    if (process.platform === "win32") {
+      if (hint === "cmd") return { cmd: "cmd.exe", args: [] };
+      return { cmd: "powershell.exe", args: ["-NoLogo", "-NoProfile"] };
+    }
+    if (hint === "bash") return { cmd: "/bin/bash", args: ["--login"] };
+    if (hint === "sh") return { cmd: "/bin/sh", args: [] };
+    if (hint === "zsh") return { cmd: "/bin/zsh", args: ["--login"] };
+    const shell = process.env.SHELL || "/bin/bash";
+    return { cmd: shell, args: ["--login"] };
+  }
+  closePty(sessionId) {
+    const pty = this.ptyProcs.get(sessionId);
+    if (pty) {
+      try {
+        pty.proc.kill();
+      } catch {
+      }
+      this.ptyProcs.delete(sessionId);
+    }
+  }
+  // ── File System (via Agent) ───────────────────────────────────────────────
+  async handleFsRequest(p) {
+    const { opId, op } = p;
+    console.log(`\u{1F4C2} FS request: op=${op} path=${p.path}`);
+    const OVERALL_TIMEOUT_MS = 8e3;
+    const READDIR_TIMEOUT_MS = 5e3;
+    const STAT_TIMEOUT_MS = 2e3;
+    const withTimeout2 = (promise, ms, label) => Promise.race([
+      promise,
+      new Promise(
+        (_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      )
+    ]);
+    try {
+      let result;
+      const osPath = this.toOsPath(p.path);
+      const doOp = async () => {
+        switch (op) {
+          case "list": {
+            if (p.path === "/" && process.platform === "win32") {
+              return this.listWindowsDrives();
+            }
+            const entries = await withTimeout2(
+              import_promises2.default.readdir(osPath, { withFileTypes: true }),
+              READDIR_TIMEOUT_MS,
+              `readdir(${osPath})`
+            );
+            const settled = await Promise.allSettled(entries.map(async (e) => {
+              const fullPath = import_path2.default.join(osPath, e.name);
+              const webPath = (p.path === "/" ? "" : p.path) + "/" + e.name;
+              let size = 0, modified = (/* @__PURE__ */ new Date()).toISOString(), permissions = "---";
+              let isDir = e.isDirectory();
+              try {
+                const stat = await withTimeout2(
+                  import_promises2.default.lstat(fullPath),
+                  STAT_TIMEOUT_MS,
+                  `lstat(${fullPath})`
+                );
+                size = stat.size;
+                modified = stat.mtime.toISOString();
+                permissions = (Number(stat.mode) & 511).toString(8);
+                isDir = isDir || stat.isDirectory();
+              } catch {
+              }
+              return { name: e.name, path: webPath, isDirectory: isDir, size, modified, permissions };
+            }));
+            return settled.filter((r) => r.status === "fulfilled").map((r) => r.value);
+          }
+          case "read": {
+            const buf = await withTimeout2(import_promises2.default.readFile(osPath), OVERALL_TIMEOUT_MS, `readFile(${osPath})`);
+            return buf.toString("base64");
+          }
+          case "read_chunked": {
+            const CHUNK = 512 * 1024;
+            const buf = await withTimeout2(import_promises2.default.readFile(osPath), 12e4, `readFile_c(${osPath})`);
+            const n = Math.ceil(buf.length / CHUNK) || 1;
+            for (let i = 0; i < n; i++) {
+              this.send({
+                type: "agent:fs_chunk",
+                payload: {
+                  opId,
+                  seq: i,
+                  data: buf.subarray(i * CHUNK, (i + 1) * CHUNK).toString("base64"),
+                  done: i === n - 1,
+                  total: n
+                },
+                timestamp: Date.now()
+              });
+              await new Promise((r) => setImmediate(r));
+            }
+            console.log(`\u2705 FS chunked: path=${p.path} chunks=${n}`);
+            return "__chunked__";
+          }
+          // ── T002: Incremental write_chunk via fs_request (small-file path) ──
+          case "write_chunk": {
+            let accum = this.writeChunkBuffers.get(opId);
+            if (!accum) {
+              accum = { chunks: /* @__PURE__ */ new Map(), total: p.total ?? 1, path: p.path };
+              this.writeChunkBuffers.set(opId, accum);
+            }
+            accum.chunks.set(p.seq ?? 0, Buffer.from(p.data || "", "base64"));
+            if (p.isLast) {
+              this.writeChunkBuffers.delete(opId);
+              const parts = [];
+              for (let i = 0; i < accum.total; i++) {
+                const c = accum.chunks.get(i);
+                if (c) parts.push(c);
+              }
+              const fileData = Buffer.concat(parts);
+              const dir = import_path2.default.dirname(osPath);
+              await import_promises2.default.mkdir(dir, { recursive: true });
+              await withTimeout2(import_promises2.default.writeFile(osPath, fileData), 6e4, `writeChunked(${osPath})`);
+              console.log(`\u2705 write_chunk done: ${p.path} (${fileData.length} bytes)`);
+              return { ok: true, size: fileData.length };
+            }
+            return "__write_chunk_pending__";
+          }
+          case "write": {
+            const dir = import_path2.default.dirname(osPath);
+            await import_promises2.default.mkdir(dir, { recursive: true });
+            await withTimeout2(
+              import_promises2.default.writeFile(osPath, Buffer.from(p.data || "", "base64")),
+              OVERALL_TIMEOUT_MS,
+              `writeFile(${osPath})`
+            );
+            return { ok: true };
+          }
+          case "delete": {
+            await withTimeout2(
+              import_promises2.default.rm(osPath, { recursive: true, force: true }),
+              OVERALL_TIMEOUT_MS,
+              `rm(${osPath})`
+            );
+            return { ok: true };
+          }
+          case "rename": {
+            const newOsPath = this.toOsPath(p.newPath || "");
+            await withTimeout2(import_promises2.default.rename(osPath, newOsPath), OVERALL_TIMEOUT_MS, `rename`);
+            return { ok: true };
+          }
+          case "mkdir": {
+            await withTimeout2(import_promises2.default.mkdir(osPath, { recursive: true }), OVERALL_TIMEOUT_MS, `mkdir(${osPath})`);
+            return { ok: true };
+          }
+          default:
+            throw new Error(`Unknown operation: ${op}`);
+        }
+      };
+      result = await withTimeout2(
+        doOp(),
+        op === "read_chunked" ? 125e3 : op === "write_chunk" ? 65e3 : OVERALL_TIMEOUT_MS + 1e3,
+        `fs:${op}`
+      );
+      if (result === "__chunked__" || result === "__write_chunk_pending__") return;
+      console.log(`\u2705 FS result: op=${op} path=${p.path}`);
+      this.send({
+        type: "agent:fs_result",
+        payload: { opId, data: result },
+        timestamp: Date.now()
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\u274C FS error: op=${op} path=${p.path} \u2014 ${msg}`);
+      this.send({
+        type: "agent:fs_result",
+        payload: { opId, error: msg },
+        timestamp: Date.now()
+      });
+    }
+  }
+  toOsPath(webPath) {
+    if (process.platform !== "win32") return webPath;
+    if (webPath === "/") return "/";
+    const m = webPath.match(/^\/([A-Za-z]:[\\/].*)$/);
+    if (m) return m[1].replace(/\//g, "\\");
+    const drive = webPath.match(/^\/([A-Za-z]:)$/);
+    if (drive) return drive[1] + "\\";
+    return webPath;
+  }
+  async listWindowsDrives() {
+    const checkDrive = async (letter) => {
+      const drivePath = letter + ":\\";
+      try {
+        await Promise.race([
+          import_promises2.default.access(drivePath),
+          new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("timeout")), 1500)
+          )
+        ]);
+        return {
+          name: letter + ":",
+          path: "/" + letter + ":",
+          isDirectory: true,
+          size: 0,
+          modified: (/* @__PURE__ */ new Date()).toISOString(),
+          permissions: "755"
+        };
+      } catch {
+        return null;
+      }
+    };
+    const results = await Promise.all(
+      "CDEFGHIJKLMNOPQRSTUVWXYZ".split("").map(checkDrive)
+    );
+    return results.filter(Boolean);
+  }
+  // ── Screen Capture ────────────────────────────────────────────────────────
+  handleScreenStart(p) {
+    const { sessionId, fps, quality, monitorId = 0 } = p;
+    this.stopScreenCapture(sessionId);
+    this.screenMonitorId.set(sessionId, monitorId);
+    const mon = this.cachedMonitors.find((m) => m.id === monitorId);
+    if (mon) setScreenResolution(mon.width, mon.height);
+    const clampedFps = Math.min(fps, 30);
+    const intervalMs = Math.max(33, Math.round(1e3 / clampedFps));
+    let seq = 0;
+    let prevHash = "";
+    let framesSinceKeyframe = 0;
+    const KEYFRAME_EVERY = 60;
+    const MAX_SKIP_MS = 1500;
+    let lastSentAt = 0;
+    let idleFrames = 0;
+    let motionQuality = quality;
+    let capturing = false;
+    const capture = async () => {
+      if (!this.screenTimers.has(sessionId)) return;
+      if (this.ws?.readyState !== wrapper_default.OPEN) return;
+      if (capturing) return;
+      capturing = true;
+      const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId;
+      try {
+        const adaptiveQ = idleFrames > 10 ? Math.max(30, quality - Math.min(30, idleFrames)) : quality;
+        const frame = await captureScreen({
+          quality: adaptiveQ,
+          maxWidth: 1280,
+          monitorId: currentMonitorId,
+          monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : void 0
+        });
+        if (!frame) {
+          this.send({
+            type: "agent:screen_unavailable",
+            payload: { sessionId, message: "No screen capture tool available (Linux: install scrot or imagemagick; ensure DISPLAY is set)" },
+            timestamp: Date.now()
+          });
+          this.stopScreenCapture(sessionId);
+          return;
+        }
+        const hash = computeFrameHash(frame.data);
+        framesSinceKeyframe++;
+        const isKeyframe = framesSinceKeyframe >= KEYFRAME_EVERY;
+        const timeSinceLastSend = Date.now() - lastSentAt;
+        const forceByTime = timeSinceLastSend >= MAX_SKIP_MS;
+        if (hash === prevHash && !isKeyframe && !forceByTime) {
+          idleFrames = Math.min(idleFrames + 1, 60);
+          return;
+        }
+        if (hash !== prevHash) {
+          idleFrames = Math.max(0, idleFrames - 3);
+          motionQuality = quality;
+        }
+        prevHash = hash;
+        if (isKeyframe) framesSinceKeyframe = 0;
+        lastSentAt = Date.now();
+        this.send({
+          type: "agent:screen_frame",
+          payload: {
+            sessionId,
+            data: frame.data.toString("base64"),
+            width: frame.width,
+            height: frame.height,
+            seq: seq++,
+            // T001: delta metadata — dashboard can display bandwidth stats
+            keyframe: isKeyframe || idleFrames === 0,
+            quality: adaptiveQ
+          },
+          timestamp: Date.now()
+        });
+      } catch (err) {
+        console.error("[screen] Capture error:", err.message);
+        this.send({
+          type: "agent:screen_error",
+          payload: { sessionId, message: err.message },
+          timestamp: Date.now()
+        });
+        this.stopScreenCapture(sessionId);
+      } finally {
+        capturing = false;
+      }
+    };
+    capture();
+    const timer = setInterval(capture, intervalMs);
+    this.screenTimers.set(sessionId, timer);
+    this.screenSeq.set(sessionId, 0);
+    console.log(`\u{1F5A5}\uFE0F  Screen capture started: sessionId=${sessionId} fps=${clampedFps} quality=${quality}`);
+  }
+  stopScreenCapture(sessionId) {
+    const timer = this.screenTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.screenTimers.delete(sessionId);
+      this.screenSeq.delete(sessionId);
+      this.screenMonitorId.delete(sessionId);
+      this.send({
+        type: "agent:screen_closed",
+        payload: { sessionId },
+        timestamp: Date.now()
+      });
+      console.log(`\u{1F5A5}\uFE0F  Screen capture stopped: sessionId=${sessionId}`);
+    }
+  }
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  onClose() {
+    console.log("\u{1F4F4} Disconnected from server");
+    this.clearTimers();
+    this.scheduleReconnect();
+  }
+  onError(err) {
+    console.error(`\u{1F534} WebSocket error: ${err.message}`);
+  }
+  async handleCommand(payload) {
+    if (payload.type !== "shell" || !payload.command) return;
+    console.log(`\u25B6\uFE0F  Executing: ${payload.command}`);
+    const result = await executeCommand(payload.command);
+    this.send({
       type: "agent:command_result",
       payload: {
         commandId: payload.commandId,
-        stdout: stdout || "",
-        stderr: stderr || (err?.message || ""),
-        exitCode: err?.code ?? 0,
-        duration: Date.now() - t0
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        duration: result.duration
       },
       timestamp: Date.now()
     });
-  });
-}
-function startHeartbeat() {
-  heartbeatTimer = setInterval(async () => {
-    if (!ws || ws.readyState !== WebSocket.OPEN || !deviceId) return;
-    try {
-      const stats = await getStats();
-      send({
+  }
+  async startHeartbeat() {
+    this.heartbeatTimer = setInterval(async () => {
+      if (!this.deviceId || this.ws?.readyState !== wrapper_default.OPEN) return;
+      const stats = await getDeviceStats();
+      this.send({
         type: "agent:heartbeat",
         payload: {
-          deviceId,
+          deviceId: this.deviceId,
           stats,
           tunnelLayer: "relay",
           timestamp: Date.now(),
           capabilities: {
             pty: true,
-            sshAvailable,
-            screenControl: false,
-            clipboard: false,
-            multiMonitor: false,
-            monitors: [],
-            docker: dockerAvailable
+            sshAvailable: false,
+            screenControl: this.controlAvailable,
+            clipboard: true,
+            multiMonitor: this.cachedMonitors.length > 1,
+            monitors: this.cachedMonitors,
+            docker: this.dockerAvailable
           }
         },
         timestamp: Date.now()
       });
-    } catch {
+    }, HEARTBEAT_INTERVAL);
+  }
+  scheduleReconnect() {
+    if (!this.running) return;
+    console.log(`\u{1F504} Reconnecting in ${this.reconnectDelay / 1e3}s...`);
+    this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, RECONNECT_MAX_DELAY);
+  }
+  clearTimers() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
-  }, HEARTBEAT_MS);
-}
-function scheduleReconnect() {
-  if (!running) return;
-  log("info", `\u{1F504} Retry in ${(reconnectDelay / 1e3).toFixed(0)}s...`);
-  reconnectTimer = setTimeout(() => connect(), reconnectDelay);
-  reconnectDelay = Math.min(reconnectDelay * 1.5, RECONNECT_MAX);
-}
-function clearTimers() {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-  }
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
-}
-function setupInteractive() {
-  const readline = require("readline");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const q = (prompt) => new Promise((resolve) => rl.question(prompt, resolve));
-  console.log("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
-  console.log("\u2551  AiRemote Agent v" + VERSION + " \u2014 First Setup  \u2551");
-  console.log("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n");
-  return q("Server URL (e.g. wss://your-server.replit.app/ws): ").then((serverUrl) => {
-    return q("Device Token (from dashboard): ").then((token) => {
-      rl.close();
-      const cfg = { serverUrl: serverUrl.trim(), token: token.trim() };
-      saveConfig(cfg);
-      return cfg;
-    });
-  });
-}
-async function main() {
-  console.log(`
-\u26A1 AiRemote Agent v${VERSION} \u2014 Headless Mode`);
-  console.log(`   Hostname: ${os.hostname()} | IP: ${getIpLocal()} | OS: ${detectPlatform()}`);
-  console.log(`   Config:   ${CONFIG_FILE}`);
-  console.log(`   Features: PTY | SSH detect | Docker detect | Chunked write | Consent dialog | Chat
-`);
-  if (!config.serverUrl || !config.token) {
-    if (process.stdin.isTTY) {
-      config = await setupInteractive();
-    } else {
-      log("error", "No config found. Run with --server <url> --token <token>");
-      log("error", `Or create config at: ${CONFIG_FILE}`);
-      process.exit(1);
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
   }
-  log("info", `Server: ${config.serverUrl}`);
-  connect();
-  process.on("SIGTERM", () => {
-    running = false;
-    clearTimers();
-    for (const [, p] of ptyProcs) {
-      try {
-        p.kill();
-      } catch {
-      }
-    }
-    ws?.close();
-    process.exit(0);
-  });
-  process.on("SIGINT", () => {
-    running = false;
-    clearTimers();
-    for (const [, p] of ptyProcs) {
-      try {
-        p.kill();
-      } catch {
-      }
-    }
-    ws?.close();
-    console.log("\nStopped.");
-    process.exit(0);
-  });
-}
-main().catch((e) => {
-  log("error", e.message);
+  send(message) {
+    if (this.ws?.readyState === wrapper_default.OPEN) this.ws.send(JSON.stringify(message));
+  }
+};
+
+// src/index.ts
+console.log("");
+console.log("\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
+console.log(`\u2551      AiRemote Agent  v${AGENT_VERSION}              \u2551`);
+console.log("\u2551      Self-Hosted Remote Access           \u2551");
+console.log("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D");
+console.log("");
+var serverUrl = process.env.SERVER_URL || "ws://localhost:3001/ws";
+var deviceToken = process.env.DEVICE_TOKEN || "";
+if (!deviceToken) {
+  console.error("\u274C DEVICE_TOKEN is required. Set it in .env file.");
   process.exit(1);
+}
+console.log(`\u{1F4E1} Server : ${serverUrl}`);
+console.log(`\u{1F511} Token  : ${deviceToken.slice(0, 8)}...`);
+console.log("");
+var agent = new AgentService(serverUrl, deviceToken);
+agent.start();
+process.on("SIGTERM", () => {
+  agent.stop();
+  process.exit(0);
+});
+process.on("SIGINT", () => {
+  agent.stop();
+  process.exit(0);
 });

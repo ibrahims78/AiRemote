@@ -39,13 +39,21 @@ interface WriteChunkAccum {
   path:   string
 }
 
-// ── Fast frame hash for deduplication (v2.0.0) ───────────────────────────────
+// ── Frame hash for deduplication ─────────────────────────────────────────────
+// Skips the JPEG header (~first 300 bytes which are always identical regardless
+// of image content), then samples 128 evenly-spaced bytes from the actual pixel
+// data.  128 samples vs the old 32 dramatically reduces false-positive "no
+// change" matches that caused the screen to appear frozen.
 function computeFrameHash(buf: Buffer): string {
-  if (buf.length < 200) return `t${buf.length}`
-  const step = Math.floor(buf.length / 32)
+  const SKIP = 300  // skip JPEG header — it never changes between frames
+  if (buf.length < SKIP + 64) return `t${buf.length}`
+  const payload = buf.length - SKIP
+  const step = Math.max(1, Math.floor(payload / 128))
   let h = buf.length
-  for (let i = 1; i <= 32; i++) {
-    h = (Math.imul(h, 31) + buf[i * step]) | 0
+  for (let i = 0; i < 128; i++) {
+    const pos = SKIP + i * step
+    if (pos >= buf.length) break
+    h = (Math.imul(h, 31) + buf[pos]) | 0
   }
   return `${buf.length}:${(h >>> 0).toString(16)}`
 }
@@ -769,6 +777,11 @@ export class AgentService {
     let prevHash = ''
     let framesSinceKeyframe = 0
     const KEYFRAME_EVERY = 60
+    // Time-based fallback: always send a frame if this many ms have passed
+    // since the last sent frame, regardless of hash.  Prevents a frozen screen
+    // when the hash incorrectly matches (e.g. minor JPEG quantization variance).
+    const MAX_SKIP_MS = 1500
+    let lastSentAt = 0
 
     // Motion tracking for adaptive quality
     let idleFrames   = 0
@@ -812,8 +825,10 @@ export class AgentService {
         const hash = computeFrameHash(frame.data)
         framesSinceKeyframe++
         const isKeyframe = framesSinceKeyframe >= KEYFRAME_EVERY
+        const timeSinceLastSend = Date.now() - lastSentAt
+        const forceByTime = timeSinceLastSend >= MAX_SKIP_MS
 
-        if (hash === prevHash && !isKeyframe) {
+        if (hash === prevHash && !isKeyframe && !forceByTime) {
           idleFrames = Math.min(idleFrames + 1, 60)
           return
         }
@@ -825,6 +840,7 @@ export class AgentService {
         }
         prevHash = hash
         if (isKeyframe) framesSinceKeyframe = 0
+        lastSentAt = Date.now()
 
         this.send({
           type:      'agent:screen_frame',
