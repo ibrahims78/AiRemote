@@ -25,6 +25,7 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
 
   function schedulePing() {
     pingTimer = setTimeout(() => {
+      pingTimer = null  // ← mark as fired so the message handler can re-arm the cycle
       if (socket.readyState !== 1) return
 
       // Expect a pong within PONG_TIMEOUT_MS; if none → terminate

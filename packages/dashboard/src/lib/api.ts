@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { useAuthStore } from '../store/authStore'
 
 export const api = axios.create({
   baseURL: '',
@@ -52,13 +53,11 @@ api.interceptors.response.use(
         const res = await axios.post('/api/auth/refresh', { refreshToken })
         const { token: newToken, refreshToken: newRefresh } = res.data
 
-        // Update stored auth
-        const currentAuth = getStoredAuth()
-        if (currentAuth?.state) {
-          currentAuth.state.token = newToken
-          currentAuth.state.refreshToken = newRefresh
-          localStorage.setItem('airemote-auth', JSON.stringify(currentAuth))
-        }
+        // Update the Zustand store — this also persists to localStorage via the
+        // persist middleware, so useAuthStore().token is immediately up-to-date
+        // everywhere (including ScreenViewer's ws-ticket fetch).
+        const { user } = useAuthStore.getState()
+        useAuthStore.getState().setAuth(newToken, user!, newRefresh)
 
         api.defaults.headers.common.Authorization = `Bearer ${newToken}`
         original.headers.Authorization = `Bearer ${newToken}`
