@@ -768,10 +768,24 @@ export class AgentService {
 
   // ── Screen Capture ────────────────────────────────────────────────────────
 
+  // Clears the capture timer without notifying the server — used when restarting
+  // capture for quality/monitor changes on the same session.
+  private clearScreenTimer(sessionId: string): void {
+    const timer = this.screenTimers.get(sessionId)
+    if (timer) {
+      clearInterval(timer)
+      this.screenTimers.delete(sessionId)
+      this.screenSeq.delete(sessionId)
+    }
+  }
+
   private handleScreenStart(p: { sessionId: string; fps: number; quality: number; monitorId?: number }): void {
     const { sessionId, fps, quality, monitorId = 0 } = p
 
-    this.stopScreenCapture(sessionId)
+    // Use clearScreenTimer (not stopScreenCapture) so we do NOT send agent:screen_closed
+    // to the server — that would delete the session from the registry and permanently
+    // orphan all subsequent frames for this quality/monitor-change restart.
+    this.clearScreenTimer(sessionId)
     this.screenMonitorId.set(sessionId, monitorId)
     const mon = this.cachedMonitors.find(m => m.id === monitorId)
     if (mon) setScreenResolution(mon.width, mon.height)
@@ -787,7 +801,9 @@ export class AgentService {
     // Time-based fallback: always send a frame if this many ms have passed
     // since the last sent frame, regardless of hash.  Prevents a frozen screen
     // when the hash incorrectly matches (e.g. minor JPEG quantization variance).
-    const MAX_SKIP_MS = 1500
+    // Kept short (200 ms) so the screen never appears frozen longer than one
+    // rendered frame even when dedup incorrectly flags identical hashes.
+    const MAX_SKIP_MS = 200
     let lastSentAt = 0
 
     // Motion tracking for adaptive quality
@@ -884,12 +900,10 @@ export class AgentService {
   }
 
   private stopScreenCapture(sessionId: string): void {
-    const timer = this.screenTimers.get(sessionId)
-    if (timer) {
-      clearInterval(timer)
-      this.screenTimers.delete(sessionId)
-      this.screenSeq.delete(sessionId)
-      this.screenMonitorId.delete(sessionId)
+    const hadTimer = this.screenTimers.has(sessionId)
+    this.clearScreenTimer(sessionId)
+    this.screenMonitorId.delete(sessionId)
+    if (hadTimer) {
       this.send({
         type:      'agent:screen_closed',
         payload:   { sessionId },

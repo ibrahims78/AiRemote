@@ -415,6 +415,8 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     if (newFps !== p.fps) {
       const adj = { ...p, label: `تكيفي (${newFps}fps)`, fps: newFps }
       setPreset(adj)
+      // Reset seq so frames from the restarted capture loop are not dropped.
+      lastSeqRef.current = -1
       sendWs({ type: 'screen:set_quality', payload: { fps: newFps, quality: p.quality, monitorId: selectedMonRef.current } })
     }
   }, [latency]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -459,6 +461,8 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   // ── Monitor selection ─────────────────────────────────────────────────────
   const selectMonitor = (id: number) => {
     setSelectedMonitor(id); setShowMonitors(false)
+    // Reset seq so frames from the restarted capture loop are not dropped.
+    lastSeqRef.current = -1
     sendWs({ type: 'screen:set_monitor', payload: { monitorId: id, fps: preset.fps, quality: preset.quality } })
   }
 
@@ -581,6 +585,9 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const applyPreset = (p: QualityPreset) => {
     setPreset(p); setAdaptiveMode(false); setShowSettings(false)
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Reset seq tracker so frames from the restarted capture loop (seq starts
+      // at 0 again on the agent) are not silently dropped by the seq guard.
+      lastSeqRef.current = -1
       // Already connected — just tell the agent to change quality, no reconnect
       sendWs({
         type:    'screen:set_quality',
