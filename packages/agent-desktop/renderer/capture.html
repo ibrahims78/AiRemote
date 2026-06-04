@@ -32,6 +32,8 @@ let stream          = null
 let cachedSources   = []   // [{id, name, index}] from main process
 let lastFrameHash   = 0
 let privacyMode     = false
+let lastSentAt      = 0
+const MAX_SKIP_MS   = 1500  // always send a frame if this many ms passed, even if hash matches
 
 // ── Get screen sources from main process (desktopCapturer) ───────────────
 async function getSources() {
@@ -135,9 +137,11 @@ function captureFrame() {
   canvas.width  = video.videoWidth
   canvas.height = video.videoHeight
   ctx.drawImage(video, 0, 0)
-  const hash = computeFrameHash()
-  if (hash === lastFrameHash && frameSeq > 0) return
+  const hash        = computeFrameHash()
+  const forceByTime = (Date.now() - lastSentAt) >= MAX_SKIP_MS
+  if (hash === lastFrameHash && frameSeq > 0 && !forceByTime) return
   lastFrameHash = hash
+  lastSentAt    = Date.now()
   const dataUrl = canvas.toDataURL('image/jpeg', currentQuality / 100)
   const base64  = dataUrl.split(',')[1]
   ipcRenderer.send('screen-frame', {
