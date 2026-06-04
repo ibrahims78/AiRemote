@@ -11,7 +11,7 @@ import { getDb } from '../db/database'
 // The agent may send frames faster; we drop extras to protect bandwidth.
 const DEFAULT_FPS     = 5
 const MAX_FPS         = 30
-const CONNECT_TIMEOUT = 30_000   // ms to wait for agent:screen_frame after start
+const CONNECT_TIMEOUT = 60_000   // ms to wait for agent:screen_frame after start
 
 export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest) {
   const query = request.query as { ticket?: string; token?: string; deviceId?: string; fps?: string; quality?: string }

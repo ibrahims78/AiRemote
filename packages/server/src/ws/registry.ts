@@ -101,7 +101,11 @@ class DeviceRegistry {
   }
 
   isDeviceOnline(deviceId: string): boolean {
-    return this.devices.has(deviceId)
+    const dev = this.devices.get(deviceId)
+    if (!dev) return false
+    // Treat a socket that is not OPEN as offline so callers don't try to send to zombies.
+    // The dead entry will be purged on the next sendToDevice call.
+    return dev.socket.readyState === 1
   }
 
   getDeviceCapabilities(deviceId: string): AgentCapabilities {
@@ -156,11 +160,18 @@ class DeviceRegistry {
 
   sendToDevice(deviceId: string, message: object): boolean {
     const device = this.devices.get(deviceId)
-    if (!device || device.socket.readyState !== 1) return false
+    if (!device) return false
+    if (device.socket.readyState !== 1) {
+      // Socket is dead — purge the zombie so subsequent isDeviceOnline calls return false
+      this.disconnectDevice(deviceId)
+      return false
+    }
     try {
       device.socket.send(JSON.stringify(message))
       return true
     } catch {
+      // Send failed (EPIPE / ECONNRESET) — treat as disconnected
+      this.disconnectDevice(deviceId)
       return false
     }
   }
