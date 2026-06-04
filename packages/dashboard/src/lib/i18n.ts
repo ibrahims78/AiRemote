@@ -61,6 +61,49 @@ const T = {
     back_to_devices: 'العودة للأجهزة', device_info: 'معلومات الجهاز',
     last_seen: 'آخر اتصال', uptime: 'وقت التشغيل', ip_local: 'IP المحلي', ip_public: 'IP العام',
     platform: 'النظام', hostname: 'اسم المضيف',
+
+    nav_notifications: 'التنبيهات',
+    nav_audit: 'سجل التدقيق',
+
+    audit_title: 'سجل التدقيق',
+    audit_records: 'سجل محفوظ',
+    audit_export_csv: 'تصدير CSV',
+    audit_search_placeholder: 'بحث بالمستخدم...',
+    audit_all_actions: 'كل العمليات',
+    audit_col_time: 'الوقت',
+    audit_col_user: 'المستخدم',
+    audit_col_action: 'العملية',
+    audit_col_device: 'الجهاز',
+    audit_col_details: 'تفاصيل',
+    audit_loading: 'جارٍ التحميل...',
+    audit_no_entries: 'لا توجد سجلات',
+    audit_page: 'صفحة',
+    audit_page_of: 'من',
+
+    notif_title: 'الإشعارات والتنبيهات',
+    notif_all_ok: 'كل شيء على ما يرام',
+    notif_unread: 'إشعار غير مقروء',
+    notif_tab_notifications: 'الإشعارات',
+    notif_tab_rules: 'قواعد التنبيه',
+    notif_mark_read: 'تعليم كمقروءة',
+    notif_clear_read: 'حذف المقروءة',
+    notif_no_notifications: 'لا توجد إشعارات',
+    notif_no_notifications_hint: 'أضف قواعد تنبيه من تبويب "قواعد التنبيه"',
+    notif_add_rule: '+ إضافة قاعدة تنبيه',
+    notif_new_rule: 'قاعدة تنبيه جديدة',
+    notif_rule_type: 'نوع التنبيه',
+    notif_rule_threshold: 'الحد (%)',
+    notif_rule_cooldown: 'فترة الانتظار (دقيقة)',
+    notif_rule_channel: 'القناة',
+    notif_channel_inapp: 'داخل التطبيق',
+    notif_save_rule: 'حفظ القاعدة',
+    notif_no_rules: 'لا توجد قواعد تنبيه',
+    notif_no_rules_hint: 'أنشئ قاعدة للحصول على إشعارات تلقائية',
+    notif_threshold_label: 'الحد:',
+    notif_every_min: 'كل',
+    notif_min: 'دقيقة',
+    notif_all_devices: 'جميع الأجهزة',
+    time_now: 'الآن',
   },
   en: {
     overview: 'Overview', devices: 'Devices', ai_assistant: 'AI Assistant',
@@ -121,6 +164,49 @@ const T = {
     back_to_devices: 'Back to Devices', device_info: 'Device Info',
     last_seen: 'Last seen', uptime: 'Uptime', ip_local: 'Local IP', ip_public: 'Public IP',
     platform: 'Platform', hostname: 'Hostname',
+
+    nav_notifications: 'Notifications',
+    nav_audit: 'Audit Log',
+
+    audit_title: 'Audit Log',
+    audit_records: 'records',
+    audit_export_csv: 'Export CSV',
+    audit_search_placeholder: 'Search by user...',
+    audit_all_actions: 'All Actions',
+    audit_col_time: 'Time',
+    audit_col_user: 'User',
+    audit_col_action: 'Action',
+    audit_col_device: 'Device',
+    audit_col_details: 'Details',
+    audit_loading: 'Loading...',
+    audit_no_entries: 'No records found',
+    audit_page: 'Page',
+    audit_page_of: 'of',
+
+    notif_title: 'Notifications & Alerts',
+    notif_all_ok: 'All clear',
+    notif_unread: 'unread',
+    notif_tab_notifications: 'Notifications',
+    notif_tab_rules: 'Alert Rules',
+    notif_mark_read: 'Mark all read',
+    notif_clear_read: 'Clear read',
+    notif_no_notifications: 'No notifications',
+    notif_no_notifications_hint: 'Add alert rules in the "Alert Rules" tab',
+    notif_add_rule: '+ Add Alert Rule',
+    notif_new_rule: 'New Alert Rule',
+    notif_rule_type: 'Alert Type',
+    notif_rule_threshold: 'Threshold (%)',
+    notif_rule_cooldown: 'Cooldown (minutes)',
+    notif_rule_channel: 'Channel',
+    notif_channel_inapp: 'In-App',
+    notif_save_rule: 'Save Rule',
+    notif_no_rules: 'No alert rules',
+    notif_no_rules_hint: 'Create a rule to get automatic notifications',
+    notif_threshold_label: 'Threshold:',
+    notif_every_min: 'Every',
+    notif_min: 'min',
+    notif_all_devices: 'All devices',
+    time_now: 'Just now',
   }
 } as const
 
@@ -136,4 +222,18 @@ export function useT(): (key: TKey) => string {
 
 export function t(lang: Lang, key: TKey): string {
   return (T[lang] as Record<string, string>)[key] ?? (T.ar as Record<string, string>)[key] ?? key
+}
+
+export function formatRelativeLang(dateStr: string, lang: Lang): string {
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000
+  if (lang === 'en') {
+    if (diff < 60)    return 'Just now'
+    if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+    return new Date(dateStr).toLocaleDateString('en-US', { day: '2-digit', month: 'short' })
+  }
+  if (diff < 60)    return 'الآن'
+  if (diff < 3600)  return `منذ ${Math.floor(diff / 60)} د`
+  if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} س`
+  return new Date(dateStr).toLocaleDateString('ar-EG', { day: '2-digit', month: 'short' })
 }

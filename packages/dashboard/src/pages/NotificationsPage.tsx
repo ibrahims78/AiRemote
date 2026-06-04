@@ -5,6 +5,9 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { clsx } from 'clsx'
+import { useT } from '../lib/i18n'
+import { formatRelativeLang } from '../lib/i18n'
+import { useUIStore } from '../store/uiStore'
 
 interface Notification {
   id: string
@@ -48,7 +51,7 @@ const TYPE_ICONS: Record<string, React.ElementType> = {
   device_online:  Wifi,
 }
 
-const ALERT_TYPE_LABELS: Record<string, string> = {
+const ALERT_TYPE_LABELS_AR: Record<string, string> = {
   device_offline: 'جهاز ينقطع',
   device_online:  'جهاز يتصل',
   cpu_high:       'المعالج مرتفع',
@@ -56,19 +59,22 @@ const ALERT_TYPE_LABELS: Record<string, string> = {
   disk_high:      'القرص يمتلئ',
 }
 
-function formatRelative(dateStr: string): string {
-  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000
-  if (diff < 60)    return 'الآن'
-  if (diff < 3600)  return `منذ ${Math.floor(diff / 60)} دقيقة`
-  if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} ساعة`
-  return new Date(dateStr).toLocaleDateString('ar-EG')
+const ALERT_TYPE_LABELS_EN: Record<string, string> = {
+  device_offline: 'Device Offline',
+  device_online:  'Device Online',
+  cpu_high:       'CPU High',
+  ram_high:       'RAM High',
+  disk_high:      'Disk Full',
 }
 
-function AlertRuleCard({ rule, onDelete, onToggle }: {
+function AlertRuleCard({ rule, onDelete, onToggle, T, lang }: {
   rule: AlertRule
   onDelete: (id: string) => void
   onToggle: (id: string, enabled: boolean) => void
+  T: (key: Parameters<ReturnType<typeof useT>>[0]) => string
+  lang: string
 }) {
+  const ALERT_TYPE_LABELS = lang === 'ar' ? ALERT_TYPE_LABELS_AR : ALERT_TYPE_LABELS_EN
   return (
     <div className={clsx('glass rounded-xl p-4 border border-slate-700/30', !rule.enabled && 'opacity-50')}>
       <div className="flex items-start justify-between gap-3">
@@ -79,10 +85,10 @@ function AlertRuleCard({ rule, onDelete, onToggle }: {
           <div className="min-w-0">
             <p className="text-sm font-medium text-white">{ALERT_TYPE_LABELS[rule.type] || rule.type}</p>
             <p className="text-xs text-slate-500 mt-0.5">
-              {rule.threshold != null ? `الحد: ${rule.threshold}%` : '—'}
+              {rule.threshold != null ? `${T('notif_threshold_label')} ${rule.threshold}%` : '—'}
               {' · '}
-              كل {rule.cooldown_min} دقيقة
-              {rule.device_id ? ` · ${rule.device_id.slice(0, 8)}…` : ' · جميع الأجهزة'}
+              {T('notif_every_min')} {rule.cooldown_min} {T('notif_min')}
+              {rule.device_id ? ` · ${rule.device_id.slice(0, 8)}…` : ` · ${T('notif_all_devices')}`}
             </p>
             {rule.channel === 'webhook' && rule.webhook_url && (
               <p className="text-[10px] text-brand-blue mt-1 truncate max-w-xs">{rule.webhook_url}</p>
@@ -109,6 +115,11 @@ function AlertRuleCard({ rule, onDelete, onToggle }: {
 }
 
 export function NotificationsPage() {
+  const T    = useT()
+  const lang = useUIStore(s => s.lang)
+
+  const ALERT_TYPE_LABELS = lang === 'ar' ? ALERT_TYPE_LABELS_AR : ALERT_TYPE_LABELS_EN
+
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [rules, setRules]                 = useState<AlertRule[]>([])
   const [unread, setUnread]               = useState(0)
@@ -187,11 +198,16 @@ export function NotificationsPage() {
             )}
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">الإشعارات والتنبيهات</h1>
-            <p className="text-xs text-slate-500">{unread > 0 ? `${unread} إشعار غير مقروء` : 'كل شيء على ما يرام'}</p>
+            <h1 className="text-lg font-bold text-white">{T('notif_title')}</h1>
+            <p className="text-xs text-slate-500">
+              {unread > 0 ? `${unread} ${T('notif_unread')}` : T('notif_all_ok')}
+            </p>
           </div>
         </div>
-        <button onClick={() => { loadNotifications(); loadRules() }} className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-lg transition-colors">
+        <button
+          onClick={() => { loadNotifications(); loadRules() }}
+          className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-lg transition-colors"
+        >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
@@ -204,7 +220,9 @@ export function NotificationsPage() {
               tab === t ? 'bg-brand-blue/20 text-brand-blue' : 'text-slate-400 hover:text-slate-200'
             )}
           >
-            {t === 'notifications' ? `الإشعارات${unread > 0 ? ` (${unread})` : ''}` : 'قواعد التنبيه'}
+            {t === 'notifications'
+              ? `${T('notif_tab_notifications')}${unread > 0 ? ` (${unread})` : ''}`
+              : T('notif_tab_rules')}
           </button>
         ))}
       </div>
@@ -214,11 +232,17 @@ export function NotificationsPage() {
           {/* Actions */}
           {notifications.length > 0 && (
             <div className="flex items-center gap-2">
-              <button onClick={markAllRead} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-700/30 text-slate-400 hover:text-slate-200 rounded-lg transition-colors">
-                <CheckCheck size={12} /> تعليم كمقروءة
+              <button
+                onClick={markAllRead}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-700/30 text-slate-400 hover:text-slate-200 rounded-lg transition-colors"
+              >
+                <CheckCheck size={12} /> {T('notif_mark_read')}
               </button>
-              <button onClick={clearRead} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-400/10 text-red-400 hover:bg-red-400/20 rounded-lg transition-colors">
-                <Trash2 size={12} /> حذف المقروءة
+              <button
+                onClick={clearRead}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-400/10 text-red-400 hover:bg-red-400/20 rounded-lg transition-colors"
+              >
+                <Trash2 size={12} /> {T('notif_clear_read')}
               </button>
             </div>
           )}
@@ -227,13 +251,13 @@ export function NotificationsPage() {
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <BellOff size={40} className="text-slate-600 mb-3" />
-              <p className="text-slate-500 text-sm">لا توجد إشعارات</p>
-              <p className="text-slate-600 text-xs mt-1">أضف قواعد تنبيه من تبويب "قواعد التنبيه"</p>
+              <p className="text-slate-500 text-sm">{T('notif_no_notifications')}</p>
+              <p className="text-slate-600 text-xs mt-1">{T('notif_no_notifications_hint')}</p>
             </div>
           ) : notifications.map(notif => {
-            const Icon        = TYPE_ICONS[notif.type] ?? Bell
-            const sevStyle    = SEVERITY_STYLES[notif.severity]  ?? SEVERITY_STYLES.info
-            const iconColor   = SEVERITY_ICON_COLOR[notif.severity] ?? 'text-brand-blue'
+            const Icon      = TYPE_ICONS[notif.type] ?? Bell
+            const sevStyle  = SEVERITY_STYLES[notif.severity]  ?? SEVERITY_STYLES.info
+            const iconColor = SEVERITY_ICON_COLOR[notif.severity] ?? 'text-brand-blue'
             return (
               <div key={notif.id} className={clsx(
                 'glass rounded-xl p-4 border-l-2 transition-opacity',
@@ -247,7 +271,9 @@ export function NotificationsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-medium text-white leading-snug">{notif.title}</p>
-                      <span className="text-[10px] text-slate-500 whitespace-nowrap flex-shrink-0">{formatRelative(notif.created_at)}</span>
+                      <span className="text-[10px] text-slate-500 whitespace-nowrap flex-shrink-0">
+                        {formatRelativeLang(notif.created_at, lang)}
+                      </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1 leading-relaxed">{notif.message}</p>
                     {notif.device_id && (
@@ -271,16 +297,16 @@ export function NotificationsPage() {
             onClick={() => setShowAddRule(!showAddRule)}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-brand-blue/15 text-brand-blue hover:bg-brand-blue/25 rounded-xl transition-colors"
           >
-            + إضافة قاعدة تنبيه
+            {T('notif_add_rule')}
           </button>
 
           {/* Add rule form */}
           {showAddRule && (
             <div className="glass rounded-xl p-4 space-y-3 border border-brand-blue/20">
-              <p className="text-sm font-medium text-white">قاعدة تنبيه جديدة</p>
+              <p className="text-sm font-medium text-white">{T('notif_new_rule')}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-500 mb-1 block">نوع التنبيه</label>
+                  <label className="text-xs text-slate-500 mb-1 block">{T('notif_rule_type')}</label>
                   <select
                     className="w-full bg-navy-900 border border-slate-700/50 rounded-lg py-2 px-3 text-sm text-white"
                     value={newRule.type}
@@ -293,7 +319,7 @@ export function NotificationsPage() {
                 </div>
                 {['cpu_high', 'ram_high', 'disk_high'].includes(newRule.type) && (
                   <div>
-                    <label className="text-xs text-slate-500 mb-1 block">الحد (%)</label>
+                    <label className="text-xs text-slate-500 mb-1 block">{T('notif_rule_threshold')}</label>
                     <input type="number" min={1} max={100}
                       className="w-full bg-navy-900 border border-slate-700/50 rounded-lg py-2 px-3 text-sm text-white"
                       value={newRule.threshold}
@@ -302,7 +328,7 @@ export function NotificationsPage() {
                   </div>
                 )}
                 <div>
-                  <label className="text-xs text-slate-500 mb-1 block">فترة الانتظار (دقيقة)</label>
+                  <label className="text-xs text-slate-500 mb-1 block">{T('notif_rule_cooldown')}</label>
                   <input type="number" min={1}
                     className="w-full bg-navy-900 border border-slate-700/50 rounded-lg py-2 px-3 text-sm text-white"
                     value={newRule.cooldownMin}
@@ -310,13 +336,13 @@ export function NotificationsPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-500 mb-1 block">القناة</label>
+                  <label className="text-xs text-slate-500 mb-1 block">{T('notif_rule_channel')}</label>
                   <select
                     className="w-full bg-navy-900 border border-slate-700/50 rounded-lg py-2 px-3 text-sm text-white"
                     value={newRule.channel}
                     onChange={e => setNewRule(r => ({ ...r, channel: e.target.value }))}
                   >
-                    <option value="in_app">داخل التطبيق</option>
+                    <option value="in_app">{T('notif_channel_inapp')}</option>
                     <option value="webhook">Webhook (Slack/Discord)</option>
                   </select>
                 </div>
@@ -333,11 +359,17 @@ export function NotificationsPage() {
                 )}
               </div>
               <div className="flex gap-2">
-                <button onClick={addRule} className="flex-1 py-2 text-sm font-medium bg-brand-blue text-white rounded-lg hover:bg-brand-blue/90 transition-colors">
-                  حفظ القاعدة
+                <button
+                  onClick={addRule}
+                  className="flex-1 py-2 text-sm font-medium bg-brand-blue text-white rounded-lg hover:bg-brand-blue/90 transition-colors"
+                >
+                  {T('notif_save_rule')}
                 </button>
-                <button onClick={() => setShowAddRule(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 border border-slate-700/50 rounded-lg transition-colors">
-                  إلغاء
+                <button
+                  onClick={() => setShowAddRule(false)}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 border border-slate-700/50 rounded-lg transition-colors"
+                >
+                  {T('cancel')}
                 </button>
               </div>
             </div>
@@ -347,11 +379,11 @@ export function NotificationsPage() {
           {rules.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <AlertTriangle size={40} className="text-slate-600 mb-3" />
-              <p className="text-slate-500 text-sm">لا توجد قواعد تنبيه</p>
-              <p className="text-slate-600 text-xs mt-1">أنشئ قاعدة للحصول على إشعارات تلقائية</p>
+              <p className="text-slate-500 text-sm">{T('notif_no_rules')}</p>
+              <p className="text-slate-600 text-xs mt-1">{T('notif_no_rules_hint')}</p>
             </div>
           ) : rules.map(rule => (
-            <AlertRuleCard key={rule.id} rule={rule} onDelete={deleteRule} onToggle={toggleRule} />
+            <AlertRuleCard key={rule.id} rule={rule} onDelete={deleteRule} onToggle={toggleRule} T={T} lang={lang} />
           ))}
         </div>
       )}

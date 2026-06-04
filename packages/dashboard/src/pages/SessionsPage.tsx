@@ -123,7 +123,7 @@ export function SessionsPage() {
                 <thead>
                   <tr className="border-b border-slate-700/50">
                     {[T('session_type'), T('session_device'), T('session_start'), T('session_duration'), 'IP', ''].map((h, i) => (
-                      <th key={i} className="text-xs text-slate-500 font-medium px-4 py-3 text-right">{h}</th>
+                      <th key={i} className="text-xs text-slate-500 font-medium px-4 py-3 text-start">{h}</th>
                     ))}
                   </tr>
                 </thead>

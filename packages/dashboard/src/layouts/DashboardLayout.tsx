@@ -43,8 +43,8 @@ export function DashboardLayout() {
     { to: '/devices',       icon: Monitor,         label: T('devices'),      badge: onlineCount > 0 ? onlineCount : null },
     { to: '/ai',            icon: Bot,             label: T('ai_assistant') },
     { to: '/sessions',      icon: History,         label: T('sessions') },
-    { to: '/notifications', icon: Bell,            label: 'التنبيهات',      badge: unreadCount > 0 ? unreadCount : null },
-    { to: '/audit',         icon: Shield,          label: 'سجل التدقيق',   adminOnly: true },
+    { to: '/notifications', icon: Bell,            label: T('nav_notifications'), badge: unreadCount > 0 ? unreadCount : null },
+    { to: '/audit',         icon: Shield,          label: T('nav_audit'),   adminOnly: true },
     { to: '/users',         icon: Users,           label: T('users'),        adminOnly: true },
     { to: '/settings',      icon: Settings,        label: T('settings') },
   ]
@@ -238,7 +238,7 @@ export function DashboardLayout() {
         {/* Version */}
         {sidebarOpen && (
           <div className="px-4 py-1 flex items-center gap-1.5 text-[10px] text-slate-700">
-            <Command size={8} /> v1.1.0
+            <Command size={8} /> v3.0.0
           </div>
         )}
 
