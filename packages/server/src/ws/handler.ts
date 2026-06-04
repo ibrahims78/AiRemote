@@ -6,9 +6,11 @@ import { handleAgentMessage } from './agentHandler'
 import { handleClientMessage } from './clientHandler'
 import { updateDeviceStatus } from '../db/devices'
 
-// Increased to give agents headroom during heavy screen-frame bursts.
-// Any incoming application message also resets the kill-timer (see below).
-const PING_INTERVAL_MS = 60000
+// Ping interval for dead-connection detection.
+// On every incoming agent message we clear pongTimer AND re-arm pingTimer so
+// the cycle stays alive.  If the agent goes truly silent the ping fires after
+// PING_INTERVAL_MS and terminates after PONG_TIMEOUT_MS → max detection = 50s.
+const PING_INTERVAL_MS = 30000
 const PONG_TIMEOUT_MS  = 20000
 
 export function wsHandler(socket: WebSocket, request: FastifyRequest) {
@@ -73,11 +75,12 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
         if (connectionType === 'unknown') connectionType = 'agent'
 
         // ── Any agent message proves the connection is alive ────────────────
-        // During screen-frame bursts the agent may miss WS-level pings, so we
-        // treat every incoming application message as an implicit pong: clear
-        // the kill-timer.  If the agent truly dies we still detect it because
-        // no messages will arrive for the full PING_INTERVAL + PONG_TIMEOUT.
+        // Clear the kill-timer (pongTimer) and, crucially, re-arm pingTimer if
+        // it has already fired (pingTimer === null after it sends the ping).
+        // Without the re-arm the monitoring cycle goes dead and zombie
+        // connections are never detected.
         if (pongTimer) { clearTimeout(pongTimer); pongTimer = null }
+        if (!pingTimer) { schedulePing() }  // restart the 30s monitoring window
         handleAgentMessage(socket, message, clientIp).then(result => {
           if (result?.deviceId) connectionId = result.deviceId
         }).catch(err => console.error('Agent message error:', err))
