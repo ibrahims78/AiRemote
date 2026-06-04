@@ -20,3 +20,4 @@
 - [AiRemote v2.0.0 Audit](airemote-v2-audit.md) — 12 bugs fixed: cliclick dd/du, Windows execFileAsync, clipboard spawn+stdin, scrot resize, caps registration, heartbeat caps, ping-pong; 0 TS errors
 - [AiRemote Remote Desktop v3.0.0](airemote-rdp-v3.md) — frame dedup (hash), MAX_FPS 30, adaptive quality, permission consent, drag&drop upload; agent-v2.0.0.js needs --external:cpu-features --external:*.node
 - [AiRemote Electron Screen Sharing](airemote-electron-screen.md) — desktopCapturer in hidden BrowserWindow (capture.html, nodeIntegration:true); persistent PowerShell stdin process for mouse/key injection; ZIP rebuilt via asar repack + python3 zip
+- [AiRemote WS Ping Timeout During Screen Share](airemote-ws-ping-fix.md) — agent misses WS-level pong during heavy frame bursts; fix: any incoming agent message clears pongTimer in handler.ts; also raise PING_INTERVAL_MS=60000 PONG_TIMEOUT_MS=20000
