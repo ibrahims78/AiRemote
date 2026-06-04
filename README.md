@@ -9,7 +9,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22+-5FA04E?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Fastify](https://img.shields.io/badge/Fastify-4.x-000000?logo=fastify)](https://fastify.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![Version](https://img.shields.io/badge/version-2.0.0-blueviolet)]()
+[![Version](https://img.shields.io/badge/version-3.0.0-blueviolet)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Self-hosted](https://img.shields.io/badge/Self--hosted-✓-brightgreen)]()
 
@@ -27,10 +27,10 @@ It is a lean, self-hosted alternative to AnyDesk / TeamViewer, extended with an 
 
 ## ✨ Features
 
-### Remote Control (v2.0.0)
+### Remote Control (v3.0.0)
 | Feature | Description |
 |---|---|
-| 🖥️ **Screen Streaming** | MJPEG-over-WebSocket, up to 15 FPS, adjustable quality |
+| 🖥️ **Screen Streaming** | MJPEG-over-WebSocket, up to 30 FPS, adjustable quality |
 | 🖱️ **Mouse Control** | Move, click, right-click, double-click, drag, scroll |
 | ⌨️ **Keyboard Control** | All keys + modifier combos (Ctrl+C, Alt+F4, etc.) |
 | 📋 **Clipboard Sync** | Read/write remote clipboard, bidirectional |
@@ -80,7 +80,7 @@ AiRemote Server (Fastify :3001)
         │  WebSocket (Agent Protocol)
         ▼
 AiRemote Agent  (runs on each remote device)
-  ├── Registers with device token + full v2.0.0 capabilities
+  ├── Registers with device token + full v3.0.0 capabilities
   ├── Sends heartbeat + stats every 4s
   ├── Screen capture (MJPEG frames)
   ├── Mouse + keyboard + clipboard control
@@ -124,7 +124,7 @@ docker compose up -d
 ├── packages/
 │   ├── server/       ← Fastify API + WebSocket relay (Node.js 22)
 │   ├── dashboard/    ← React 18 + TailwindCSS SPA
-│   ├── agent/        ← Cross-platform device agent (v2.0.0)
+│   ├── agent/        ← Cross-platform device agent (v3.0.0)
 │   ├── ai-engine/    ← OpenAI / Anthropic / Google AI abstraction
 │   └── shared/       ← Shared TypeScript types + message protocol
 └── releases/         ← Built agent binaries
@@ -198,5 +198,5 @@ Pull requests are welcome. For major changes, please open an issue first.
 ---
 
 <div align="center">
-  Built with ❤️ · TypeScript · Fastify · React · WebSocket · v2.0.0
+  Built with ❤️ · TypeScript · Fastify · React · WebSocket · v3.0.0
 </div>

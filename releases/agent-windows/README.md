@@ -1,4 +1,4 @@
-# AiRemote Agent — Windows Desktop (GUI)
+# AiRemote Agent — Windows Desktop (GUI) v3.0.0
 
 تطبيق سطح مكتب Windows كامل مع System Tray. مبني بـ Electron — لا يحتاج Node.js.
 
@@ -10,7 +10,7 @@ A full **Windows GUI desktop application** with System Tray integration. Built w
 
 | الملف / File | الحجم / Size | الوصف / Description |
 |---|---|---|
-| `AiRemote-Agent-v1.4.0-Windows-x64.zip` | ~103 MB | Full desktop app — extract ZIP and run |
+| `AiRemote-Agent-v3.0.0-Windows-x64.zip` | ~103 MB | Full desktop app — extract ZIP and run |
 | `win-unpacked/` | — | Raw unpacked Electron build |
 
 ---
@@ -18,14 +18,14 @@ A full **Windows GUI desktop application** with System Tray integration. Built w
 ## 🚀 التشغيل السريع / Quick Start
 
 **العربية:**
-1. حمّل `AiRemote-Agent-v1.4.0-Windows-x64.zip`
+1. حمّل `AiRemote-Agent-v3.0.0-Windows-x64.zip`
 2. فُك الضغط إلى أي مجلد (مثل `C:\AiRemote\`)
 3. شغّل `AiRemote Agent.exe`
 4. أدخل **عنوان الخادم** (WebSocket) و **Device Token** من الـ Dashboard
 5. اضغط **تشغيل** — يتصل الـ Agent ويظهر في شريط المهام (System Tray)
 
 **English:**
-1. Download `AiRemote-Agent-v1.4.0-Windows-x64.zip`
+1. Download `AiRemote-Agent-v3.0.0-Windows-x64.zip`
 2. Extract to any folder (e.g. `C:\AiRemote\`)
 3. Run `AiRemote Agent.exe`
 4. Enter your **Server URL** (WebSocket) and **Device Token** from the dashboard
@@ -39,12 +39,17 @@ A full **Windows GUI desktop application** with System Tray integration. Built w
 |--------|-------------|
 | **System Tray** | يعمل في الخلفية — انقر بالزر الأيمن لفتح/إغلاق |
 | **Auto-Start** | إعادة الاتصال تلقائياً عند فتح البرنامج |
+| **Screen Streaming** | بث الشاشة حتى 30 FPS مع ضغط تكيّفي |
+| **Mouse & Keyboard** | تحكم كامل بالفأرة واللوحة عبر Win32 API |
+| **Clipboard Sync** | مزامنة الحافظة في كلا الاتجاهين |
+| **Multi-Monitor** | تبديل بين الشاشات في الوقت الفعلي |
 | **PTY Terminal** | PowerShell / CMD كامل من الـ Dashboard |
 | **File Browser** | تصفح ورفع وتنزيل الملفات |
 | **SSH Access** | إعدادات SSH للاتصال من الخادم |
-| **Device Stats** | CPU / RAM / Disk في الوقت الفعلي |
+| **Device Stats** | CPU / RAM / Disk / Network في الوقت الفعلي |
 | **Arabic / English** | واجهة ثنائية اللغة مع RTL |
 | **Dark / Light Theme** | تبديل من شريط العنوان |
+| **2FA Support** | دعم المصادقة الثنائية TOTP |
 
 ---
 
@@ -71,18 +76,12 @@ cd packages/agent-desktop
 pnpm install
 CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --dir
 # ثم:
-python3 -c "
-import zipfile, os
-src = '../../releases/agent-windows/win-unpacked'
-dst = '../../releases/agent-windows/AiRemote-Agent-v1.4.0-Windows-x64.zip'
-with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zf:
-    for r, d, files in os.walk(src):
-        for f in files:
-            fp = os.path.join(r, f)
-            zf.write(fp, os.path.relpath(fp, src))
-print('Done:', os.path.getsize(dst), 'bytes')
-"
+python3 ../../scripts/zip-agent.py \
+  ../../releases/agent-windows/win-unpacked \
+  ../../releases/agent-windows/AiRemote-Agent-v3.0.0-Windows-x64.zip
 ```
+
+أو من لوحة التحكم (Admin): **Downloads → Windows Agent (GUI) → Build Now**
 
 ---
 
@@ -94,15 +93,20 @@ print('Done:', os.path.getsize(dst), 'bytes')
 
 ---
 
-## ما الجديد في v1.5.0
+## ما الجديد في v3.0.0
 
 | الميزة | الوصف |
 |--------|-------|
-| إحصائيات الشبكة | Upload/Download عبر netstat-e + WMI fallback |
-| Terminal PTY محسّن | Software PTY: echo تلقائي، backspace يعمل، cd يُحدّث الـ prompt |
-| Shell Wrapper | PowerShell يقرأ الأوامر ويُظهر `PS C:\path> ` بعد كل أمر |
-| تصفح الملفات | من الـ Dashboard بدون SSH |
-| رفع وتنزيل الملفات | عبر اتصال الوكيل |
+| بث الشاشة 30 FPS | MJPEG-over-WebSocket مع تقليل مكيّف |
+| تحكم الفأرة واللوحة | Win32 API عبر PowerShell دائم — لا تأخير |
+| مزامنة الحافظة | قراءة/كتابة الحافظة ثنائية الاتجاه |
+| تعدد الشاشات | اكتشاف تلقائي للشاشات والتبديل بينها |
+| Privacy Mode | إخفاء الشاشة أثناء الجلسة |
+| تسجيل الجلسات | تسجيل JPEG frames → ZIP من جانب الخادم |
+| نظام المصادقة | تذاكر WebSocket أحادية الاستخدام (30 ثانية) |
+| Consent Flow | طلب إذن المستخدم قبل التحكم عن بُعد |
+| In-session Chat | دردشة نصية مدمجة بين المشاهد والجهاز |
+| Adaptive Quality | ضبط FPS تلقائياً بناءً على زمن الاستجابة (RTT) |
 
 ---
 
@@ -110,9 +114,9 @@ print('Done:', os.path.getsize(dst), 'bytes')
 
 | Platform | Type | File |
 |----------|------|------|
-| Windows | CLI Headless | `../agent-headless/AiRemote-Agent-v1.5.0-win-x64.exe` |
-| Linux | CLI Headless | `../agent-headless/AiRemote-Agent-v1.5.0-linux-x64` |
-| Any | Node.js Script | `../agent-script/agent-v1.5.0.js` |
-| Any | Script ZIP | `../agent-script/agent-script-v1.5.0.zip` |
+| Windows | CLI Headless | `../agent-headless/AiRemote-Agent-v3.0.0-win-x64.exe` |
+| Linux | CLI Headless | `../agent-headless/AiRemote-Agent-v3.0.0-linux-x64` |
+| Any | Node.js Script | `../agent-script/agent-v3.0.0.js` |
+| Any | Script ZIP | `../agent-script/agent-script-v3.0.0.zip` |
 
 See [releases/README.md](../README.md) for the full release matrix.

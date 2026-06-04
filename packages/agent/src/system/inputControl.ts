@@ -405,21 +405,14 @@ async function controlKeyboardMac(evt: KeyEvent, mods: string[]): Promise<void> 
   let script = ''
 
   if (mods.length > 0) {
-    const modNames = mods.map(m => {
-      if (m === 'ctrl') return 'control down'
-      if (m === 'alt')  return 'option down'
+    const modUsing = mods.map(m => {
+      if (m === 'ctrl')  return 'control down'
+      if (m === 'alt')   return 'option down'
       if (m === 'shift') return 'shift down'
-      if (m === 'meta') return 'command down'
+      if (m === 'meta')  return 'command down'
       return m
     })
-    const modEnd = mods.map(m => {
-      if (m === 'ctrl') return 'control up'
-      if (m === 'alt')  return 'option up'
-      if (m === 'shift') return 'shift up'
-      if (m === 'meta') return 'command up'
-      return m
-    })
-    script = `tell application "System Events" to key code 0 using {${modNames.join(', ')}, ${modEnd.join(', ')}}`
+    script = `tell application "System Events" to keystroke "${keyName}" using {${modUsing.join(', ')}}`
   } else {
     script = `tell application "System Events" to keystroke "${keyName}"`
   }
