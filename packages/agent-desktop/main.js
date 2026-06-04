@@ -338,6 +338,8 @@ function handleMsg(msg) {
       deviceId = msg.payload?.deviceId
       setState('connected')
       addLog('info', `✅ مسجل بنجاح — Device ID: ${deviceId?.slice(0, 12)}...`)
+      // Pre-warm the capture window so the first screen session starts instantly
+      setTimeout(() => { try { createCaptureWindow() } catch {} }, 1500)
       break
     }
     case 'server:command': {

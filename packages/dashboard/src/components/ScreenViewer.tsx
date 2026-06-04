@@ -111,6 +111,8 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const permissionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const presetRef          = useRef(preset)
   const selectedMonRef     = useRef(selectedMonitor)
+  // Prevents race conditions when connect() is called multiple times in quick succession
+  const connectIdRef       = useRef(0)
 
   useEffect(() => { presetRef.current    = preset          }, [preset])
   useEffect(() => { selectedMonRef.current = selectedMonitor }, [selectedMonitor])
@@ -151,6 +153,8 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
 
   // ── WebSocket connect ─────────────────────────────────────────────────────
   const connect = useCallback(async (p: QualityPreset, monitorId = 0) => {
+    // Bump the counter; any previous in-flight connect() will see it changed and abort
+    const myId = ++connectIdRef.current
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null }
     setStatus('connecting'); setErrorMsg(''); lastSeqRef.current = -1
     setControlEnabled(false); setPermissionState('idle')
@@ -172,6 +176,9 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     } catch {
       authParam = { token: token || '' }
     }
+
+    // If another connect() was called while we were awaiting the ticket, bail out
+    if (myId !== connectIdRef.current) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const params   = new URLSearchParams({ ...authParam, deviceId, fps: String(p.fps), quality: String(p.quality) })
