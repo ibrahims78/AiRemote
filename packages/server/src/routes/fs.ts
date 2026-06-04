@@ -1,38 +1,32 @@
 import type { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth'
 import { deviceRegistry } from '../ws/registry'
-import { sendFsRequest, sendFsDownload } from '../ws/agentHandler'
+import { sendFsRequest, sendFsDownload, sendFsWriteChunked } from '../ws/agentHandler'
 import type { AuthTokenPayload } from '@airemote/shared'
 
 // ── Path sanitization ────────────────────────────────────────────────────────
-// Prevents path traversal attacks: rejects null bytes, ".." sequences, and
-// relative paths. The agent trusts the path it receives, so we must validate
-// on the server side before forwarding.
 function sanitizePath(input: string): string | null {
   if (!input || typeof input !== 'string') return null
-  // Reject null bytes (poison byte attack)
   if (input.includes('\0')) return null
-  // Decode any URL-encoded sequences before checking
   let decoded: string
   try {
     decoded = decodeURIComponent(input)
   } catch {
     decoded = input
   }
-  // Reject traversal sequences in any form
   if (decoded.includes('..')) return null
-  // Reject traversal with backslashes (Windows-style)
   if (decoded.includes('..\\') || decoded.includes('\\..')) return null
-  // Must be an absolute path (starts with /) OR a Windows drive-style (/C:/)
   if (!decoded.startsWith('/')) return null
   return decoded
 }
 
-// ── Upload size limit ─────────────────────────────────────────────────────────
-// Files are buffered entirely in memory before being sent to the agent as
-// base64. A 50 MB ceiling prevents OOM crashes on the server.
-// TODO: implement write_chunked protocol for large files (> 50 MB).
-const UPLOAD_MAX_BYTES = 50 * 1024 * 1024  // 50 MB
+// ── Upload size limits ────────────────────────────────────────────────────────
+// Files < CHUNKED_THRESHOLD are sent in a single WS message (fast path).
+// Files >= CHUNKED_THRESHOLD use the write_chunked protocol (v3.0.0) which
+// splits the data into 512 KB messages so large uploads don't OOM the server
+// and don't hit WS frame-size limits.
+const CHUNKED_THRESHOLD = 16 * 1024 * 1024   // 16 MB
+const UPLOAD_MAX_BYTES  = 500 * 1024 * 1024  // 500 MB hard ceiling
 
 export async function fsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth)
@@ -152,6 +146,7 @@ export async function fsRoutes(fastify: FastifyInstance) {
     }
   )
 
+  // ── T002: Upload — auto-selects chunked protocol for large files ──────────
   fastify.post(
     '/:deviceId/fs/upload',
     async (req, reply) => {
@@ -161,17 +156,16 @@ export async function fsRoutes(fastify: FastifyInstance) {
       const data = await req.file()
       if (!data) return reply.code(400).send({ error: 'لا يوجد ملف' })
 
-      const fields    = data.fields as Record<string, { value: string }>
-      const rawUploadPath = fields.path?.value || '/'
+      const fields         = data.fields as Record<string, { value: string }>
+      const rawUploadPath  = fields.path?.value || '/'
       const safeUploadPath = sanitizePath(rawUploadPath)
       if (!safeUploadPath) return reply.code(400).send({ error: 'مسار الرفع غير صالح' })
 
-      // Buffer entire file — guarded by UPLOAD_MAX_BYTES ceiling
       const fileBuffer = await data.toBuffer()
 
       if (fileBuffer.length > UPLOAD_MAX_BYTES) {
         return reply.code(413).send({
-          error: `حجم الملف (${(fileBuffer.length / 1024 / 1024).toFixed(1)} MB) يتجاوز الحد المسموح (50 MB)`
+          error: `حجم الملف (${(fileBuffer.length / 1024 / 1024).toFixed(1)} MB) يتجاوز الحد المسموح (500 MB)`
         })
       }
 
@@ -180,17 +174,33 @@ export async function fsRoutes(fastify: FastifyInstance) {
         ? safeUploadPath + fileName
         : safeUploadPath + '/' + fileName
 
-      // Validate the final combined path too
       const safeFull = sanitizePath(fullPath)
       if (!safeFull) return reply.code(400).send({ error: 'اسم الملف غير صالح' })
 
       try {
-        await sendFsRequest(deviceId, 'write', safeFull, { data: fileBuffer.toString('base64') }, 60000)
+        // Choose protocol based on file size
+        if (fileBuffer.length >= CHUNKED_THRESHOLD) {
+          // Large file → chunked protocol (v3.0.0)
+          const timeoutMs = 60000 + Math.ceil(fileBuffer.length / (512 * 1024)) * 5000
+          await sendFsWriteChunked(deviceId, safeFull, fileBuffer, timeoutMs)
+        } else {
+          // Small file → single write message (fast path)
+          await sendFsRequest(
+            deviceId, 'write', safeFull,
+            { data: fileBuffer.toString('base64') },
+            60000
+          )
+        }
+
         const user = req.user as unknown as AuthTokenPayload
         await import('../db/audit').then(m => m.logAudit({
           userId: user.userId, userEmail: user.email, deviceId,
           action: 'sftp_upload',
-          details: { path: safeFull, size: fileBuffer.length },
+          details: {
+            path:     safeFull,
+            size:     fileBuffer.length,
+            chunked:  fileBuffer.length >= CHUNKED_THRESHOLD
+          },
           ipAddress: req.ip
         }))
         return { ok: true, path: safeFull, size: fileBuffer.length }

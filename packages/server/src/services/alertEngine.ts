@@ -107,6 +107,79 @@ async function processRule(rule: AlertRule, deviceId: string, stats: DeviceStats
   await dispatchAlert(rule, deviceId, rule.type, title, message, severity)
 }
 
+// ── Webhook format detection ──────────────────────────────────────────────────
+
+type WebhookPlatform = 'slack' | 'discord' | 'telegram' | 'generic'
+
+function detectPlatform(url: string): WebhookPlatform {
+  if (url.includes('hooks.slack.com')) return 'slack'
+  if (url.includes('discord.com/api/webhooks') || url.includes('discordapp.com/api/webhooks')) return 'discord'
+  if (url.includes('api.telegram.org/bot')) return 'telegram'
+  return 'generic'
+}
+
+function buildSlackPayload(emoji: string, title: string, message: string, severity: string, deviceId: string): unknown {
+  const color = severity === 'critical' ? '#e53e3e' : severity === 'warning' ? '#dd6b20' : '#38a169'
+  return {
+    text: `${emoji} *${title}*`,
+    attachments: [{
+      color,
+      text:    message,
+      footer:  `AiRemote · Device: ${deviceId}`,
+      ts:      Math.floor(Date.now() / 1000),
+      fields: [
+        { title: 'Device',   value: deviceId,  short: true },
+        { title: 'Severity', value: severity,  short: true }
+      ]
+    }]
+  }
+}
+
+function buildDiscordPayload(emoji: string, title: string, message: string, severity: string, deviceId: string): unknown {
+  const color = severity === 'critical' ? 0xe53e3e : severity === 'warning' ? 0xdd6b20 : 0x38a169
+  return {
+    content: `${emoji} **${title}**`,
+    embeds: [{
+      title,
+      description: message,
+      color,
+      timestamp:   new Date().toISOString(),
+      footer:      { text: `AiRemote · Device: ${deviceId}` },
+      fields: [
+        { name: 'Device',   value: deviceId, inline: true },
+        { name: 'Severity', value: severity, inline: true }
+      ]
+    }]
+  }
+}
+
+function buildTelegramPayload(url: string, emoji: string, title: string, message: string): unknown {
+  // Extract chat_id from URL query param if present: ...sendMessage?chat_id=XYZ
+  const chatIdMatch = url.match(/[?&]chat_id=([^&]+)/)
+  const chatId      = chatIdMatch ? chatIdMatch[1] : null
+  if (!chatId) return null   // can't send without chat_id
+
+  const text = `${emoji} *${escapeMarkdownV2(title)}*\n${escapeMarkdownV2(message)}`
+  return { chat_id: chatId, text, parse_mode: 'MarkdownV2' }
+}
+
+function buildGenericPayload(emoji: string, title: string, message: string, severity: string, deviceId: string): unknown {
+  return {
+    text:      `${emoji} ${title}`,
+    title,
+    message,
+    severity,
+    deviceId,
+    timestamp: new Date().toISOString()
+  }
+}
+
+function escapeMarkdownV2(text: string): string {
+  return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1')
+}
+
+// ── Dispatch ──────────────────────────────────────────────────────────────────
+
 async function dispatchAlert(
   rule: AlertRule, deviceId: string, type: string,
   title: string, message: string, severity: string
@@ -127,16 +200,41 @@ async function dispatchAlert(
     id: notifId, type, title, message, severity, deviceId, createdAt: now
   })
 
-  // Webhook
+  // Webhook dispatch with platform-aware formatting
   if (rule.channel === 'webhook' && rule.webhook_url) {
-    const emoji = severity === 'critical' ? '🔴' : severity === 'warning' ? '🟡' : '🟢'
-    fetch(rule.webhook_url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: `${emoji} *${title}*\n${message}`,
-        attachments: [{ color: severity === 'critical' ? 'danger' : 'warning', text: message }]
-      })
-    }).catch(() => {})
+    const emoji    = severity === 'critical' ? '🔴' : severity === 'warning' ? '🟡' : '🟢'
+    const platform = detectPlatform(rule.webhook_url)
+    let body: unknown
+
+    switch (platform) {
+      case 'slack':
+        body = buildSlackPayload(emoji, title, message, severity, deviceId)
+        break
+      case 'discord':
+        body = buildDiscordPayload(emoji, title, message, severity, deviceId)
+        break
+      case 'telegram': {
+        const tgBody = buildTelegramPayload(rule.webhook_url, emoji, title, message)
+        if (!tgBody) break
+        // Telegram uses a different URL (sendMessage endpoint) — clean URL of chat_id param
+        const baseUrl = rule.webhook_url.split('?')[0]
+        fetch(baseUrl, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(tgBody)
+        }).catch(() => {})
+        return
+      }
+      default:
+        body = buildGenericPayload(emoji, title, message, severity, deviceId)
+    }
+
+    if (body) {
+      fetch(rule.webhook_url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body)
+      }).catch(() => {})
+    }
   }
 }

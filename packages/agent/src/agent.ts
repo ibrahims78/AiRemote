@@ -17,19 +17,29 @@ import {
 } from './system/inputControl'
 import type { WSMessage, AgentRegisterPayload, ServerCommandPayload, RemoteMouseEvent, RemoteKeyEvent } from '@airemote/shared'
 
-export const AGENT_VERSION      = '2.0.0'
+export const AGENT_VERSION      = '3.0.0'
 const HEARTBEAT_INTERVAL        = 4000
 const RECONNECT_BASE_DELAY      = 2000
 const RECONNECT_MAX_DELAY       = 30000
+// Consent timeout: seconds before auto-granting control in unattended headless mode
+const CONSENT_TIMEOUT_SEC       = parseInt(process.env.AGENT_CONSENT_TIMEOUT || '30', 10)
 
 interface PtyProcess {
-  proc: ChildProcess
+  proc:      ChildProcess
   sessionId: string
+  rows:      number
+  cols:      number
+  shell:     string
+}
+
+// Chunked-write accumulator
+interface WriteChunkAccum {
+  chunks: Map<number, Buffer>
+  total:  number
+  path:   string
 }
 
 // ── Fast frame hash for deduplication (v2.0.0) ───────────────────────────────
-// Samples 32 evenly-spaced bytes — deterministic for same screen content per
-// capture tool/quality. Identical frames return the same hash → skip sending.
 function computeFrameHash(buf: Buffer): string {
   if (buf.length < 200) return `t${buf.length}`
   const step = Math.floor(buf.length / 32)
@@ -47,13 +57,15 @@ export class AgentService {
   private reconnectTimer: NodeJS.Timeout | null = null
   private reconnectDelay = RECONNECT_BASE_DELAY
   private running = false
-  private ptyProcs      = new Map<string, PtyProcess>()
-  private screenTimers  = new Map<string, NodeJS.Timeout>()
-  private screenSeq     = new Map<string, number>()
-  private screenMonitorId = new Map<string, number>()
+  private ptyProcs         = new Map<string, PtyProcess>()
+  private screenTimers     = new Map<string, NodeJS.Timeout>()
+  private screenSeq        = new Map<string, number>()
+  private screenMonitorId  = new Map<string, number>()
   private controlAvailable = false
   private cachedMonitors: MonitorInfo[] = []
   private privacyMode = false
+  private dockerAvailable = false
+  private writeChunkBuffers = new Map<string, WriteChunkAccum>()
 
   constructor(
     private readonly serverUrl: string,
@@ -103,6 +115,10 @@ export class AgentService {
     const primary = this.cachedMonitors.find(m => m.primary) ?? this.cachedMonitors[0]
     if (primary) setScreenResolution(primary.width, primary.height)
 
+    // ── T005: Docker capability detection ──────────────────────────────────
+    this.dockerAvailable = await this.detectDocker()
+    console.log(`🐳 Docker available: ${this.dockerAvailable}`)
+
     const payload: AgentRegisterPayload = {
       token: this.token,
       info:  { ...info, agentVersion: AGENT_VERSION },
@@ -115,13 +131,37 @@ export class AgentService {
         screenControl: this.controlAvailable,
         clipboard: true,
         multiMonitor: this.cachedMonitors.length > 1,
-        monitors: this.cachedMonitors
+        monitors: this.cachedMonitors,
+        docker: this.dockerAvailable
       },
       sshInfo: { available: false, port: 22 }
     }
 
     this.send({ type: 'agent:register', payload, timestamp: Date.now() })
     this.startHeartbeat()
+  }
+
+  // ── T005: Docker detection ────────────────────────────────────────────────
+  private detectDocker(): Promise<boolean> {
+    return new Promise(resolve => {
+      const proc = spawn('docker', ['--version'], {
+        stdio:       'ignore',
+        shell:       process.platform === 'win32',
+        windowsHide: true
+      })
+      const timer = setTimeout(() => {
+        try { proc.kill() } catch {}
+        resolve(false)
+      }, 3000)
+      proc.on('close', code => {
+        clearTimeout(timer)
+        resolve(code === 0)
+      })
+      proc.on('error', () => {
+        clearTimeout(timer)
+        resolve(false)
+      })
+    })
   }
 
   private onMessage(data: Buffer): void {
@@ -155,11 +195,28 @@ export class AgentService {
           }
           break
         }
+        // ── T003: PTY resize — Windows-aware ────────────────────────────────
         case 'server:pty_resize': {
           const p = message.payload as { sessionId: string; rows: number; cols: number }
           const pty = this.ptyProcs.get(p.sessionId)
-          if (pty && process.platform !== 'win32') {
-            try { pty.proc.kill('SIGWINCH') } catch {}
+          if (pty) {
+            pty.rows = p.rows
+            pty.cols = p.cols
+            if (process.platform !== 'win32') {
+              // Unix: SIGWINCH tells the shell to re-query terminal size
+              try { pty.proc.kill('SIGWINCH') } catch {}
+            } else {
+              // Windows: update COLUMNS/LINES by relaunching would be too disruptive.
+              // Write VT sequence back to the dashboard so xterm.js resizes its viewport
+              // even if the underlying shell can't resize. The new size takes effect on
+              // the next PTY open for this session.
+              const hint = `\x1b[8;${p.rows};${p.cols}t`
+              this.send({
+                type:    'agent:pty_data',
+                payload: { sessionId: p.sessionId, data: Buffer.from(hint).toString('base64') },
+                timestamp: Date.now()
+              })
+            }
           }
           break
         }
@@ -169,8 +226,20 @@ export class AgentService {
           break
         }
         case 'server:fs_request': {
-          const p = message.payload as { opId: string; op: string; path: string; newPath?: string; data?: string }
+          const p = message.payload as {
+            opId: string; op: string; path: string; newPath?: string; data?: string
+            seq?: number; total?: number; isLast?: boolean
+          }
           this.handleFsRequest(p)
+          break
+        }
+        // ── T002: Chunked write (multi-message protocol) ─────────────────────
+        case 'server:fs_write_chunk': {
+          const p = message.payload as {
+            opId: string; path: string; data: string
+            seq: number; total: number; isLast: boolean
+          }
+          this.handleWriteChunk(p)
           break
         }
         case 'server:screen_start': {
@@ -256,15 +325,42 @@ export class AgentService {
           break
         }
 
-        // ── Permission consent — auto-grant in unattended/headless mode ──────
+        // ── T006: In-session text chat ───────────────────────────────────────
+        case 'server:screen_chat': {
+          const p = message.payload as { sessionId: string; text: string; sender: string }
+          console.log(`💬 [chat] ${p.sender}: ${p.text}`)
+          // Echo back as host-side message (agent acknowledges receipt)
+          // In desktop agent main.js this triggers a notification — here we just log
+          break
+        }
+
+        // ── T004: Consent dialog with AGENT_UNATTENDED env support ────────────
         case 'server:screen_control_request': {
           const p = message.payload as { sessionId: string; requestId: string; requesterName: string }
-          console.log(`🔐 Control request from ${p.requesterName} — auto-granting (unattended mode)`)
-          this.send({
-            type: 'agent:screen_control_granted',
-            payload: { sessionId: p.sessionId, requestId: p.requestId },
-            timestamp: Date.now()
-          })
+          const unattended = process.env.AGENT_UNATTENDED === 'true' || process.env.AGENT_UNATTENDED === '1'
+
+          if (unattended) {
+            console.log(`🔐 Control request from "${p.requesterName}" — auto-granting (AGENT_UNATTENDED=true)`)
+            this.send({
+              type: 'agent:screen_control_granted',
+              payload: { sessionId: p.sessionId, requestId: p.requestId },
+              timestamp: Date.now()
+            })
+          } else {
+            // Headless mode: warn and auto-grant after CONSENT_TIMEOUT_SEC
+            console.warn(`⚠️  Control request from "${p.requesterName}"`)
+            console.warn(`   Headless agent has no consent dialog.`)
+            console.warn(`   Auto-granting in ${CONSENT_TIMEOUT_SEC}s — set AGENT_UNATTENDED=true to skip the delay.`)
+            const { sessionId, requestId } = p
+            setTimeout(() => {
+              console.log(`🔐 Auto-granting control to "${p.requesterName}" after timeout`)
+              this.send({
+                type: 'agent:screen_control_granted',
+                payload: { sessionId, requestId },
+                timestamp: Date.now()
+              })
+            }, CONSENT_TIMEOUT_SEC * 1000)
+          }
           break
         }
 
@@ -276,6 +372,51 @@ export class AgentService {
       }
     } catch (err) {
       console.error('Failed to parse message:', err)
+    }
+  }
+
+  // ── T002: Chunked write handler ───────────────────────────────────────────
+
+  private handleWriteChunk(p: {
+    opId: string; path: string; data: string
+    seq: number; total: number; isLast: boolean
+  }): void {
+    let accum = this.writeChunkBuffers.get(p.opId)
+    if (!accum) {
+      accum = { chunks: new Map(), total: p.total, path: p.path }
+      this.writeChunkBuffers.set(p.opId, accum)
+    }
+    accum.chunks.set(p.seq, Buffer.from(p.data, 'base64'))
+
+    if (p.isLast) {
+      this.writeChunkBuffers.delete(p.opId)
+      const osPath = this.toOsPath(accum.path)
+      const parts: Buffer[] = []
+      for (let i = 0; i < accum.total; i++) {
+        const chunk = accum.chunks.get(i)
+        if (chunk) parts.push(chunk)
+      }
+      const fileData = Buffer.concat(parts)
+      const dir = path.dirname(osPath)
+
+      fs.mkdir(dir, { recursive: true })
+        .then(() => fs.writeFile(osPath, fileData))
+        .then(() => {
+          console.log(`✅ Chunked write done: ${accum!.path} (${fileData.length} bytes)`)
+          this.send({
+            type:    'agent:fs_result',
+            payload: { opId: p.opId, data: { ok: true, size: fileData.length } },
+            timestamp: Date.now()
+          })
+        })
+        .catch((err: Error) => {
+          console.error(`❌ Chunked write failed: ${err.message}`)
+          this.send({
+            type:    'agent:fs_result',
+            payload: { opId: p.opId, error: err.message },
+            timestamp: Date.now()
+          })
+        })
     }
   }
 
@@ -318,7 +459,7 @@ export class AgentService {
         })
       }
 
-      this.ptyProcs.set(sessionId, { proc, sessionId })
+      this.ptyProcs.set(sessionId, { proc, sessionId, rows, cols, shell: shellHint })
 
       this.send({
         type: 'agent:pty_opened',
@@ -395,6 +536,7 @@ export class AgentService {
 
   private async handleFsRequest(p: {
     opId: string; op: string; path: string; newPath?: string; data?: string
+    seq?: number; total?: number; isLast?: boolean
   }): Promise<void> {
     const { opId, op } = p
     console.log(`📂 FS request: op=${op} path=${p.path}`)
@@ -481,6 +623,34 @@ export class AgentService {
             return '__chunked__'
           }
 
+          // ── T002: Incremental write_chunk via fs_request (small-file path) ──
+          case 'write_chunk': {
+            // Accumulate via write_chunk inside fs_request envelope
+            let accum = this.writeChunkBuffers.get(opId)
+            if (!accum) {
+              accum = { chunks: new Map(), total: p.total ?? 1, path: p.path }
+              this.writeChunkBuffers.set(opId, accum)
+            }
+            accum.chunks.set(p.seq ?? 0, Buffer.from(p.data || '', 'base64'))
+
+            if (p.isLast) {
+              this.writeChunkBuffers.delete(opId)
+              const parts: Buffer[] = []
+              for (let i = 0; i < accum.total; i++) {
+                const c = accum.chunks.get(i)
+                if (c) parts.push(c)
+              }
+              const fileData = Buffer.concat(parts)
+              const dir = path.dirname(osPath)
+              await fs.mkdir(dir, { recursive: true })
+              await withTimeout(fs.writeFile(osPath, fileData), 60000, `writeChunked(${osPath})`)
+              console.log(`✅ write_chunk done: ${p.path} (${fileData.length} bytes)`)
+              return { ok: true, size: fileData.length }
+            }
+            // Intermediate chunk — no response yet
+            return '__write_chunk_pending__'
+          }
+
           case 'write': {
             const dir = path.dirname(osPath)
             await fs.mkdir(dir, { recursive: true })
@@ -517,9 +687,13 @@ export class AgentService {
         }
       }
 
-      result = await withTimeout(doOp(), op === 'read_chunked' ? 125000 : OVERALL_TIMEOUT_MS + 1000, `fs:${op}`)
+      result = await withTimeout(
+        doOp(),
+        op === 'read_chunked' ? 125000 : op === 'write_chunk' ? 65000 : OVERALL_TIMEOUT_MS + 1000,
+        `fs:${op}`
+      )
 
-      if (result === '__chunked__') return
+      if (result === '__chunked__' || result === '__write_chunk_pending__') return
 
       console.log(`✅ FS result: op=${op} path=${p.path}`)
       this.send({
@@ -591,12 +765,16 @@ export class AgentService {
     const intervalMs = Math.max(33, Math.round(1000 / clampedFps))
     let seq = 0
 
-    // ── Frame deduplication ───────────────────────────────────────────────────
+    // ── Frame deduplication + adaptive delta encoding ─────────────────────
     let prevHash = ''
     let framesSinceKeyframe = 0
     const KEYFRAME_EVERY = 60
 
-    // ── Concurrency guard — skip interval tick if previous capture is still in flight ──
+    // Motion tracking for adaptive quality
+    let idleFrames   = 0
+    let motionQuality = quality
+
+    // Concurrency guard
     let capturing = false
 
     const capture = async () => {
@@ -608,8 +786,15 @@ export class AgentService {
       const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId
 
       try {
+        // ── T001: Adaptive quality based on motion ───────────────────────
+        // When screen is idle (many dedup skips), reduce quality to save bandwidth.
+        // When motion resumes, restore full quality.
+        const adaptiveQ = idleFrames > 10
+          ? Math.max(30, quality - Math.min(30, idleFrames))
+          : quality
+
         const frame = await captureScreen({
-          quality,
+          quality: adaptiveQ,
           maxWidth: 1280,
           monitorId: currentMonitorId,
           monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : undefined
@@ -617,7 +802,7 @@ export class AgentService {
         if (!frame) {
           this.send({
             type: 'agent:screen_unavailable',
-            payload: { sessionId, message: 'No screen capture tool available on this device (Linux: install scrot or imagemagick; ensure DISPLAY is set)' },
+            payload: { sessionId, message: 'No screen capture tool available (Linux: install scrot or imagemagick; ensure DISPLAY is set)' },
             timestamp: Date.now()
           })
           this.stopScreenCapture(sessionId)
@@ -627,7 +812,17 @@ export class AgentService {
         const hash = computeFrameHash(frame.data)
         framesSinceKeyframe++
         const isKeyframe = framesSinceKeyframe >= KEYFRAME_EVERY
-        if (hash === prevHash && !isKeyframe) return
+
+        if (hash === prevHash && !isKeyframe) {
+          idleFrames = Math.min(idleFrames + 1, 60)
+          return
+        }
+
+        // Motion detected — reset idle counter
+        if (hash !== prevHash) {
+          idleFrames = Math.max(0, idleFrames - 3)
+          motionQuality = quality
+        }
         prevHash = hash
         if (isKeyframe) framesSinceKeyframe = 0
 
@@ -635,10 +830,13 @@ export class AgentService {
           type:      'agent:screen_frame',
           payload:   {
             sessionId,
-            data:   frame.data.toString('base64'),
-            width:  frame.width,
-            height: frame.height,
-            seq:    seq++
+            data:      frame.data.toString('base64'),
+            width:     frame.width,
+            height:    frame.height,
+            seq:       seq++,
+            // T001: delta metadata — dashboard can display bandwidth stats
+            keyframe:  isKeyframe || idleFrames === 0,
+            quality:   adaptiveQ
           },
           timestamp: Date.now()
         })
@@ -720,7 +918,8 @@ export class AgentService {
             screenControl: this.controlAvailable,
             clipboard:    true,
             multiMonitor: this.cachedMonitors.length > 1,
-            monitors:     this.cachedMonitors
+            monitors:     this.cachedMonitors,
+            docker:       this.dockerAvailable
           }
         },
         timestamp: Date.now()

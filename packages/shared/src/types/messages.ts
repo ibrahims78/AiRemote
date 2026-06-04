@@ -27,6 +27,11 @@ export type WSMessageType =
   | 'agent:screen_control_granted'
   | 'agent:screen_control_denied'
   | 'server:screen_control_request'
+  // ── In-session chat (v3.0.0) ─────────────────────────────────────────────
+  | 'agent:screen_chat'
+  | 'server:screen_chat'
+  // ── Chunked file write (v3.0.0) ──────────────────────────────────────────
+  | 'server:fs_write_chunk'
   | 'server:registered'
   | 'server:command'
   | 'server:error'
@@ -49,6 +54,7 @@ export type WSMessageType =
   | 'server:screen_get_monitors'
   | 'server:screen_set_monitor'
   | 'server:screen_privacy'
+  | 'server:screen_set_quality'
   | 'agent:fs_result'
   | 'agent:fs_chunk'
   | 'client:subscribe'
@@ -104,6 +110,7 @@ export interface AgentCapabilities {
   clipboard?: boolean
   multiMonitor?: boolean
   monitors?: MonitorInfo[]
+  docker?: boolean
 }
 
 export interface AgentRegisterPayload {
@@ -199,4 +206,22 @@ export interface PtyResizePayload {
   sessionId: string
   rows: number
   cols: number
+}
+
+// ── In-session chat (v3.0.0) ─────────────────────────────────────────────────
+export interface ScreenChatPayload {
+  sessionId: string
+  text: string
+  sender: 'viewer' | 'host'
+  ts: number
+}
+
+// ── Chunked write (v3.0.0) ───────────────────────────────────────────────────
+export interface FsWriteChunkPayload {
+  opId:   string
+  path:   string
+  data:   string   // base64 chunk
+  seq:    number
+  total:  number
+  isLast: boolean
 }

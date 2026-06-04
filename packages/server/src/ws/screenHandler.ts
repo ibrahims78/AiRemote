@@ -5,16 +5,21 @@ import { deviceRegistry } from './registry'
 import type { AuthTokenPayload } from '@airemote/shared'
 import { consumeWsTicket } from '../lib/wsTickets'
 import { getDb } from '../db/database'
+import {
+  startRecording, stopRecording, isRecording,
+  getRecordingMeta, exportRecordingAsZip, deleteRecording
+} from '../services/recording'
 
 // ── Throttle settings ────────────────────────────────────────────────────────
-// Default FPS the server will allow forwarding to the dashboard.
-// The agent may send frames faster; we drop extras to protect bandwidth.
 const DEFAULT_FPS     = 5
 const MAX_FPS         = 30
-const CONNECT_TIMEOUT = 60_000   // ms to wait for agent:screen_frame after start
+const CONNECT_TIMEOUT = 60_000
 
 export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest) {
-  const query = request.query as { ticket?: string; token?: string; deviceId?: string; fps?: string; quality?: string }
+  const query = request.query as {
+    ticket?: string; token?: string; deviceId?: string
+    fps?: string; quality?: string
+  }
 
   // ── Auth — ticket preferred, JWT fallback ────────────────────────────────
   let userId = '', userEmail = '', userRole = ''
@@ -88,7 +93,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
     return
   }
 
-  // ── Connect timeout: if agent doesn't respond within N seconds ───────────
+  // ── Connect timeout ───────────────────────────────────────────────────────
   const connectTimer = setTimeout(() => {
     const s = deviceRegistry.getScreenSession(sessionId)
     if (s) {
@@ -107,18 +112,18 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
   console.log(`🖥️  Screen session started: ${sessionId} (device=${deviceId}, fps=${fps}, quality=${quality})`)
 
   // ── Frame throttling ──────────────────────────────────────────────────────
-  // We drop frames that arrive faster than the negotiated FPS to avoid
-  // saturating the dashboard's WebSocket buffer.
   const frameIntervalMs = 1000 / fps
   let lastFrameAt = 0
 
-  // Expose throttle check via registry so agentHandler can call it
   deviceRegistry.setScreenFrameThrottle(sessionId, () => {
     const now = Date.now()
     if (now - lastFrameAt < frameIntervalMs) return false
     lastFrameAt = now
     return true
   })
+
+  // ── T006: In-session chat state ───────────────────────────────────────────
+  const chatHistory: Array<{ text: string; sender: string; ts: number }> = []
 
   // ── Handle dashboard messages ─────────────────────────────────────────────
   socket.on('message', (raw: Buffer) => {
@@ -143,7 +148,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           break
         }
 
-        // ── v2.0.0 Remote Control — forward to agent ──────────────────────
+        // ── v2.0.0 Remote Control ──────────────────────────────────────────
         case 'screen:mouse_event':
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_mouse',
@@ -191,7 +196,6 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
             payload: { sessionId, monitorId },
             timestamp: Date.now()
           })
-          // Restart capture on new monitor
           const newFps2     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
           const newQuality2 = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
           deviceRegistry.sendToDevice(deviceId, {
@@ -210,7 +214,6 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           })
           break
 
-        // ── Permission / consent request ──────────────────────────────────
         case 'screen:request_control': {
           const requestId = msg.payload?.requestId || uuidv4()
           deviceRegistry.sendToDevice(deviceId, {
@@ -218,6 +221,70 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
             payload: { sessionId, requestId, requesterName: userEmail },
             timestamp: Date.now()
           })
+          break
+        }
+
+        // ── T006: In-session text chat (dashboard → agent) ────────────────
+        case 'screen:chat': {
+          const text   = (msg.payload?.text || '').toString().slice(0, 2000)
+          const sender = 'viewer'
+          const ts     = Date.now()
+          if (!text.trim()) break
+
+          const entry = { text, sender, ts }
+          chatHistory.push(entry)
+
+          // Relay to agent (shows notification on desktop agent)
+          deviceRegistry.sendToDevice(deviceId, {
+            type:    'server:screen_chat',
+            payload: { sessionId, text, sender, ts },
+            timestamp: ts
+          })
+
+          // Echo back to dashboard so the sender sees their own message
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({
+              type:    'screen:chat',
+              payload: { text, sender, ts }
+            }))
+          }
+          break
+        }
+
+        // ── T008: Session recording ───────────────────────────────────────
+        case 'screen:record_start': {
+          if (!isRecording(sessionId)) {
+            const maxFrames = Math.min(msg.payload?.maxFrames || 600, 3600)
+            startRecording(sessionId, deviceId, userId, maxFrames)
+            if (socket.readyState === 1) {
+              socket.send(JSON.stringify({
+                type:    'screen:record_status',
+                payload: { recording: true, sessionId }
+              }))
+            }
+          }
+          break
+        }
+
+        case 'screen:record_stop': {
+          const meta = stopRecording(sessionId)
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({
+              type:    'screen:record_status',
+              payload: { recording: false, sessionId, meta }
+            }))
+          }
+          break
+        }
+
+        case 'screen:record_status': {
+          const meta = getRecordingMeta(sessionId)
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({
+              type:    'screen:record_status',
+              payload: { recording: isRecording(sessionId), sessionId, meta }
+            }))
+          }
           break
         }
 
@@ -244,6 +311,11 @@ function cleanup(sessionId: string, deviceId: string): void {
   const session = deviceRegistry.removeScreenSession(sessionId)
   if (!session) return
 
+  // Stop recording if still active
+  if (isRecording(sessionId)) {
+    stopRecording(sessionId)
+  }
+
   deviceRegistry.sendToDevice(deviceId, {
     type:      'server:screen_stop',
     payload:   { sessionId },
@@ -258,4 +330,37 @@ function cleanup(sessionId: string, deviceId: string): void {
   }).catch(() => {})
 
   console.log(`🖥️  Screen session ended: ${sessionId} (${durationSec}s)`)
+}
+
+// ── T008: Recording download HTTP endpoint (called from route registration) ──
+export async function handleRecordingDownload(
+  sessionId: string,
+  reply: {
+    code: (n: number) => { send: (b: unknown) => void }
+    header: (k: string, v: string) => void
+    send: (b: unknown) => void
+  }
+): Promise<void> {
+  const meta = getRecordingMeta(sessionId)
+  if (!meta) {
+    reply.code(404).send({ error: 'Recording not found' })
+    return
+  }
+  if (meta.active) {
+    reply.code(409).send({ error: 'Recording still in progress — stop it first' })
+    return
+  }
+
+  const zip = await exportRecordingAsZip(sessionId)
+  if (!zip) {
+    reply.code(404).send({ error: 'No frames recorded' })
+    return
+  }
+
+  reply.header('Content-Type', 'application/zip')
+  reply.header('Content-Disposition', `attachment; filename="recording-${sessionId.slice(0, 8)}.zip"`)
+  reply.send(zip)
+
+  // Auto-cleanup after download
+  deleteRecording(sessionId)
 }

@@ -1,28 +1,33 @@
 /**
- * ScreenViewer.tsx — v3.0.0
+ * ScreenViewer.tsx — v3.1.0
  *  ✅ Live screen streaming (MJPEG over WebSocket, up to 30fps)
  *  ✅ Mouse control (move, click, drag, double-click, scroll, right-click)
  *  ✅ Keyboard control (all keys + modifier combos)
  *  ✅ Clipboard sync (read remote / write to remote)
  *  ✅ Multi-monitor selector
  *  ✅ Privacy mode (blank remote screen)
- *  ✅ Session recording (MediaRecorder → WebM download)
+ *  ✅ Client-side recording (MediaRecorder → WebM download)
+ *  ✅ Server-side recording (JPEG frames → ZIP download via /api/recordings)
  *  ✅ Fullscreen mode · Idle timeout warning (5 min)
  *  ✅ v3.0.0: Permission consent before control
  *  ✅ v3.0.0: Adaptive quality — auto-adjusts fps based on RTT latency
  *  ✅ v3.0.0: Drag & drop file upload → agent Desktop folder
  *  ✅ v3.0.0: Up to 30fps streaming
+ *  ✅ T006: In-session text chat (dashboard ↔ agent)
+ *  ✅ T001: Bandwidth meter with delta/keyframe stats
+ *  ✅ T008: Server-side recording controls
  */
 import {
   useEffect, useRef, useState, useCallback,
-  MouseEvent as ReactMouseEvent
+  MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent
 } from 'react'
 import {
   Monitor, Maximize2, Minimize2, RefreshCw, Wifi, WifiOff,
   AlertTriangle, Loader2, Settings2,
   Clipboard, ClipboardPaste, EyeOff, Eye,
   Video, Tv2, Mouse, Keyboard, ChevronDown, Circle,
-  Upload, Shield, Zap, CheckCircle2
+  Upload, Shield, Zap, CheckCircle2,
+  MessageSquare, Send, Download, Activity, X
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuthStore } from '../store/authStore'
@@ -45,6 +50,20 @@ interface QualityPreset {
   label: string; fps: number; quality: number
 }
 
+interface ChatMessage {
+  text:   string
+  sender: 'viewer' | 'host'
+  ts:     number
+}
+
+interface RecordingMeta {
+  sessionId:   string
+  frameCount:  number
+  durationSec: number
+  totalBytes:  number
+  active:      boolean
+}
+
 // v3.0.0 — adds 30fps "عالي الأداء" option
 const QUALITY_PRESETS: QualityPreset[] = [
   { label: 'توفير',       fps: 1,  quality: 40 },
@@ -55,6 +74,12 @@ const QUALITY_PRESETS: QualityPreset[] = [
 ]
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
+
+function fmtBytes(bytes: number): string {
+  if (bytes < 1024)       return `${bytes}B/s`
+  if (bytes < 1024*1024)  return `${(bytes/1024).toFixed(1)}KB/s`
+  return `${(bytes/1024/1024).toFixed(2)}MB/s`
+}
 
 export function ScreenViewer({ deviceId, deviceName }: Props) {
   const { token, user } = useAuthStore()
@@ -80,22 +105,36 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const [idleWarning,    setIdleWarning]    = useState(false)
 
   // ── Control ───────────────────────────────────────────────────────────────
-  const [preset,         setPreset]         = useState<QualityPreset>(QUALITY_PRESETS[2])
-  const [controlEnabled, setControlEnabled] = useState(false)
-  const [keyboardMode,   setKeyboardMode]   = useState(false)
-  const [privacyOn,      setPrivacyOn]      = useState(false)
-  const [recording,      setRecording]      = useState(false)
-  const [recDuration,    setRecDuration]    = useState(0)
-  const [monitors,       setMonitors]       = useState<MonitorInfo[]>([])
-  const [selectedMonitor,setSelectedMonitor]= useState(0)
-  const [clipboardText,  setClipboardText]  = useState('')
+  const [preset,          setPreset]          = useState<QualityPreset>(QUALITY_PRESETS[2])
+  const [controlEnabled,  setControlEnabled]  = useState(false)
+  const [keyboardMode,    setKeyboardMode]    = useState(false)
+  const [privacyOn,       setPrivacyOn]       = useState(false)
+  const [recording,       setRecording]       = useState(false)
+  const [recDuration,     setRecDuration]     = useState(0)
+  const [monitors,        setMonitors]        = useState<MonitorInfo[]>([])
+  const [selectedMonitor, setSelectedMonitor] = useState(0)
+  const [clipboardText,   setClipboardText]   = useState('')
 
-  // ── v3.0.0 new state ──────────────────────────────────────────────────────
+  // ── v3.0.0 state ──────────────────────────────────────────────────────────
   const [permissionState, setPermissionState] = useState<PermissionState>('idle')
   const [dragOver,        setDragOver]        = useState(false)
   const [uploadProgress,  setUploadProgress]  = useState<number | null>(null)
   const [uploadFileName,  setUploadFileName]  = useState('')
   const [adaptiveMode,    setAdaptiveMode]    = useState(false)
+
+  // ── T006: In-session chat ─────────────────────────────────────────────────
+  const [chatOpen,     setChatOpen]     = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput,    setChatInput]    = useState('')
+  const [unreadChat,   setUnreadChat]   = useState(0)
+
+  // ── T008: Server-side recording ───────────────────────────────────────────
+  const [svrRecording, setSvrRecording] = useState(false)
+  const [svrRecMeta,   setSvrRecMeta]   = useState<RecordingMeta | null>(null)
+
+  // ── T001: Bandwidth meter ─────────────────────────────────────────────────
+  const [bwDisplay,   setBwDisplay]   = useState(0)   // bytes/sec
+  const [frameStats,  setFrameStats]  = useState({ keyframes: 0, total: 0 })
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const fpsCountRef        = useRef(0)
@@ -111,11 +150,18 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const permissionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const presetRef          = useRef(preset)
   const selectedMonRef     = useRef(selectedMonitor)
-  // Prevents race conditions when connect() is called multiple times in quick succession
   const connectIdRef       = useRef(0)
+  const chatEndRef         = useRef<HTMLDivElement>(null)
+  const bwBytesRef         = useRef(0)
+  const bwTimerRef         = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useEffect(() => { presetRef.current    = preset          }, [preset])
+  useEffect(() => { presetRef.current     = preset        }, [preset])
   useEffect(() => { selectedMonRef.current = selectedMonitor }, [selectedMonitor])
+
+  // ── Auto-scroll chat ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatOpen])
 
   // ── FPS counter ───────────────────────────────────────────────────────────
   const startFpsCounter = useCallback(() => {
@@ -123,6 +169,15 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     fpsTimerRef.current = setInterval(() => {
       setFps(fpsCountRef.current)
       fpsCountRef.current = 0
+    }, 1000)
+  }, [])
+
+  // ── Bandwidth counter ─────────────────────────────────────────────────────
+  const startBwCounter = useCallback(() => {
+    if (bwTimerRef.current) return
+    bwTimerRef.current = setInterval(() => {
+      setBwDisplay(bwBytesRef.current)
+      bwBytesRef.current = 0
     }, 1000)
   }, [])
 
@@ -153,14 +208,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
 
   // ── WebSocket connect ─────────────────────────────────────────────────────
   const connect = useCallback(async (p: QualityPreset, monitorId = 0) => {
-    // Bump the counter; any previous in-flight connect() will see it changed and abort
     const myId = ++connectIdRef.current
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null }
     setStatus('connecting'); setErrorMsg(''); lastSeqRef.current = -1
     setControlEnabled(false); setPermissionState('idle')
     if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
 
-    // Fetch a short-lived WS ticket so we never pass a possibly-expired JWT in the URL
     let authParam: Record<string, string> = {}
     try {
       const r = await fetch('/api/auth/ws-ticket', {
@@ -177,7 +230,6 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       authParam = { token: token || '' }
     }
 
-    // If another connect() was called while we were awaiting the ticket, bail out
     if (myId !== connectIdRef.current) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -199,11 +251,17 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         const msg = JSON.parse(ev.data as string)
         switch (msg.type) {
           case 'screen:frame': {
-            setStatus('streaming'); startFpsCounter()
-            const { data, width, height, seq } = msg.payload
+            setStatus('streaming'); startFpsCounter(); startBwCounter()
+            const { data, width, height, seq, keyframe } = msg.payload
             if (seq <= lastSeqRef.current && seq !== 0) break
             lastSeqRef.current = seq
             drawFrame(data, width, height)
+            // T001: bandwidth + delta stats
+            bwBytesRef.current += Math.ceil((data?.length ?? 0) * 3 / 4)
+            setFrameStats(prev => ({
+              total:     prev.total + 1,
+              keyframes: keyframe ? prev.keyframes + 1 : prev.keyframes
+            }))
             break
           }
           case 'screen:error':
@@ -230,6 +288,24 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
             setPermissionState('idle')
             break
+
+          // ── T006: In-session chat ─────────────────────────────────────────
+          case 'screen:chat': {
+            const { text, sender, ts } = msg.payload as ChatMessage
+            if (!text) break
+            setChatMessages(prev => [...prev.slice(-99), { text, sender: sender || 'host', ts: ts || Date.now() }])
+            setChatOpen(true)
+            setUnreadChat(prev => prev + 1)
+            break
+          }
+
+          // ── T008: Server-side recording status ────────────────────────────
+          case 'screen:record_status': {
+            const { recording: rec, meta } = msg.payload as { recording: boolean; meta?: RecordingMeta }
+            setSvrRecording(rec)
+            if (meta) setSvrRecMeta(meta)
+            break
+          }
         }
       } catch { /* ignore parse errors */ }
     }
@@ -238,10 +314,11 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       setStatus(s => (s === 'error' || s === 'unavailable') ? s : 'disconnected')
       if (fpsTimerRef.current)  { clearInterval(fpsTimerRef.current);  fpsTimerRef.current  = null }
       if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
-      setFps(0); setLatency(-1)
+      if (bwTimerRef.current)   { clearInterval(bwTimerRef.current);   bwTimerRef.current   = null }
+      setFps(0); setLatency(-1); setBwDisplay(0)
     }
     ws.onerror = () => { setStatus('error'); setErrorMsg('فشل الاتصال عبر WebSocket') }
-  }, [deviceId, token, drawFrame, startFpsCounter, sendWs])
+  }, [deviceId, token, drawFrame, startFpsCounter, startBwCounter, sendWs])
 
   // ── Mount / unmount ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -253,6 +330,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       if (recTimerRef.current)        clearInterval(recTimerRef.current)
       if (idleTimerRef.current)       clearTimeout(idleTimerRef.current)
       if (permissionTimerRef.current) clearTimeout(permissionTimerRef.current)
+      if (bwTimerRef.current)         clearInterval(bwTimerRef.current)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -285,7 +363,6 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   }, [keyboardMode, controlEnabled, sendWs, resetIdle])
 
   // ── Adaptive quality — v3.0.0 ─────────────────────────────────────────────
-  // Fires on each ping-pong (~every 3s). Auto-adjusts fps based on measured RTT.
   useEffect(() => {
     if (!adaptiveMode || status !== 'streaming' || latency < 0) return
     const p = presetRef.current
@@ -344,7 +421,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   // ── Privacy ───────────────────────────────────────────────────────────────
   const togglePrivacy = () => { const next = !privacyOn; setPrivacyOn(next); sendWs({ type: 'screen:privacy', payload: { enable: next } }) }
 
-  // ── Recording ─────────────────────────────────────────────────────────────
+  // ── Client-side recording ─────────────────────────────────────────────────
   const startRecording = () => {
     const canvas = canvasRef.current; if (!canvas) return
     try {
@@ -368,7 +445,49 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     mediaRecRef.current?.stop(); mediaRecRef.current = null; setRecording(false)
     if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null }
   }
+
+  // ── T008: Server-side recording ───────────────────────────────────────────
+  const startServerRecording = () => {
+    sendWs({ type: 'screen:record_start', payload: { maxFrames: 600 } })
+    setSvrRecording(true)
+  }
+  const stopServerRecording = () => {
+    sendWs({ type: 'screen:record_stop', payload: {} })
+    setSvrRecording(false)
+  }
+  const downloadServerRecording = async () => {
+    if (!svrRecMeta?.sessionId) return
+    const r = await fetch(`/api/recordings/${svrRecMeta.sessionId}/download`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!r.ok) return
+    const blob = await r.blob()
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `rec-${deviceName}-${new Date().toISOString().slice(0,10)}.zip`
+    a.click(); URL.revokeObjectURL(url)
+    setSvrRecMeta(null)
+  }
+
   const fmt = (s: number) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`
+
+  // ── T006: Chat ────────────────────────────────────────────────────────────
+  const sendChat = useCallback(() => {
+    const text = chatInput.trim()
+    if (!text) return
+    setChatMessages(prev => [...prev.slice(-99), { text, sender: 'viewer', ts: Date.now() }])
+    sendWs({ type: 'screen:chat', payload: { text } })
+    setChatInput('')
+  }, [chatInput, sendWs])
+
+  const handleChatKey = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat() }
+  }
+
+  const openChat = () => {
+    setChatOpen(true)
+    setUnreadChat(0)
+  }
 
   // ── Permission request — v3.0.0 ───────────────────────────────────────────
   const requestControl = useCallback(() => {
@@ -381,8 +500,6 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     setPermissionState('requesting')
     const requestId = Math.random().toString(36).slice(2, 10)
     sendWs({ type: 'screen:request_control', payload: { requestId } })
-    // Fallback auto-grant after 3s: agent is headless and always auto-responds,
-    // but we don't want the button to stay stuck if WS has high latency.
     permissionTimerRef.current = setTimeout(() => {
       setPermissionState('granted')
       setControlEnabled(true); setShowHint(true)
@@ -440,15 +557,21 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           {status === 'disconnected' && <><WifiOff size={9}/> منقطع</>}
         </span>
 
+        {/* T001: Bandwidth meter + FPS + latency */}
         {status === 'streaming' && (
-          <span className="text-xs font-mono text-slate-500 shrink-0">
-            {fps}fps · {resolution.w}×{resolution.h}
+          <span className="flex items-center gap-2 text-xs font-mono text-slate-500 shrink-0">
+            <span>{fps}fps · {resolution.w}×{resolution.h}</span>
             {latency >= 0 && (
-              <span className={clsx('ml-2',
+              <span className={clsx(
                 latency < 50  ? 'text-emerald-400' :
                 latency < 150 ? 'text-amber-400'   :
                 latency < 300 ? 'text-orange-400'  : 'text-red-400'
-              )} title={`RTT: ${latency}ms`}> · {latency}ms</span>
+              )}>{latency}ms</span>
+            )}
+            {bwDisplay > 0 && (
+              <span className="flex items-center gap-0.5 text-slate-600" title={`${frameStats.keyframes} keyframes / ${frameStats.total} total frames`}>
+                <Activity size={9}/> {fmtBytes(bwDisplay)}
+              </span>
             )}
           </span>
         )}
@@ -456,15 +579,50 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         <div className="flex-1"/>
         <div className="flex items-center gap-1 flex-wrap">
 
-          {/* Recording */}
+          {/* T006: Chat button */}
+          {status === 'streaming' && (
+            <button onClick={openChat}
+              title="دردشة أثناء الجلسة"
+              className={clsx('relative flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                chatOpen ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+              )}>
+              <MessageSquare size={12}/>
+              {unreadChat > 0 && !chatOpen && (
+                <span className="absolute -top-1 -right-1 bg-sky-500 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center text-[9px] font-bold">
+                  {unreadChat > 9 ? '9+' : unreadChat}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Client recording */}
           {status === 'streaming' && (
             <button onClick={recording ? stopRecording : startRecording}
-              title={recording ? `إيقاف التسجيل (${fmt(recDuration)})` : 'تسجيل الجلسة كفيديو'}
+              title={recording ? `إيقاف التسجيل (${fmt(recDuration)})` : 'تسجيل الجلسة كفيديو WebM'}
               className={clsx('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
                 recording ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
               )}>
               {recording ? <><Circle size={8} className="fill-red-400 animate-pulse"/> {fmt(recDuration)}</> : <Video size={12}/>}
             </button>
+          )}
+
+          {/* T008: Server recording */}
+          {status === 'streaming' && (
+            svrRecMeta && !svrRecording ? (
+              <button onClick={downloadServerRecording}
+                title={`تنزيل تسجيل الخادم (${svrRecMeta.frameCount} إطار)`}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors">
+                <Download size={11}/> تسجيل
+              </button>
+            ) : (
+              <button onClick={svrRecording ? stopServerRecording : startServerRecording}
+                title={svrRecording ? 'إيقاف تسجيل الخادم' : 'تسجيل الجلسة بجودة عالية (JPEG ZIP)'}
+                className={clsx('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                  svrRecording ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                )}>
+                {svrRecording ? <><Circle size={8} className="fill-orange-400 animate-pulse"/> خادم</> : <Activity size={12}/>}
+              </button>
+            )
           )}
 
           {/* Privacy */}
@@ -529,7 +687,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             </div>
           )}
 
-          {/* Control toggle — v3.0.0: permission consent */}
+          {/* Control toggle */}
           {status === 'streaming' && (
             <button onClick={requestControl}
               title={controlEnabled ? 'إيقاف التحكم' : permissionState === 'requesting' ? 'جارٍ طلب الإذن...' : 'تفعيل التحكم عن بُعد'}
@@ -554,13 +712,13 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             </button>
           )}
 
-          {/* Quality settings — v3.0.0: 30fps + adaptive mode */}
+          {/* Quality settings */}
           <div className="relative">
             <button onClick={() => setShowSettings(s => !s)} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title="إعدادات الجودة">
               <Settings2 size={13}/>
             </button>
             {showSettings && (
-              <div className="absolute top-full right-0 mt-1 bg-navy-800 border border-slate-700/50 rounded-lg shadow-xl z-20 min-w-[200px]" onClick={e => e.stopPropagation()}>
+              <div className="absolute top-full right-0 mt-1 bg-navy-800 border border-slate-700/50 rounded-lg shadow-xl z-20 min-w-[230px]" onClick={e => e.stopPropagation()}>
                 <div className="px-3 py-2 text-xs text-slate-500 border-b border-slate-700/30">الجودة / السرعة</div>
                 {QUALITY_PRESETS.map(p => (
                   <button key={p.label} onClick={() => applyPreset(p)}
@@ -574,7 +732,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
                     <span className="text-slate-500 font-mono text-[10px]">{p.fps}fps · q{p.quality}</span>
                   </button>
                 ))}
-                <div className="border-t border-slate-700/30 px-3 py-2">
+                <div className="border-t border-slate-700/30 px-3 py-2 space-y-1.5">
                   <button onClick={() => { setAdaptiveMode(a => !a); setShowSettings(false) }}
                     className={clsx('w-full text-left text-xs flex items-center gap-2 py-0.5',
                       adaptiveMode ? 'text-sky-400' : 'text-slate-400 hover:text-slate-200'
@@ -582,6 +740,13 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
                     <Zap size={10}/> جودة تكيفية تلقائية
                     {adaptiveMode && <span className="ml-auto text-[9px] bg-sky-500/20 text-sky-400 px-1.5 py-0.5 rounded-full">مفعّل</span>}
                   </button>
+                  {/* T001: delta stats */}
+                  {frameStats.total > 0 && (
+                    <div className="text-[10px] text-slate-600 font-mono pt-1 border-t border-slate-700/20">
+                      {frameStats.keyframes} keyframe / {frameStats.total} frames
+                      · {frameStats.total > 0 ? Math.round(frameStats.keyframes / frameStats.total * 100) : 0}% full
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -635,7 +800,15 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         {recording && (
           <div className={clsx('absolute flex items-center gap-1 bg-red-500/20 border border-red-500/30 text-red-400 text-[10px] px-2 py-1 rounded-full pointer-events-none',
             adaptiveMode && status === 'streaming' ? 'top-8 left-2' : 'top-2 left-2')}>
-            <Circle size={8} className="fill-red-400 animate-pulse"/> تسجيل {fmt(recDuration)}
+            <Circle size={8} className="fill-red-400 animate-pulse"/> WebM {fmt(recDuration)}
+          </div>
+        )}
+
+        {/* Server recording badge */}
+        {svrRecording && (
+          <div className={clsx('absolute flex items-center gap-1 bg-orange-500/20 border border-orange-500/30 text-orange-400 text-[10px] px-2 py-1 rounded-full pointer-events-none',
+            recording ? 'top-8 left-16' : adaptiveMode ? 'top-8 left-2' : 'top-2 left-2')}>
+            <Circle size={8} className="fill-orange-400 animate-pulse"/> JPEG
           </div>
         )}
 
@@ -648,7 +821,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           </div>
         )}
 
-        {/* Drag & drop overlay — v3.0.0 */}
+        {/* Drag & drop overlay */}
         {dragOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-sky-950/85 border-2 border-sky-500/60 border-dashed z-20 pointer-events-none rounded-b-xl">
             <Upload size={40} className="text-sky-400 mb-3"/>
@@ -657,7 +830,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           </div>
         )}
 
-        {/* File upload progress — v3.0.0 */}
+        {/* File upload progress */}
         {uploadProgress !== null && (
           <div className="absolute bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2.5 bg-navy-900/95 border border-slate-700/50 text-xs px-4 py-2.5 rounded-xl shadow-xl z-30 min-w-[240px]">
             {uploadProgress === 100
@@ -691,18 +864,74 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           </div>
         )}
 
-        {/* Non-streaming overlays */}
+        {/* Status overlay (connecting / error / disconnected) */}
         {status !== 'streaming' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-center px-8">
-            {status === 'connecting' && (<><Loader2 size={40} className="text-brand-blue animate-spin"/><p className="text-slate-300 font-medium">جارٍ الاتصال بشاشة الجهاز...</p><p className="text-slate-500 text-sm">{deviceName}</p></>)}
-            {status === 'error' && (<><div className="w-14 h-14 rounded-full bg-red-400/10 flex items-center justify-center"><AlertTriangle size={28} className="text-red-400"/></div><p className="text-slate-200 font-medium">فشل الاتصال</p><p className="text-slate-400 text-sm max-w-xs">{errorMsg}</p><button onClick={() => connect(preset, selectedMonitor)} className="btn-primary text-sm px-4 py-2"><RefreshCw size={14}/> إعادة المحاولة</button></>)}
-            {status === 'unavailable' && (<><div className="w-14 h-14 rounded-full bg-orange-400/10 flex items-center justify-center"><Monitor size={28} className="text-orange-400"/></div><p className="text-slate-200 font-medium">مشاركة الشاشة غير متاحة</p><p className="text-slate-400 text-sm max-w-sm">{errorMsg}</p><div className="text-xs text-slate-600 bg-slate-800/50 rounded-lg p-3 text-left max-w-sm font-mono"><p className="text-slate-500 mb-1"># Linux — ثبّت الأدوات:</p><p>sudo apt install scrot xdotool</p></div></>)}
-            {status === 'disconnected' && (<><div className="w-14 h-14 rounded-full bg-slate-700/50 flex items-center justify-center"><WifiOff size={28} className="text-slate-500"/></div><p className="text-slate-300 font-medium">انتهت جلسة المشاركة</p><button onClick={() => connect(preset, selectedMonitor)} className="btn-primary text-sm px-4 py-2"><RefreshCw size={14}/> إعادة الاتصال</button></>)}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
+            {status === 'connecting'   && <><Loader2 size={28} className="text-brand-blue animate-spin"/><p className="text-slate-400 text-sm">جارٍ الاتصال...</p></>}
+            {status === 'disconnected' && <><WifiOff size={28} className="text-slate-600"/><p className="text-slate-500 text-sm">انقطع الاتصال</p></>}
+            {status === 'error'        && <><WifiOff size={28} className="text-red-500"/><p className="text-red-400 text-sm">{errorMsg}</p></>}
+            {status === 'unavailable'  && <><AlertTriangle size={28} className="text-orange-500"/><p className="text-orange-400 text-sm text-center px-8">{errorMsg}</p></>}
           </div>
         )}
 
-        {status === 'streaming' && (
-          <div className="absolute bottom-2 right-2 text-[9px] text-slate-700 font-mono bg-black/20 px-1 py-0.5 rounded pointer-events-none">#{frameCount}</div>
+        {/* ── T006: In-session chat panel ── */}
+        {chatOpen && (
+          <div
+            className="absolute bottom-3 right-3 z-40 flex flex-col w-72 h-80 bg-navy-900/97 border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/50 bg-navy-800/50">
+              <span className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                <MessageSquare size={11}/> دردشة الجلسة
+              </span>
+              <button onClick={() => setChatOpen(false)} className="text-slate-600 hover:text-slate-400 transition-colors">
+                <X size={13}/>
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700">
+              {chatMessages.length === 0 ? (
+                <p className="text-center text-slate-600 text-xs mt-8">لا توجد رسائل بعد</p>
+              ) : chatMessages.map((m, i) => (
+                <div key={i} className={clsx('flex flex-col gap-0.5', m.sender === 'viewer' ? 'items-end' : 'items-start')}>
+                  <div className={clsx(
+                    'max-w-[85%] text-xs px-2.5 py-1.5 rounded-xl',
+                    m.sender === 'viewer'
+                      ? 'bg-brand-blue/25 text-slate-200 rounded-br-sm'
+                      : 'bg-slate-700/60 text-slate-300 rounded-bl-sm'
+                  )}>
+                    {m.text}
+                  </div>
+                  <span className="text-[9px] text-slate-600">
+                    {m.sender === 'viewer' ? 'أنت' : 'الجهاز'}
+                    {' · '}
+                    {new Date(m.ts).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                  </span>
+                </div>
+              ))}
+              <div ref={chatEndRef}/>
+            </div>
+
+            {/* Input */}
+            <div className="flex gap-1.5 p-2 border-t border-slate-700/50">
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={handleChatKey}
+                placeholder="اكتب رسالة..."
+                className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-brand-blue/50 transition-colors"
+              />
+              <button
+                onClick={sendChat}
+                disabled={!chatInput.trim()}
+                className="p-1.5 bg-brand-blue/20 hover:bg-brand-blue/30 text-brand-blue rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Send size={12}/>
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

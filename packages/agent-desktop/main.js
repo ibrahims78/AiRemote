@@ -22,7 +22,7 @@ const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
 const LOG_MAX        = 300
-const AGENT_VERSION  = '2.0.0'
+const AGENT_VERSION  = '3.0.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null
@@ -49,6 +49,11 @@ let capWin         = null
 let screenSessions = new Map()   // sessionId → { fps, quality }
 let psInputProc    = null
 let psInputReady   = false
+
+// ─── v3.0.0 State ─────────────────────────────────────────────────────────
+let dockerAvailable  = false
+/** @type {Map<string, {chunks: Map<number, Buffer>, total: number, path: string}>} */
+const writeChunkBufs = new Map()  // opId → accumulator for chunked file uploads
 
 // ─── Config ───────────────────────────────────────────────────────────────
 function defaultConfig() {
@@ -242,6 +247,15 @@ async function getStats() {
   return stats
 }
 
+// ─── T005: Docker detection ────────────────────────────────────────────────
+function detectDocker() {
+  return new Promise(resolve => {
+    exec('docker --version', { timeout: 3000, windowsHide: true }, (err) => {
+      resolve(!err)
+    })
+  })
+}
+
 // ─── Agent WebSocket Logic ─────────────────────────────────────────────────
 function startAgent() {
   if (agentState !== 'stopped') return
@@ -290,6 +304,10 @@ function doConnect() {
     reconnectDelay = RECONNECT_BASE
     addLog('info', '✅ اتصل بالخادم — جاري التسجيل...')
     try {
+      // T005: detect Docker once per connection
+      dockerAvailable = await detectDocker()
+      if (dockerAvailable) addLog('info', '🐳 Docker: متاح')
+
       const info  = getDeviceInfo()
       const stats = await getStats()
       const shell = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
@@ -302,7 +320,8 @@ function doConnect() {
           tunnelLayer:  'relay',
           capabilities: {
             pty: true, shell, fs: true,
-            screenControl: true, clipboard: true, multiMonitor: true
+            screenControl: true, clipboard: true, multiMonitor: true,
+            docker: dockerAvailable
           }
         },
         timestamp: Date.now()
@@ -421,6 +440,24 @@ function handleMsg(msg) {
     }
     case 'server:screen_privacy':
       break
+
+    // ── T006: In-session text chat ──────────────────────────────────────────
+    case 'server:screen_chat': {
+      const { text, sender } = msg.payload || {}
+      if (!text) break
+      addLog('info', `💬 [chat] ${sender || 'viewer'}: ${text}`)
+      // Show a native notification so the operator knows a message arrived
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('screen-chat', { text, sender: sender || 'viewer', ts: Date.now() })
+      }
+      break
+    }
+
+    // ── T002: Chunked file write (v3.0.0) ──────────────────────────────────
+    case 'server:fs_write_chunk': {
+      handleFsWriteChunk(msg.payload)
+      break
+    }
   }
 }
 
@@ -570,6 +607,45 @@ async function handleFsRequest(payload) {
     }
   } catch (e) {
     respond({ error: e.message })
+  }
+}
+
+// ─── T002: Chunked file write handler (v3.0.0) ───────────────────────────
+function handleFsWriteChunk(payload) {
+  const { opId, path: filePath, data, seq, total, isLast } = payload || {}
+  if (!opId || !filePath) return
+
+  let accum = writeChunkBufs.get(opId)
+  if (!accum) {
+    accum = { chunks: new Map(), total: total || 1, path: filePath }
+    writeChunkBufs.set(opId, accum)
+  }
+  accum.chunks.set(seq || 0, Buffer.from(data || '', 'base64'))
+
+  if (isLast) {
+    writeChunkBufs.delete(opId)
+    const parts = []
+    for (let i = 0; i < accum.total; i++) {
+      const c = accum.chunks.get(i)
+      if (c) parts.push(c)
+    }
+    const fileData = Buffer.concat(parts)
+    const osp = toOsPath(accum.path)
+    if (!osp) {
+      send({ type: 'agent:fs_result', payload: { opId, error: 'مسار غير صالح' }, timestamp: Date.now() })
+      return
+    }
+    const dir = require('path').dirname(osp)
+    fsPromises.mkdir(dir, { recursive: true })
+      .then(() => fsPromises.writeFile(osp, fileData))
+      .then(() => {
+        addLog('info', `✅ رُفع الملف: ${accum.path} (${(fileData.length / 1024 / 1024).toFixed(1)} MB)`)
+        send({ type: 'agent:fs_result', payload: { opId, data: { ok: true, size: fileData.length } }, timestamp: Date.now() })
+      })
+      .catch(e => {
+        addLog('error', `❌ فشل رفع الملف: ${e.message}`)
+        send({ type: 'agent:fs_result', payload: { opId, error: e.message }, timestamp: Date.now() })
+      })
   }
 }
 
@@ -738,9 +814,23 @@ function handlePtyData(payload) {
 }
 
 function handlePtyResize(payload) {
+  const { sessionId, rows, cols } = payload || {}
   if (process.platform !== 'win32') {
-    const proc = ptyProcs.get(payload.sessionId)
+    const proc = ptyProcs.get(sessionId)
     if (proc) { try { proc.kill('SIGWINCH') } catch {} }
+  } else {
+    // T003: Windows PTY resize — send VT100 resize hint back to xterm.js so the
+    // viewport resizes even though the underlying shell can't be resized without
+    // node-pty. The stored rows/cols will be used by the next PTY open.
+    const proc = ptyProcs.get(sessionId)
+    if (proc) {
+      // Send resize escape sequence so xterm.js adjusts its viewport
+      const hint = Buffer.from(`\x1b[8;${rows};${cols}t`).toString('base64')
+      send({ type: 'agent:pty_data', payload: { sessionId, data: hint }, timestamp: Date.now() })
+    }
+    // Update winPtyBufs so next PTY open uses the new size
+    const state = winPtyBufs.get(sessionId)
+    if (state) { state.rows = rows; state.cols = cols }
   }
 }
 
@@ -927,7 +1017,11 @@ async function startHeartbeat() {
         type: 'agent:heartbeat',
         payload: {
           deviceId, stats, tunnelLayer: 'relay', timestamp: Date.now(),
-          capabilities: { pty: true, fs: true, screenControl: true, clipboard: true, multiMonitor: true }
+          capabilities: {
+            pty: true, fs: true, screenControl: true,
+            clipboard: true, multiMonitor: true,
+            docker: dockerAvailable
+          }
         },
         timestamp: Date.now()
       })

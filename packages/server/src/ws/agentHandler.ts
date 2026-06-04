@@ -53,7 +53,7 @@ export async function handleAgentMessage(
         return null
       }
 
-      // Extract capabilities from registration payload (v2.0.0: includes remote control caps)
+      // Extract capabilities including new docker flag (v3.0.0)
       const caps = {
         pty:           true,
         sshAvailable:  payload.sshInfo?.available ?? payload.capabilities?.sshAvailable ?? false,
@@ -63,7 +63,8 @@ export async function handleAgentMessage(
         screenControl: payload.capabilities?.screenControl ?? false,
         clipboard:     payload.capabilities?.clipboard     ?? false,
         multiMonitor:  payload.capabilities?.multiMonitor  ?? false,
-        monitors:      payload.capabilities?.monitors      ?? []
+        monitors:      payload.capabilities?.monitors      ?? [],
+        docker:        payload.capabilities?.docker        ?? false
       }
 
       deviceRegistry.registerDevice(device.id, socket, payload.stats, caps)
@@ -185,7 +186,7 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── SSH capability update (from agent SSH settings) ───────────────────────
+    // ── SSH capability update ─────────────────────────────────────────────────
     case 'agent:ssh_info': {
       const p = message.payload as {
         deviceId: string
@@ -298,21 +299,38 @@ export async function handleAgentMessage(
     case 'agent:screen_frame': {
       const p = message.payload as {
         sessionId: string
-        data:      string   // base64 JPEG
+        data:      string
         width:     number
         height:    number
         seq:       number
+        keyframe?: boolean
+        quality?:  number
       }
       deviceRegistry.clearScreenConnectTimeout(p.sessionId)
       const session = deviceRegistry.getScreenSession(p.sessionId)
       if (session) {
+        // Recording: add frame to recording if active
+        try {
+          const { isRecording, addFrame } = await import('../services/recording')
+          if (isRecording(p.sessionId)) {
+            addFrame(p.sessionId, Buffer.from(p.data, 'base64'), p.width, p.height, p.seq)
+          }
+        } catch {}
+
         // Apply throttle — drop frame if too early
         if (!session.frameThrottle || session.frameThrottle()) {
           if (session.dashboardSocket.readyState === 1) {
             try {
               session.dashboardSocket.send(JSON.stringify({
                 type:    'screen:frame',
-                payload: { data: p.data, width: p.width, height: p.height, seq: p.seq }
+                payload: {
+                  data:     p.data,
+                  width:    p.width,
+                  height:   p.height,
+                  seq:      p.seq,
+                  keyframe: p.keyframe,
+                  quality:  p.quality
+                }
               }))
             } catch {}
           }
@@ -364,7 +382,7 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── v2.0.0 Remote Control: agent → dashboard ──────────────────────────
+    // ── v2.0.0 Remote Control: agent → dashboard ──────────────────────
     case 'agent:screen_monitors': {
       const p = message.payload as { sessionId: string; monitors: unknown[] }
       const session = deviceRegistry.getScreenSession(p.sessionId)
@@ -387,6 +405,21 @@ export async function handleAgentMessage(
           session.dashboardSocket.send(JSON.stringify({
             type:    'screen:clipboard',
             payload: { text: p.text }
+          }))
+        } catch {}
+      }
+      return null
+    }
+
+    // ── T006: In-session chat agent → dashboard ────────────────────────────
+    case 'agent:screen_chat': {
+      const p = message.payload as { sessionId: string; text: string; sender: string; ts: number }
+      const session = deviceRegistry.getScreenSession(p.sessionId)
+      if (session?.dashboardSocket.readyState === 1) {
+        try {
+          session.dashboardSocket.send(JSON.stringify({
+            type:    'screen:chat',
+            payload: { text: p.text, sender: p.sender || 'host', ts: p.ts || Date.now() }
           }))
         } catch {}
       }
@@ -437,7 +470,6 @@ export function sendFsRequest(
   return new Promise((resolve, reject) => {
     const opId = uuidv4()
 
-    // Verify the socket is truly writable before queuing
     const device = deviceRegistry.getDevice(deviceId)
     if (!device || device.socket.readyState !== 1) {
       reject(new Error('الجهاز غير متصل أو الاتصال منقطع'))
@@ -459,7 +491,67 @@ export function sendFsRequest(
   })
 }
 
-// sendFsDownload — chunked file transfer (avoids large single WS message)
+// ── T002: Chunked file upload — server → agent (v3.0.0) ──────────────────────
+// Splits large files into 512KB chunks and sends them sequentially.
+// Agent accumulates and writes on the final chunk (isLast=true).
+export async function sendFsWriteChunked(
+  deviceId:  string,
+  filePath:  string,
+  data:      Buffer,
+  timeoutMs  = 300000
+): Promise<void> {
+  const CHUNK_SIZE = 512 * 1024   // 512 KB
+  const total      = Math.ceil(data.length / CHUNK_SIZE) || 1
+  const opId       = uuidv4()
+
+  const device = deviceRegistry.getDevice(deviceId)
+  if (!device || device.socket.readyState !== 1) {
+    throw new Error('الجهاز غير متصل أو الاتصال منقطع')
+  }
+
+  return new Promise((resolve, reject) => {
+    // Wait for agent:fs_result on the final chunk
+    const timeout = setTimeout(() => {
+      pendingFsOps.delete(opId)
+      reject(new Error('انتهت مهلة رفع الملف — الملف كبير أو الاتصال بطيء'))
+    }, timeoutMs)
+    pendingFsOps.set(opId, { resolve: () => resolve(), reject, timeout })
+
+    const sendChunk = (i: number) => {
+      const start  = i * CHUNK_SIZE
+      const chunk  = data.subarray(start, start + CHUNK_SIZE)
+      const isLast = i === total - 1
+
+      const sent = deviceRegistry.sendToDevice(deviceId, {
+        type: 'server:fs_write_chunk',
+        payload: {
+          opId, path: filePath,
+          data:   chunk.toString('base64'),
+          seq:    i,
+          total,
+          isLast
+        },
+        timestamp: Date.now()
+      })
+
+      if (!sent) {
+        clearTimeout(timeout)
+        pendingFsOps.delete(opId)
+        reject(new Error('الجهاز انقطع أثناء رفع الملف'))
+        return
+      }
+
+      if (!isLast) {
+        // Small async yield between chunks to keep the event loop responsive
+        setImmediate(() => sendChunk(i + 1))
+      }
+      // For the last chunk, wait for agent:fs_result (handled by pendingFsOps)
+    }
+
+    sendChunk(0)
+  })
+}
+
 export function sendFsDownload(
   deviceId:  string,
   filePath:  string,

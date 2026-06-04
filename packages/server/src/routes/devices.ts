@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { v4 as uuidv4 } from 'uuid'
+import * as dgram from 'dgram'
 import { requireAuth, requireAdmin } from '../middleware/auth'
 import {
   createDevice, getDeviceById, getDevicesByOwner,
@@ -271,4 +272,66 @@ export async function deviceRoutes(fastify: FastifyInstance) {
       }
     }
   )
+
+  // ── T007: POST /:id/wol — Wake-on-LAN ────────────────────────────────────
+  // Sends an IEEE 802.3 Magic Packet to wake a device that supports WoL.
+  // The device must already have WoL enabled in its BIOS/firmware and NIC driver.
+  fastify.post<{
+    Params: { id: string }
+    Body: { macAddress: string; broadcast?: string; port?: number }
+  }>('/:id/wol', async (request, reply) => {
+    const user = request.user as unknown as AuthTokenPayload
+    const { id } = request.params
+    const { macAddress, broadcast = '255.255.255.255', port = 9 } = request.body
+
+    if (!macAddress) return reply.code(400).send({ error: 'macAddress مطلوب' })
+
+    const device = await getDeviceById(id)
+    if (!device) return reply.code(404).send({ error: 'Device not found' })
+    if (user.role !== 'admin' && device.ownerId !== user.userId) return reply.code(403).send({ error: 'Forbidden' })
+
+    // Normalise MAC: strip separators, validate length
+    const mac = macAddress.replace(/[:\-. ]/g, '').toUpperCase()
+    if (!/^[0-9A-F]{12}$/.test(mac)) {
+      return reply.code(400).send({ error: 'MAC address غير صالح — يجب أن يكون 12 رمز hex (مثال: AA:BB:CC:DD:EE:FF)' })
+    }
+
+    try {
+      await sendWakeOnLan(mac, broadcast, port)
+      await logAudit({
+        userId: user.userId, userEmail: user.email, deviceId: id,
+        action: 'wake_on_lan', details: { mac, broadcast, port }, ipAddress: request.ip
+      })
+      return { ok: true, message: `Magic packet sent to ${macAddress} via ${broadcast}:${port}` }
+    } catch (e) {
+      return reply.code(500).send({ error: (e as Error).message })
+    }
+  })
+}
+
+// ── Wake-on-LAN: Magic Packet via UDP broadcast ───────────────────────────────
+function sendWakeOnLan(mac: string, broadcast: string, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Magic Packet: 6 bytes of 0xFF followed by 16 repetitions of the 6-byte MAC
+    const macBytes = Buffer.from(mac, 'hex')
+    const packet   = Buffer.alloc(102)
+    packet.fill(0xff, 0, 6)
+    for (let i = 0; i < 16; i++) macBytes.copy(packet, 6 + i * 6)
+
+    // Dynamic import to keep module loading synchronous in Fastify context
+    const socket = dgram.createSocket('udp4')
+
+    socket.once('error', (err) => {
+      try { socket.close() } catch {}
+      reject(err)
+    })
+
+    socket.bind(0, () => {
+      socket.setBroadcast(true)
+      socket.send(packet, 0, packet.length, port, broadcast, (err) => {
+        try { socket.close() } catch {}
+        if (err) reject(err); else resolve()
+      })
+    })
+  })
 }

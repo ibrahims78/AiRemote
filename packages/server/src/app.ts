@@ -20,6 +20,7 @@ import { alertRoutes } from './routes/alerts'
 import { credentialRoutes } from './routes/credentials'
 import { downloadRoutes } from './routes/downloads'
 import { githubRoutes } from './routes/github'
+import { recordingRoutes } from './routes/recordings'
 import { wsHandler } from './ws/handler'
 import { handleSshWebSocket } from './ws/sshHandler'
 import { handlePtyWebSocket } from './ws/ptyHandler'
@@ -77,7 +78,7 @@ export async function buildServer() {
   // ── Health check ─────────────────────────────────────────────────────────
   app.get('/health', async () => ({
     status: 'ok',
-    version: '1.2.0',
+    version: '3.0.0',
     time: new Date().toISOString()
   }))
 
@@ -95,6 +96,7 @@ export async function buildServer() {
   await app.register(credentialRoutes, { prefix: '/api/credentials' })
   await app.register(downloadRoutes,   { prefix: '/api/downloads' })
   await app.register(githubRoutes,     { prefix: '/api/github' })
+  await app.register(recordingRoutes,  { prefix: '/api/recordings' })
 
   // ── WebSocket routes ──────────────────────────────────────────────────────
   // /ws  — accepts both agents (device-token auth via first message) and
