@@ -87,6 +87,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const wsRef        = useRef<WebSocket | null>(null)
   const imgRef       = useRef<HTMLImageElement>(new Image())
   const containerRef = useRef<HTMLDivElement>(null)
+  const canvasAreaRef = useRef<HTMLDivElement>(null)
 
   // ── Streaming ─────────────────────────────────────────────────────────────
   const [status,         setStatus]         = useState<Status>('connecting')
@@ -131,6 +132,10 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   // ── T008: Server-side recording ───────────────────────────────────────────
   const [svrRecording, setSvrRecording] = useState(false)
   const [svrRecMeta,   setSvrRecMeta]   = useState<RecordingMeta | null>(null)
+
+  // ── Cursor overlay ────────────────────────────────────────────────────────
+  const [cursorPos,     setCursorPos]     = useState({ x: -100, y: -100 })
+  const [cursorVisible, setCursorVisible] = useState(false)
 
   // ── T001: Bandwidth meter ─────────────────────────────────────────────────
   const [bwDisplay,   setBwDisplay]   = useState(0)   // bytes/sec
@@ -181,7 +186,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     }, 1000)
   }, [])
 
-  // ── Draw frame ────────────────────────────────────────────────────────────
+  // ── Draw frame (createImageBitmap — faster decoding, no layout thrash) ───
   const drawFrame = useCallback((base64: string, width: number, height: number) => {
     const canvas = canvasRef.current; if (!canvas) return
     const ctx    = canvas.getContext('2d'); if (!ctx) return
@@ -189,9 +194,22 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       canvas.width = width; canvas.height = height
       setResolution({ w: width, h: height })
     }
-    const img = imgRef.current
-    img.onload = () => { ctx.drawImage(img, 0, 0); fpsCountRef.current++; setFrameCount(c => c + 1) }
-    img.src = `data:image/jpeg;base64,${base64}`
+    // Convert base64 → Blob → ImageBitmap (GPU-decoded, no onload queue)
+    const byteStr = atob(base64)
+    const bytes   = new Uint8Array(byteStr.length)
+    for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i)
+    const blob = new Blob([bytes], { type: 'image/jpeg' })
+    createImageBitmap(blob).then(bmp => {
+      ctx.drawImage(bmp, 0, 0)
+      bmp.close()
+      fpsCountRef.current++
+      setFrameCount(c => c + 1)
+    }).catch(() => {
+      // fallback to img tag if createImageBitmap fails
+      const img = imgRef.current
+      img.onload = () => { ctx.drawImage(img, 0, 0); fpsCountRef.current++; setFrameCount(c => c + 1) }
+      img.src = `data:image/jpeg;base64,${base64}`
+    })
   }, [])
 
   // ── Send WS ───────────────────────────────────────────────────────────────
@@ -409,6 +427,13 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   }, [controlEnabled, sendWs, resetIdle])
 
   const handleMouseMove = useCallback((e: ReactMouseEvent<HTMLCanvasElement>) => {
+    // Always update cursor overlay — position relative to canvas area div
+    const area = canvasAreaRef.current
+    if (area) {
+      const r = area.getBoundingClientRect()
+      setCursorPos({ x: e.clientX - r.left, y: e.clientY - r.top })
+    }
+
     if (!controlEnabled) return
     const now = Date.now(); if (now - moveThrottleRef.current < 33) return; moveThrottleRef.current = now
     sendMouse('move', e)
@@ -548,9 +573,19 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     }
   }, [controlEnabled, deviceId, token])
 
-  // ── Apply preset ──────────────────────────────────────────────────────────
+  // ── Apply preset — send quality update without reconnecting ──────────────
   const applyPreset = (p: QualityPreset) => {
-    setPreset(p); setAdaptiveMode(false); setShowSettings(false); connect(p, selectedMonitor)
+    setPreset(p); setAdaptiveMode(false); setShowSettings(false)
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Already connected — just tell the agent to change quality, no reconnect
+      sendWs({
+        type:    'screen:set_quality',
+        payload: { fps: p.fps, quality: p.quality, monitorId: selectedMonRef.current }
+      })
+    } else {
+      // Not connected — do a full reconnect
+      connect(p, selectedMonitor)
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -780,7 +815,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       </div>
 
       {/* ── Canvas area ── */}
-      <div className="flex-1 relative flex items-center justify-center overflow-hidden bg-slate-950"
+      <div ref={canvasAreaRef} className="flex-1 relative flex items-center justify-center overflow-hidden bg-slate-950"
         onClick={() => { setShowSettings(false); setShowMonitors(false); setShowClipboard(false) }}>
 
         <canvas ref={canvasRef}
@@ -788,10 +823,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             'max-w-full max-h-full object-contain transition-opacity duration-300',
             status === 'streaming' ? 'opacity-100' : 'opacity-20',
             dragOver && 'ring-2 ring-sky-500/60 ring-dashed',
-            controlEnabled ? 'cursor-crosshair' : 'cursor-default'
+            'cursor-none'
           )}
           style={{ imageRendering: 'auto' }}
           onMouseMove={handleMouseMove}
+          onMouseEnter={() => setCursorVisible(true)}
+          onMouseLeave={() => setCursorVisible(false)}
           onMouseDown={e => sendMouse('down', e)}
           onMouseUp={e => sendMouse('up', e)}
           onClick={e => sendMouse('click', e)}
@@ -801,6 +838,34 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleFileDrop}
         />
+
+        {/* ── Windows-style cursor overlay ── */}
+        {cursorVisible && status === 'streaming' && (
+          <div
+            className="absolute pointer-events-none z-50"
+            style={{
+              left: cursorPos.x,
+              top:  cursorPos.y,
+              willChange: 'left, top',
+            }}
+          >
+            {controlEnabled ? (
+              /* Crosshair when in control mode */
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: 'drop-shadow(1px 1px 1px rgba(0,0,0,0.8))' }}>
+                <line x1="10" y1="2" x2="10" y2="8"  stroke="white" strokeWidth="1.5"/>
+                <line x1="10" y1="12" x2="10" y2="18" stroke="white" strokeWidth="1.5"/>
+                <line x1="2" y1="10" x2="8"  y2="10" stroke="white" strokeWidth="1.5"/>
+                <line x1="12" y1="10" x2="18" y2="10" stroke="white" strokeWidth="1.5"/>
+                <circle cx="10" cy="10" r="2" stroke="white" strokeWidth="1.5"/>
+              </svg>
+            ) : (
+              /* Windows arrow cursor when viewing only */
+              <svg width="16" height="20" viewBox="0 0 16 20" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: 'drop-shadow(1px 1px 1px rgba(0,0,0,0.8))' }}>
+                <path d="M0 0 L0 16 L4 12 L7 19 L9 18 L6 11 L11 11 Z" fill="white" stroke="black" strokeWidth="1" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </div>
+        )}
 
         {/* Control watermark */}
         {status === 'streaming' && controlEnabled && (
