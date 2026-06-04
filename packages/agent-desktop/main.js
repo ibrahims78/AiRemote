@@ -49,6 +49,8 @@ let capWin         = null
 let screenSessions = new Map()   // sessionId → { fps, quality }
 let psInputProc    = null
 let psInputReady   = false
+let capScreenW     = 1920   // updated from captured frame dimensions (used for abs coords)
+let capScreenH     = 1080
 
 // ─── v3.0.0 State ─────────────────────────────────────────────────────────
 let dockerAvailable  = false
@@ -942,21 +944,26 @@ function sendPsCmd(cmd) {
 // ─── Mouse injection ────────────────────────────────────────────────────────
 function injectMouse(payload) {
   if (process.platform !== 'win32') return
-  const { x, y, type, button, delta } = payload
-  const xi = Math.round(x || 0), yi = Math.round(y || 0)
+  // x,y are relative (0.0–1.0) — convert to absolute screen pixels
+  const { type, button, deltaY } = payload
+  const xi = Math.round((payload.x || 0) * capScreenW)
+  const yi = Math.round((payload.y || 0) * capScreenH)
+  const btn = button === 2 ? 'R' : button === 1 ? 'M' : 'L'
 
   if (type === 'move') {
     sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi})`)
-  } else if (type === 'down' || type === 'up') {
-    const btn  = button === 'right' ? 'R' : button === 'middle' ? 'M' : 'L'
-    const dir  = type === 'down' ? 'D' : 'U'
-    const flag = `[WinUI]::${btn}${dir}`
-    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event(${flag},0,0,0,[IntPtr]::Zero)`)
+  } else if (type === 'click') {
+    const ld = `[WinUI]::${btn}D`, lu = `[WinUI]::${btn}U`
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event(${ld},0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event(${lu},0,0,0,[IntPtr]::Zero)`)
+  } else if (type === 'down') {
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event([WinUI]::${btn}D,0,0,0,[IntPtr]::Zero)`)
+  } else if (type === 'up') {
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event([WinUI]::${btn}U,0,0,0,[IntPtr]::Zero)`)
   } else if (type === 'dblclick') {
-    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event([WinUI]::LD,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LU,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LD,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LU,0,0,0,[IntPtr]::Zero)`)
-  } else if (type === 'wheel' || type === 'scroll') {
-    const wd = Math.round((delta || 0) * -120)
-    sendPsCmd(`[WinUI]::mouse_event([WinUI]::WH,0,0,${wd},[IntPtr]::Zero)`)
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event([WinUI]::LD,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LU,0,0,0,[IntPtr]::Zero);Start-Sleep -Milliseconds 40;[WinUI]::mouse_event([WinUI]::LD,0,0,0,[IntPtr]::Zero);[WinUI]::mouse_event([WinUI]::LU,0,0,0,[IntPtr]::Zero)`)
+  } else if (type === 'scroll' || type === 'wheel') {
+    const wd = Math.round((deltaY || 0) * -120)
+    sendPsCmd(`[WinUI]::SetCursorPos(${xi},${yi});[WinUI]::mouse_event([WinUI]::WH,0,0,${wd},[IntPtr]::Zero)`)
   }
 }
 
@@ -971,20 +978,55 @@ const KEY_TO_SENDKEYS = {
   '(': '{(}', ')': '{)}', '{': '{{}', '}': '{}}', '[': '{[}', ']': '{]}'
 }
 
+// VK codes for keybd_event (held-key support: Ctrl+drag, Shift+select, etc.)
+const WIN_VK_MAP = {
+  'Backspace':0x08,'Tab':0x09,'Enter':0x0D,'Shift':0x10,'Control':0x11,'Alt':0x12,
+  'Escape':0x1B,' ':0x20,'PageUp':0x21,'PageDown':0x22,'End':0x23,'Home':0x24,
+  'ArrowLeft':0x25,'ArrowUp':0x26,'ArrowRight':0x27,'ArrowDown':0x28,
+  'Insert':0x2D,'Delete':0x2E,'Meta':0x5B,
+  'F1':0x70,'F2':0x71,'F3':0x72,'F4':0x73,'F5':0x74,'F6':0x75,
+  'F7':0x76,'F8':0x77,'F9':0x78,'F10':0x79,'F11':0x7A,'F12':0x7B,
+}
+
 function injectKey(payload) {
   if (process.platform !== 'win32') return
-  if (payload.type !== 'down') return
-  const { key, modifiers } = payload
-  let sk = KEY_TO_SENDKEYS[key] ?? (key && key.length === 1 ? key : null)
-  if (!sk) return
+  const { key, modifiers, type } = payload
 
-  let prefix = ''
-  if (modifiers?.ctrl)  prefix += '^'
-  if (modifiers?.alt)   prefix += '%'
-  if (modifiers?.shift) prefix += '+'
+  if (type === 'press') {
+    // SendKeys — best for text input and layout-aware characters
+    let sk = KEY_TO_SENDKEYS[key] ?? (key && key.length === 1 ? key : null)
+    if (!sk) return
+    let prefix = ''
+    if (modifiers?.includes('ctrl')  || modifiers?.ctrl)  prefix += '^'
+    if (modifiers?.includes('alt')   || modifiers?.alt)   prefix += '%'
+    if (modifiers?.includes('shift') || modifiers?.shift) prefix += '+'
+    const sendStr = prefix ? `${prefix}(${sk})` : sk
+    sendPsCmd(`[System.Windows.Forms.SendKeys]::SendWait('${sendStr.replace(/'/g, "''")}')`)
+    return
+  }
 
-  const sendStr = prefix ? `${prefix}(${sk})` : sk
-  sendPsCmd(`[System.Windows.Forms.SendKeys]::SendWait('${sendStr.replace(/'/g, "''")}')`)
+  // 'down' / 'up' — keybd_event for held-key support
+  const vk = WIN_VK_MAP[key] ?? (key && key.length === 1 ? key.toUpperCase().charCodeAt(0) : null)
+  if (!vk) return
+
+  const isUp   = type === 'up'
+  const kflag  = isUp ? '[WinUI]::KU' : '0'
+  const mods   = Array.isArray(modifiers) ? modifiers : []
+  const modVks = []
+  if (mods.includes('ctrl')  || modifiers?.ctrl)  modVks.push(0x11)
+  if (mods.includes('alt')   || modifiers?.alt)   modVks.push(0x12)
+  if (mods.includes('shift') || modifiers?.shift) modVks.push(0x10)
+  if (mods.includes('meta')  || modifiers?.meta)  modVks.push(0x5B)
+
+  const cmds = []
+  if (!isUp) {
+    modVks.forEach(mv => cmds.push(`[WinUI]::keybd_event(${mv},0,0,[IntPtr]::Zero)`))
+    cmds.push(`[WinUI]::keybd_event(${vk},0,0,[IntPtr]::Zero)`)
+  } else {
+    cmds.push(`[WinUI]::keybd_event(${vk},0,${kflag},[IntPtr]::Zero)`)
+    modVks.reverse().forEach(mv => cmds.push(`[WinUI]::keybd_event(${mv},0,[WinUI]::KU,[IntPtr]::Zero)`))
+  }
+  if (cmds.length) sendPsCmd(cmds.join(';'))
 }
 
 function executeCommand(payload) {
@@ -1226,6 +1268,9 @@ ipcMain.handle('get-screen-sources', async () => {
 })
 
 ipcMain.on('screen-frame', (_, p) => {
+  // Track screen dimensions for absolute coordinate conversion in injectMouse
+  if (p.width  > 0) capScreenW = p.width
+  if (p.height > 0) capScreenH = p.height
   if (ws?.readyState === WebSocket.OPEN) {
     try { ws.send(JSON.stringify({ type: 'agent:screen_frame', payload: p, timestamp: Date.now() })) } catch {}
   }

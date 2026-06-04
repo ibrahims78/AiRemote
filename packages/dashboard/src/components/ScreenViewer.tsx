@@ -105,7 +105,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const [idleWarning,    setIdleWarning]    = useState(false)
 
   // ── Control ───────────────────────────────────────────────────────────────
-  const [preset,          setPreset]          = useState<QualityPreset>(QUALITY_PRESETS[2])
+  const [preset,          setPreset]          = useState<QualityPreset>(QUALITY_PRESETS[4])
   const [controlEnabled,  setControlEnabled]  = useState(false)
   const [keyboardMode,    setKeyboardMode]    = useState(false)
   const [privacyOn,       setPrivacyOn]       = useState(false)
@@ -349,17 +349,37 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   // ── Keyboard capture ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!keyboardMode || !controlEnabled) return
-    const handleKey = (e: KeyboardEvent) => {
-      e.preventDefault(); e.stopPropagation(); resetIdle()
-      const mods: string[] = []
-      if (e.ctrlKey)  mods.push('ctrl')
-      if (e.altKey)   mods.push('alt')
-      if (e.shiftKey) mods.push('shift')
-      if (e.metaKey)  mods.push('meta')
-      sendWs({ type: 'screen:key_event', payload: { type: 'press', key: e.key, modifiers: mods.length ? mods : undefined } })
+
+    const getMods = (e: KeyboardEvent) => {
+      const m: string[] = []
+      if (e.ctrlKey)  m.push('ctrl')
+      if (e.altKey)   m.push('alt')
+      if (e.shiftKey) m.push('shift')
+      if (e.metaKey)  m.push('meta')
+      return m.length ? m : undefined
     }
-    window.addEventListener('keydown', handleKey, { capture: true })
-    return () => window.removeEventListener('keydown', handleKey, { capture: true })
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault(); e.stopPropagation(); resetIdle()
+      const mods = getMods(e)
+      // Send both 'down' (for held-key support: Ctrl+drag, Shift+select, game keys)
+      // and 'press' (for SendKeys text input on Windows)
+      sendWs({ type: 'screen:key_event', payload: { type: 'down',  key: e.key, modifiers: mods } })
+      sendWs({ type: 'screen:key_event', payload: { type: 'press', key: e.key, modifiers: mods } })
+    }
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      e.preventDefault(); e.stopPropagation()
+      const mods = getMods(e)
+      sendWs({ type: 'screen:key_event', payload: { type: 'up', key: e.key, modifiers: mods } })
+    }
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
+    window.addEventListener('keyup',   handleKeyUp,   { capture: true })
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, { capture: true })
+      window.removeEventListener('keyup',   handleKeyUp,   { capture: true })
+    }
   }, [keyboardMode, controlEnabled, sendWs, resetIdle])
 
   // ── Adaptive quality — v3.0.0 ─────────────────────────────────────────────

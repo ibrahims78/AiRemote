@@ -1,3 +1,4 @@
 - [AiRemote monorepo setup](airemote-setup.md) — pnpm workspaces, Fastify :3001, Vite React :5000, LibSQL at ./data/airemote.db
 - [WoL implementation](wol-impl.md) — WoL endpoint POST /api/devices/:id/wol exists in server; WolModal + Zap button added to DevicesPage (shows only for offline devices)
 - [agent-desktop IPC bridge](agent-desktop-ipc.md) — screen-chat IPC: main.js → win.webContents.send('screen-chat') → preload.js onScreenChat → renderer appendLog + Notification
+- [AiRemote Remote Desktop Fixes](airemote-rdp-fixes.md) — 8 critical bugs fixed: FPS default, coords, keyup/down, persistent PS process

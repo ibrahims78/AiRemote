@@ -11,7 +11,7 @@ import {
 } from '../services/recording'
 
 // ── Throttle settings ────────────────────────────────────────────────────────
-const DEFAULT_FPS     = 5
+const DEFAULT_FPS     = 20
 const MAX_FPS         = 30
 const CONNECT_TIMEOUT = 60_000
 

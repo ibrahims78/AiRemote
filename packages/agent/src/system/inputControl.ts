@@ -4,12 +4,79 @@
  * Uses native OS tools: xdotool (Linux), PowerShell (Windows), cliclick/osascript (macOS).
  */
 
-import { exec, execFile, spawn } from 'child_process'
+import { exec, execFile, spawn, ChildProcess } from 'child_process'
 import { promisify } from 'util'
 
 const execAsync     = promisify(exec)
 const execFileAsync = promisify(execFile)
 const PLATFORM = process.platform as 'win32' | 'linux' | 'darwin'
+
+// ── Persistent PowerShell process for Windows (no spawn-per-event overhead) ─
+let _winPs: ChildProcess | null = null
+let _winPsReady = false
+
+function ensureWinPs(): void {
+  if (PLATFORM !== 'win32') return
+  if (_winPs && !(_winPs as any).killed && _winPsReady) return
+  _winPsReady = false
+  _winPs = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-NoLogo', '-Command', '-'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true
+  } as any)
+  const init = `
+Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;
+public class WinIC{
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f,int x,int y,int d,IntPtr e);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte vk,byte sc,uint flags,IntPtr extra);
+  public const uint LD=2,LU=4,RD=8,RU=16,MD=32,MU=64,WH=2048,KEYUP=2;
+}
+'@ -Language CSharp
+Add-Type -AssemblyName System.Windows.Forms
+Write-Host 'WINIC_READY'
+`
+  ;(_winPs as any).stdin.write(init + '\n')
+  ;(_winPs as any).stdout.on('data', (d: Buffer) => {
+    if (d.toString().includes('WINIC_READY')) _winPsReady = true
+  })
+  ;(_winPs as any).stderr.on('data', () => {})
+  ;(_winPs as any).on('exit', () => { _winPs = null; _winPsReady = false })
+}
+
+function sendWinCmd(cmd: string): void {
+  ensureWinPs()
+  if (_winPs && !(_winPs as any).killed && _winPsReady) {
+    try { (_winPs as any).stdin.write(cmd + '\n') } catch {}
+    return
+  }
+  // Queue until PS is ready (first call initialises it)
+  const deadline = Date.now() + 5000
+  const poll = setInterval(() => {
+    if (_winPsReady && _winPs && !(_winPs as any).killed) {
+      clearInterval(poll); try { (_winPs as any).stdin.write(cmd + '\n') } catch {}
+    } else if (Date.now() > deadline) { clearInterval(poll) }
+  }, 80)
+}
+
+// VK code map for keybd_event (Windows virtual-key codes)
+const WIN_VK: Record<string, number> = {
+  'backspace':0x08,'tab':0x09,'enter':0x0D,'return':0x0D,'shift':0x10,'control':0x11,'ctrl':0x11,
+  'alt':0x12,'pause':0x13,'capslock':0x14,'escape':0x1B,'esc':0x1B,' ':0x20,'space':0x20,
+  'pageup':0x21,'pagedown':0x22,'end':0x23,'home':0x24,
+  'arrowleft':0x25,'arrowup':0x26,'arrowright':0x27,'arrowdown':0x28,
+  'insert':0x2D,'delete':0x2E,
+  '0':0x30,'1':0x31,'2':0x32,'3':0x33,'4':0x34,'5':0x35,'6':0x36,'7':0x37,'8':0x38,'9':0x39,
+  'a':0x41,'b':0x42,'c':0x43,'d':0x44,'e':0x45,'f':0x46,'g':0x47,'h':0x48,'i':0x49,'j':0x4A,
+  'k':0x4B,'l':0x4C,'m':0x4D,'n':0x4E,'o':0x4F,'p':0x50,'q':0x51,'r':0x52,'s':0x53,'t':0x54,
+  'u':0x55,'v':0x56,'w':0x57,'x':0x58,'y':0x59,'z':0x5A,
+  'meta':0x5B,'win':0x5B,'contextmenu':0x5D,
+  'f1':0x70,'f2':0x71,'f3':0x72,'f4':0x73,'f5':0x74,'f6':0x75,
+  'f7':0x76,'f8':0x77,'f9':0x78,'f10':0x79,'f11':0x7A,'f12':0x7B,
+  'numlock':0x90,'scrolllock':0x91,'printscreen':0x2C,
+  ';':0xBA,'=':0xBB,',':0xBC,'-':0xBD,'.':0xBE,'/':0xBF,'`':0xC0,
+  '[':0xDB,'\\':0xDC,']':0xDD,"'":0xDE,
+}
 
 // ── Tool availability cache ─────────────────────────────────────────────────
 let _hasXdotool: boolean | null = null
@@ -109,75 +176,35 @@ async function controlMouseLinux(evt: MouseEvent, ax: number, ay: number, btn: n
 }
 
 async function controlMouseWindows(evt: MouseEvent, ax: number, ay: number, btn: number): Promise<void> {
-  const btnName = PS_BUTTON[btn] ?? 'Left'
-
-  let ps = `Add-Type -AssemblyName System.Windows.Forms,System.Drawing\n`
-
+  // Use persistent PowerShell process — no spawn-per-event overhead
   switch (evt.type) {
     case 'move':
-      ps += `[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})`
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay})`)
       break
-    case 'click':
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class Mouse { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[Mouse]::mouse_event(0x${btnName === 'Left' ? '2' : btnName === 'Right' ? '8' : '20'}, 0, 0, 0, 0)
-[Mouse]::mouse_event(0x${btnName === 'Left' ? '4' : btnName === 'Right' ? '10' : '40'}, 0, 0, 0, 0)
-`
-      break
-    case 'dblclick':
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class Mouse2 { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[Mouse2]::mouse_event(0x2, 0, 0, 0, 0); [Mouse2]::mouse_event(0x4, 0, 0, 0, 0)
-Start-Sleep -Milliseconds 50
-[Mouse2]::mouse_event(0x2, 0, 0, 0, 0); [Mouse2]::mouse_event(0x4, 0, 0, 0, 0)
-`
-      break
-    case 'down':
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class MouseD { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[MouseD]::mouse_event(0x${btnName === 'Left' ? '2' : '8'}, 0, 0, 0, 0)
-`
-      break
-    case 'up':
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class MouseU { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[MouseU]::mouse_event(0x${btnName === 'Left' ? '4' : '10'}, 0, 0, 0, 0)
-`
-      break
-    case 'scroll': {
-      const delta = (evt.deltaY ?? 0) > 0 ? -120 : 120
-      ps += `
-[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${ax}, ${ay})
-Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices;
-public class MouseS { [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e); }
-"@
-[MouseS]::mouse_event(0x800, 0, 0, ${delta}, 0)
-`
+    case 'click': {
+      const ld = btn === 2 ? '[WinIC]::RD' : btn === 1 ? '[WinIC]::MD' : '[WinIC]::LD'
+      const lu = btn === 2 ? '[WinIC]::RU' : btn === 1 ? '[WinIC]::MU' : '[WinIC]::LU'
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event(${ld},0,0,0,[IntPtr]::Zero);[WinIC]::mouse_event(${lu},0,0,0,[IntPtr]::Zero)`)
       break
     }
-  }
-
-  try {
-    await execFileAsync('powershell.exe', ['-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], { timeout: 3000 })
-  } catch (err) {
-    console.error('[input] PowerShell mouse error:', (err as Error).message)
+    case 'dblclick':
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event([WinIC]::LD,0,0,0,[IntPtr]::Zero);[WinIC]::mouse_event([WinIC]::LU,0,0,0,[IntPtr]::Zero);Start-Sleep -Milliseconds 40;[WinIC]::mouse_event([WinIC]::LD,0,0,0,[IntPtr]::Zero);[WinIC]::mouse_event([WinIC]::LU,0,0,0,[IntPtr]::Zero)`)
+      break
+    case 'down': {
+      const df = btn === 2 ? '[WinIC]::RD' : btn === 1 ? '[WinIC]::MD' : '[WinIC]::LD'
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event(${df},0,0,0,[IntPtr]::Zero)`)
+      break
+    }
+    case 'up': {
+      const uf = btn === 2 ? '[WinIC]::RU' : btn === 1 ? '[WinIC]::MU' : '[WinIC]::LU'
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event(${uf},0,0,0,[IntPtr]::Zero)`)
+      break
+    }
+    case 'scroll': {
+      const wd = (evt.deltaY ?? 0) > 0 ? -120 : 120
+      sendWinCmd(`[WinIC]::SetCursorPos(${ax},${ay});[WinIC]::mouse_event([WinIC]::WH,0,0,${wd},[IntPtr]::Zero)`)
+      break
+    }
   }
 }
 
@@ -337,19 +364,38 @@ async function controlKeyboardLinux(evt: KeyEvent, mods: string[]): Promise<void
 }
 
 async function controlKeyboardWindows(evt: KeyEvent, mods: string[]): Promise<void> {
-  if (evt.type !== 'press') return // SendKeys only supports press
+  const keyLower = evt.key.toLowerCase()
 
-  const keyCombo = buildPsKeyCombo(evt.key, mods)
-  const escaped = keyCombo.replace(/'/g, "''")
-  const ps = `
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.SendKeys]::SendWait('${escaped}')
-`
-  try {
-    await execFileAsync('powershell.exe', ['-NonInteractive', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', ps], { timeout: 3000 })
-  } catch (err) {
-    console.error('[input] PowerShell key error:', (err as Error).message)
+  if (evt.type === 'press') {
+    // SendKeys for text input (handles layout-aware chars, IME, etc.)
+    const keyCombo = buildPsKeyCombo(evt.key, mods)
+    const escaped  = keyCombo.replace(/'/g, "''")
+    sendWinCmd(`[System.Windows.Forms.SendKeys]::SendWait('${escaped}')`)
+    return
   }
+
+  // 'down' / 'up' — use keybd_event for held-key support (Ctrl+drag, Shift+select, gaming)
+  const vk = WIN_VK[keyLower] ?? (evt.key.length === 1 ? evt.key.toUpperCase().charCodeAt(0) : null)
+  if (!vk) return
+
+  const kflag = evt.type === 'up' ? '[WinIC]::KEYUP' : '0'
+
+  // Press modifier keys first for 'down', release them after for 'up'
+  const modVks: number[] = []
+  if (mods.includes('ctrl'))  modVks.push(0x11)
+  if (mods.includes('alt'))   modVks.push(0x12)
+  if (mods.includes('shift')) modVks.push(0x10)
+  if (mods.includes('meta'))  modVks.push(0x5B)
+
+  const cmds: string[] = []
+  if (evt.type === 'down') {
+    modVks.forEach(mv => cmds.push(`[WinIC]::keybd_event(${mv},0,0,[IntPtr]::Zero)`))
+    cmds.push(`[WinIC]::keybd_event(${vk},0,0,[IntPtr]::Zero)`)
+  } else {
+    cmds.push(`[WinIC]::keybd_event(${vk},0,${kflag},[IntPtr]::Zero)`)
+    modVks.reverse().forEach(mv => cmds.push(`[WinIC]::keybd_event(${mv},0,[WinIC]::KEYUP,[IntPtr]::Zero)`))
+  }
+  sendWinCmd(cmds.join(';'))
 }
 
 async function controlKeyboardMac(evt: KeyEvent, mods: string[]): Promise<void> {
