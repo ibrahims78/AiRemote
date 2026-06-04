@@ -30,10 +30,7 @@ let currentFps      = 20
 let currentQuality  = 80
 let stream          = null
 let cachedSources   = []   // [{id, name, index}] from main process
-let lastFrameHash   = 0
 let privacyMode     = false
-let lastSentAt      = 0
-const MAX_SKIP_MS   = 1500  // always send a frame if this many ms passed, even if hash matches
 
 // ── Get screen sources from main process (desktopCapturer) ───────────────
 async function getSources() {
@@ -117,31 +114,15 @@ async function startFromStream(sid) {
   })
 }
 
-// ── Fast frame fingerprint (samples ~250 pixels for change detection) ────
-function computeFrameHash() {
-  const w = canvas.width
-  const h = canvas.height
-  const d = ctx.getImageData(0, 0, w, h).data
-  const step = Math.max(4, Math.floor(d.length / 1000)) & ~3
-  let hash = 0
-  for (let i = 0; i < d.length; i += step) {
-    hash = (Math.imul(hash, 31) + (d[i] | (d[i + 1] << 8) | (d[i + 2] << 16))) | 0
-  }
-  return hash
-}
-
 // ── Capture one frame ────────────────────────────────────────────────────
+// No hash-based dedup — every frame is sent. Rate limiting is handled by
+// the setInterval FPS timer and the server-side frame throttle.
 function captureFrame() {
   if (privacyMode) return
   if (!video.videoWidth || !video.videoHeight || video.readyState < 2) return
   canvas.width  = video.videoWidth
   canvas.height = video.videoHeight
   ctx.drawImage(video, 0, 0)
-  const hash        = computeFrameHash()
-  const forceByTime = (Date.now() - lastSentAt) >= MAX_SKIP_MS
-  if (hash === lastFrameHash && frameSeq > 0 && !forceByTime) return
-  lastFrameHash = hash
-  lastSentAt    = Date.now()
   const dataUrl = canvas.toDataURL('image/jpeg', currentQuality / 100)
   const base64  = dataUrl.split(',')[1]
   ipcRenderer.send('screen-frame', {
@@ -158,8 +139,7 @@ function stopCapture() {
   if (captureTimer) { clearInterval(captureTimer); captureTimer = null }
   if (stream)       { stream.getTracks().forEach(t => t.stop()); stream = null }
   video.srcObject = null
-  frameSeq      = 0
-  lastFrameHash = 0
+  frameSeq = 0
 }
 
 // ── IPC from main process ─────────────────────────────────────────────────
@@ -203,7 +183,6 @@ ipcRenderer.on('set-monitor', (_, p) => {
 
 ipcRenderer.on('set-privacy', (_, p) => {
   privacyMode = !!p.enabled
-  if (privacyMode) lastFrameHash = 0
 })
 </script>
 </body>
