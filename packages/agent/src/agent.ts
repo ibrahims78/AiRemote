@@ -377,6 +377,13 @@ export class AgentService {
           console.error(`❌ Server error: ${p.message}`)
           break
         }
+
+        case 'server:ping': {
+          // Application-level ping — respond immediately so the server's
+          // pong timer is cleared even when protocol-level pings are intercepted by a proxy.
+          this.send({ type: 'agent:pong', payload: {}, timestamp: Date.now() })
+          break
+        }
       }
     } catch (err) {
       console.error('Failed to parse message:', err)

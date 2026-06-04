@@ -65,6 +65,9 @@ export type WSMessageType =
   | 'broadcast:notification'
   | 'screen:ping'
   | 'screen:pong'
+  // ── Application-level keepalive (v3.0.0) — works through reverse proxies ──
+  | 'server:ping'
+  | 'agent:pong'
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType

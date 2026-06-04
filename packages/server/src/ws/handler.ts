@@ -7,11 +7,12 @@ import { handleClientMessage } from './clientHandler'
 import { updateDeviceStatus } from '../db/devices'
 
 // Ping interval for dead-connection detection.
-// On every incoming agent message we clear pongTimer AND re-arm pingTimer so
-// the cycle stays alive.  If the agent goes truly silent the ping fires after
-// PING_INTERVAL_MS and terminates after PONG_TIMEOUT_MS → max detection = 13s.
+// Uses BOTH protocol-level WebSocket pings AND application-level JSON pings
+// so the cycle works even when a reverse proxy intercepts protocol frames.
+// On every incoming agent message the full cycle is reset.
+// Max silent window before kill: PING_INTERVAL_MS + PONG_TIMEOUT_MS = 28s.
 const PING_INTERVAL_MS = 8000
-const PONG_TIMEOUT_MS  = 5000
+const PONG_TIMEOUT_MS  = 20000  // generous — covers 10s heartbeat + stats collection delay
 
 export function wsHandler(socket: WebSocket, request: FastifyRequest) {
   const clientIp = request.ip
@@ -23,24 +24,37 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
   let pongTimer: NodeJS.Timeout | null = null
   let pingTimer: NodeJS.Timeout | null = null
 
+  let disconnected = false  // guard against double handleDisconnect calls
+
   function schedulePing() {
+    if (pingTimer) { clearTimeout(pingTimer); pingTimer = null }
     pingTimer = setTimeout(() => {
-      pingTimer = null  // ← mark as fired so the message handler can re-arm the cycle
+      pingTimer = null
       if (socket.readyState !== 1) return
 
-      // Expect a pong within PONG_TIMEOUT_MS; if none → terminate
+      // Expect a pong (protocol OR application-level) within PONG_TIMEOUT_MS
       pongTimer = setTimeout(() => {
         console.warn(`💀 WS ping timeout — terminating ${connectionType} connection${connectionId ? ` (${connectionId})` : ''}`)
         handleDisconnect()
         socket.terminate()
       }, PONG_TIMEOUT_MS)
 
+      // Send both protocol-level ping (ws library) AND application-level JSON ping.
+      // The JSON ping works even when a reverse proxy intercepts protocol frames.
       try { socket.ping() } catch { /* socket already closing */ }
+      if (connectionType === 'agent' && socket.readyState === 1) {
+        try { socket.send(JSON.stringify({ type: 'server:ping', payload: {}, timestamp: Date.now() })) } catch {}
+      }
     }, PING_INTERVAL_MS)
   }
 
-  socket.on('pong', () => {
+  function clearPongTimer() {
     if (pongTimer) { clearTimeout(pongTimer); pongTimer = null }
+  }
+
+  // Protocol-level pong
+  socket.on('pong', () => {
+    clearPongTimer()
     schedulePing()
   })
 
@@ -50,6 +64,8 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
   }
 
   function handleDisconnect() {
+    if (disconnected) return   // guard against double-fire (terminate() triggers close event)
+    disconnected = true
     clearTimers()
     if (connectionType === 'agent' && connectionId) {
       deviceRegistry.disconnectDevice(connectionId)
@@ -77,12 +93,17 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
         if (connectionType === 'unknown') connectionType = 'agent'
 
         // ── Any agent message proves the connection is alive ────────────────
-        // Clear the kill-timer (pongTimer) and, crucially, re-arm pingTimer if
-        // it has already fired (pingTimer === null after it sends the ping).
-        // Without the re-arm the monitoring cycle goes dead and zombie
-        // connections are never detected.
-        if (pongTimer) { clearTimeout(pongTimer); pongTimer = null }
-        if (!pingTimer) { schedulePing() }  // restart the 30s monitoring window
+        // Unconditionally reset the full ping/pong cycle so that:
+        //   • pongTimer (kill countdown) is cancelled
+        //   • pingTimer is rescheduled from now (not from the last heartbeat)
+        // This handles the case where getStats() delays heartbeats and the
+        // old pong window would have expired before the heartbeat arrived.
+        clearPongTimer()
+        schedulePing()   // schedulePing now always clears+replaces the existing timer
+
+        // agent:pong is an application-level response to server:ping — no further processing needed
+        if (message.type === 'agent:pong') return
+
         handleAgentMessage(socket, message, clientIp).then(result => {
           if (result?.deviceId) connectionId = result.deviceId
         }).catch(err => console.error('Agent message error:', err))
