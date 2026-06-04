@@ -8,6 +8,7 @@ import { useT } from '../lib/i18n'
 import { useAuthStore } from '../store/authStore'
 
 function WolModal({ device, token, onClose }: { device: Device; token: string; onClose: () => void }) {
+  const t = useT()
   const [mac, setMac]         = useState('')
   const [broadcast, setBroadcast] = useState('255.255.255.255')
   const [sending, setSending] = useState(false)
@@ -23,10 +24,10 @@ function WolModal({ device, token, onClose }: { device: Device; token: string; o
         body: JSON.stringify({ macAddress: mac.trim(), broadcast: broadcast.trim() || '255.255.255.255' })
       })
       const data = await r.json()
-      if (r.ok) setResult({ ok: true,  msg: data.message || 'تم إرسال الحزمة بنجاح ✓' })
-      else       setResult({ ok: false, msg: data.error  || 'فشل الإرسال' })
+      if (r.ok) setResult({ ok: true,  msg: data.message || t('wol_success') })
+      else       setResult({ ok: false, msg: data.error  || t('wol_fail') })
     } catch {
-      setResult({ ok: false, msg: 'خطأ في الشبكة' })
+      setResult({ ok: false, msg: t('wol_network_error') })
     } finally {
       setSending(false)
     }
@@ -59,7 +60,7 @@ function WolModal({ device, token, onClose }: { device: Device; token: string; o
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Broadcast IP <span className="text-slate-600">(اختياري)</span></label>
+            <label className="block text-xs text-slate-400 mb-1.5">Broadcast IP <span className="text-slate-600">({t('wol_optional')})</span></label>
             <input
               value={broadcast} onChange={e => setBroadcast(e.target.value)}
               placeholder="255.255.255.255"
@@ -82,7 +83,7 @@ function WolModal({ device, token, onClose }: { device: Device; token: string; o
             className="w-full flex items-center justify-center gap-2 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-amber-400 text-sm font-medium py-2.5 rounded-lg transition-colors border border-amber-500/30"
           >
             {sending ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-            {sending ? 'جارٍ الإرسال...' : 'إرسال Magic Packet'}
+            {sending ? t('wol_sending') : t('wol_send')}
           </button>
         </form>
       </div>
@@ -183,7 +184,7 @@ AIREMOTE_LOG_LEVEL=info`
             </div>
 
             <p className="text-xs text-slate-500">
-              انسخ القيمتين أعلاه والصقهما في تطبيق AiRemote Agent على Windows ثم اضغط تشغيل.
+              {t('agent_install_hint')}
             </p>
           </div>
 
@@ -402,7 +403,7 @@ export function DevicesPage() {
                       {d.status === 'online' ? t('online') : t('offline')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500 font-mono">{d.tunnelLayer || 'relay'}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500 font-mono">{d.info?.hostname || '—'}</td>
                   <td className="px-4 py-3 text-xs text-slate-500">
                     {d.lastSeen ? new Date(d.lastSeen).toLocaleString() : '—'}
                   </td>

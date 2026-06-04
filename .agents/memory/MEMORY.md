@@ -2,3 +2,4 @@
 - [WoL implementation](wol-impl.md) — WoL endpoint POST /api/devices/:id/wol exists in server; WolModal + Zap button added to DevicesPage (shows only for offline devices)
 - [agent-desktop IPC bridge](agent-desktop-ipc.md) — screen-chat IPC: main.js → win.webContents.send('screen-chat') → preload.js onScreenChat → renderer appendLog + Notification
 - [AiRemote Remote Desktop Fixes](airemote-rdp-fixes.md) — 8 critical bugs fixed: FPS default, coords, keyup/down, persistent PS process
+- [AiRemote Dashboard Audit](dashboard-audit.md) — full professional audit complete; all i18n, data, and eye-button bugs fixed across DevicesPage/SettingsPage/GitHubRelease/AiChatPanel

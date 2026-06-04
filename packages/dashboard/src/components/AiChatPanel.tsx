@@ -55,21 +55,29 @@ function getAuthToken(): string {
   } catch { return '' }
 }
 
-function buildSuggestions(stats: DeviceStatsMini | null): string[] {
+function buildSuggestions(stats: DeviceStatsMini | null, isAr: boolean): string[] {
   if (!stats) return []
   const s: string[] = []
-  if ((stats.cpuPercent ?? 0) > 75)  s.push('أظهر العمليات التي تستهلك أعلى CPU')
-  if ((stats.ramPercent ?? 0) > 80)  s.push('فحص استخدام الذاكرة بالتفصيل')
-  if ((stats.diskPercent ?? 0) > 85) s.push('اعرض أكبر الملفات لتحرير مساحة القرص')
+  if ((stats.cpuPercent ?? 0) > 75)  s.push(isAr ? 'أظهر العمليات التي تستهلك أعلى CPU' : 'Show top CPU-consuming processes')
+  if ((stats.ramPercent ?? 0) > 80)  s.push(isAr ? 'فحص استخدام الذاكرة بالتفصيل'       : 'Check memory usage in detail')
+  if ((stats.diskPercent ?? 0) > 85) s.push(isAr ? 'اعرض أكبر الملفات لتحرير مساحة القرص' : 'Show largest files to free disk space')
   return s.slice(0, 3)
 }
 
-const QUICK_PROMPTS = [
+const QUICK_PROMPTS_AR = [
   'ما هي مواصفات هذا الجهاز؟',
   'ما هي حالة الخادم حالياً؟',
   'تحقق من استخدام الذاكرة والمعالج',
   'اعرض آخر 20 سطر من السجلات',
   'أظهر العمليات التي تستهلك أعلى CPU',
+]
+
+const QUICK_PROMPTS_EN = [
+  'What are the specs of this device?',
+  'What is the current server status?',
+  'Check memory and CPU usage',
+  'Show last 20 lines of logs',
+  'Show top CPU-consuming processes',
 ]
 
 interface ContentPart {
@@ -229,6 +237,7 @@ interface Props {
 
 export function AiChatPanel({ deviceId, conversationId }: Props) {
   const isLight = useUIStore(s => s.theme === 'light')
+  const isAr    = useUIStore(s => s.lang === 'ar')
 
   const [messages,       setMessages]       = useState<Message[]>([])
   const [input,          setInput]          = useState('')
@@ -377,7 +386,7 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
       })
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: 'فشل الاتصال' }))
+        const errData = await res.json().catch(() => ({ error: isAr ? 'فشل الاتصال' : 'Connection failed' }))
         throw new Error(errData.error || `HTTP ${res.status}`)
       }
 
@@ -413,7 +422,7 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
                 next[next.length - 1] = { ...next[next.length - 1], streaming: false }
                 return next
               })
-              if (data.stats) setSuggestions(buildSuggestions(data.stats))
+              if (data.stats) setSuggestions(buildSuggestions(data.stats, isAr))
             }
           } catch (parseErr) {
             if ((parseErr as Error).name !== 'SyntaxError') throw parseErr
@@ -700,14 +709,14 @@ export function AiChatPanel({ deviceId, conversationId }: Props) {
             )}>
               <Bot size={28} className={isLight ? 'text-teal-500' : 'text-brand-teal'} />
             </div>
-            <p className={clsx('text-sm font-semibold mb-1', isLight ? 'text-slate-700' : 'text-slate-200')}>مرحباً!</p>
+            <p className={clsx('text-sm font-semibold mb-1', isLight ? 'text-slate-700' : 'text-slate-200')}>{isAr ? 'مرحباً!' : 'Hello!'}</p>
             <p className={clsx('text-xs leading-relaxed max-w-[220px]', isLight ? 'text-slate-500' : 'text-slate-500')}>
               {deviceId
-                ? 'أنا مساعدك لإدارة هذا الجهاز. يمكنني تنفيذ الأوامر مباشرة عليه.'
-                : 'أنا مساعدك لإدارة الأنظمة. اسألني بالعربية أو الإنجليزية.'}
+                ? (isAr ? 'أنا مساعدك لإدارة هذا الجهاز. يمكنني تنفيذ الأوامر مباشرة عليه.' : 'I can help manage this device and run commands directly on it.')
+                : (isAr ? 'أنا مساعدك لإدارة الأنظمة. اسألني بالعربية أو الإنجليزية.' : 'Your AI assistant for system management. Ask me anything in Arabic or English.')}
             </p>
             <div className="mt-5 space-y-1.5 w-full max-w-[290px]">
-              {QUICK_PROMPTS.map(s => (
+              {(isAr ? QUICK_PROMPTS_AR : QUICK_PROMPTS_EN).map(s => (
                 <button
                   key={s}
                   onClick={() => { setInput(s); inputRef.current?.focus() }}

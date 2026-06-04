@@ -160,7 +160,7 @@ export function SettingsPage() {
             <div className="grid grid-cols-2 gap-3">
               {/* Theme */}
               <div>
-                <label className="block text-xs text-slate-500 mb-2">{isAr ? 'الثيم' : 'Theme'}</label>
+                <label className="block text-xs text-slate-500 mb-2">{T('theme_label')}</label>
                 <div className="flex gap-2">
                   <button
                     onClick={() => theme !== 'dark' && toggleTheme()}
@@ -188,7 +188,7 @@ export function SettingsPage() {
               </div>
               {/* Language */}
               <div>
-                <label className="block text-xs text-slate-500 mb-2">{isAr ? 'اللغة' : 'Language'}</label>
+                <label className="block text-xs text-slate-500 mb-2">{T('lang_label')}</label>
                 <div className="flex gap-2">
                   <button
                     onClick={() => lang !== 'ar' && toggleLang()}
@@ -244,7 +244,7 @@ export function SettingsPage() {
               {/* WebSocket URL — for Desktop Agent */}
               <div>
                 <label className="block text-xs text-slate-500 mb-1.5">
-                  {isAr ? 'عنوان WebSocket — للـ Agent على Windows' : 'WebSocket URL — for Windows Agent'}
+                  {T('ws_url_label')}
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -264,9 +264,7 @@ export function SettingsPage() {
                 </div>
                 <p className="text-xs text-brand-teal/60 mt-1.5 flex items-center gap-1.5">
                   <Info size={11} />
-                  {isAr
-                    ? 'انسخ هذا العنوان وضعه في حقل "Server URL" في تطبيق AiRemote Agent على Windows'
-                    : 'Copy this URL and paste it into the "Server URL" field in the Windows AiRemote Agent app'}
+                  {T('ws_url_hint')}
                 </p>
               </div>
 
@@ -322,10 +320,10 @@ export function SettingsPage() {
                       value={ai.aiApiKey}
                       onChange={e => { setAi(p => ({ ...p, aiApiKey: e.target.value })); setValidateState('idle') }}
                       placeholder={ai.aiProvider === 'openai' ? 'sk-...' : 'AI...'}
-                      className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-teal font-mono pr-10"
+                      className="w-full bg-navy-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-teal font-mono pe-10"
                       dir="ltr"
                     />
-                    <button type="button" onClick={() => setShowKey(s => !s)} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
+                    <button type="button" onClick={() => setShowKey(s => !s)} className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
                       {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
@@ -399,12 +397,12 @@ export function SettingsPage() {
           </Section>
 
           {/* Agent Downloads */}
-          <Section icon={Download} color="text-brand-blue" title={isAr ? 'تنزيل الـ Agent' : 'Download Agent'}>
+          <Section icon={Download} color="text-brand-blue" title={T('download_agent')}>
             <AgentDownloads isAr={isAr} />
           </Section>
 
           {/* GitHub Releases */}
-          <Section icon={Github} color="text-slate-400" title={isAr ? 'نشر على GitHub Releases' : 'Publish to GitHub Releases'}>
+          <Section icon={Github} color="text-slate-400" title={T('publish_github')}>
             <GitHubRelease isAr={isAr} />
           </Section>
 

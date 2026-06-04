@@ -104,6 +104,20 @@ const T = {
     notif_min: 'دقيقة',
     notif_all_devices: 'جميع الأجهزة',
     time_now: 'الآن',
+
+    wol_sending: 'جارٍ الإرسال...',
+    wol_send: 'إرسال Magic Packet',
+    wol_success: 'تم إرسال الحزمة بنجاح ✓',
+    wol_fail: 'فشل الإرسال',
+    wol_network_error: 'خطأ في الشبكة',
+    wol_optional: 'اختياري',
+    agent_install_hint: 'انسخ القيمتين أعلاه والصقهما في تطبيق AiRemote Agent على Windows ثم اضغط تشغيل.',
+    download_agent: 'تنزيل الـ Agent',
+    publish_github: 'نشر على GitHub Releases',
+    theme_label: 'الثيم',
+    lang_label: 'اللغة',
+    ws_url_label: 'عنوان WebSocket — للـ Agent على Windows',
+    ws_url_hint: 'انسخ هذا العنوان وضعه في حقل "Server URL" في تطبيق AiRemote Agent على Windows',
   },
   en: {
     overview: 'Overview', devices: 'Devices', ai_assistant: 'AI Assistant',
@@ -207,6 +221,20 @@ const T = {
     notif_min: 'min',
     notif_all_devices: 'All devices',
     time_now: 'Just now',
+
+    wol_sending: 'Sending...',
+    wol_send: 'Send Magic Packet',
+    wol_success: 'Packet sent successfully ✓',
+    wol_fail: 'Send failed',
+    wol_network_error: 'Network error',
+    wol_optional: 'optional',
+    agent_install_hint: 'Copy both values above and paste them into the AiRemote Agent app on Windows, then click Start.',
+    download_agent: 'Download Agent',
+    publish_github: 'Publish to GitHub Releases',
+    theme_label: 'Theme',
+    lang_label: 'Language',
+    ws_url_label: 'WebSocket URL — for Windows Agent',
+    ws_url_hint: 'Copy this URL and paste it into the "Server URL" field in the Windows AiRemote Agent app',
   }
 } as const
 

@@ -233,12 +233,12 @@ export function GitHubRelease({ isAr }: Props) {
                   onChange={e => { setToken(e.target.value); setTestState('idle') }}
                   placeholder={config.tokenSet ? (isAr ? '●●●●● (محفوظ — اتركه فارغاً للإبقاء)' : '●●●●● (saved — leave blank to keep)') : 'ghp_...'}
                   dir="ltr"
-                  className="w-full bg-navy-800 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-teal font-mono pr-10"
+                  className="w-full bg-navy-800 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-brand-teal font-mono pe-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowToken(s => !s)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
                 >
                   {showToken ? <EyeOff size={12} /> : <Eye size={12} />}
                 </button>
