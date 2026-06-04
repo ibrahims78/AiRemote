@@ -1,7 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import websocket from '@fastify/websocket'
-import jwt from '@fastify/jwt'
+import { jwtPlugin } from './plugins/jwt'
 import cookie from '@fastify/cookie'
 import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
@@ -55,7 +55,7 @@ export async function buildServer() {
     limits: { fileSize: 500 * 1024 * 1024, files: 1 }
   })
 
-  await app.register(jwt, {
+  await app.register(jwtPlugin, {
     secret: process.env.JWT_SECRET || 'airemote-dev-secret-change-in-production',
     sign: { expiresIn: '15m' }
   })
