@@ -3,4 +3,4 @@
 - [agent-desktop IPC bridge](agent-desktop-ipc.md) — screen-chat IPC: main.js → win.webContents.send('screen-chat') → preload.js onScreenChat → renderer appendLog + Notification
 - [AiRemote Remote Desktop Fixes](airemote-rdp-fixes.md) — 8 critical bugs fixed: FPS default, coords, keyup/down, persistent PS process
 - [AiRemote Dashboard Audit](dashboard-audit.md) — full professional audit complete; all i18n, data, and eye-button bugs fixed across DevicesPage/SettingsPage/GitHubRelease/AiChatPanel
-- [Screen sharing bugs](screen-sharing-bugs.md) — 4 interlocking bugs caused frozen stream after quality/monitor change; fixed in agent.ts + ScreenViewer.tsx
+- [Screen sharing freeze fix](screen-freeze-fix.md) — removed hash dedup from agent.ts; added persistent PS process in screenCapture.ts; intervalMs floored to 100ms

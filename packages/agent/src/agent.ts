@@ -39,24 +39,6 @@ interface WriteChunkAccum {
   path:   string
 }
 
-// ── Frame hash for deduplication ─────────────────────────────────────────────
-// Skips the JPEG header (~first 300 bytes which are always identical regardless
-// of image content), then samples 128 evenly-spaced bytes from the actual pixel
-// data.  128 samples vs the old 32 dramatically reduces false-positive "no
-// change" matches that caused the screen to appear frozen.
-function computeFrameHash(buf: Buffer): string {
-  const SKIP = 300  // skip JPEG header — it never changes between frames
-  if (buf.length < SKIP + 64) return `t${buf.length}`
-  const payload = buf.length - SKIP
-  const step = Math.max(1, Math.floor(payload / 128))
-  let h = buf.length
-  for (let i = 0; i < 128; i++) {
-    const pos = SKIP + i * step
-    if (pos >= buf.length) break
-    h = (Math.imul(h, 31) + buf[pos]) | 0
-  }
-  return `${buf.length}:${(h >>> 0).toString(16)}`
-}
 
 export class AgentService {
   private ws: WebSocket | null = null
@@ -783,34 +765,19 @@ export class AgentService {
     const { sessionId, fps, quality, monitorId = 0 } = p
 
     // Use clearScreenTimer (not stopScreenCapture) so we do NOT send agent:screen_closed
-    // to the server — that would delete the session from the registry and permanently
-    // orphan all subsequent frames for this quality/monitor-change restart.
+    // to the server when restarting for quality / monitor changes on the same session.
     this.clearScreenTimer(sessionId)
     this.screenMonitorId.set(sessionId, monitorId)
     const mon = this.cachedMonitors.find(m => m.id === monitorId)
     if (mon) setScreenResolution(mon.width, mon.height)
 
     const clampedFps = Math.min(fps, 30)
-    const intervalMs = Math.max(33, Math.round(1000 / clampedFps))
+    // Never go below 100 ms interval — gives capture tools time to finish.
+    // The concurrency guard below prevents overlapping calls regardless.
+    const intervalMs = Math.max(100, Math.round(1000 / clampedFps))
     let seq = 0
 
-    // ── Frame deduplication + adaptive delta encoding ─────────────────────
-    let prevHash = ''
-    let framesSinceKeyframe = 0
-    const KEYFRAME_EVERY = 60
-    // Time-based fallback: always send a frame if this many ms have passed
-    // since the last sent frame, regardless of hash.  Prevents a frozen screen
-    // when the hash incorrectly matches (e.g. minor JPEG quantization variance).
-    // Kept short (200 ms) so the screen never appears frozen longer than one
-    // rendered frame even when dedup incorrectly flags identical hashes.
-    const MAX_SKIP_MS = 200
-    let lastSentAt = 0
-
-    // Motion tracking for adaptive quality
-    let idleFrames   = 0
-    let motionQuality = quality
-
-    // Concurrency guard
+    // Concurrency guard — prevents a slow capture from stacking up calls.
     let capturing = false
 
     const capture = async () => {
@@ -822,22 +789,16 @@ export class AgentService {
       const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId
 
       try {
-        // ── T001: Adaptive quality based on motion ───────────────────────
-        // When screen is idle (many dedup skips), reduce quality to save bandwidth.
-        // When motion resumes, restore full quality.
-        const adaptiveQ = idleFrames > 10
-          ? Math.max(30, quality - Math.min(30, idleFrames))
-          : quality
-
         const frame = await captureScreen({
-          quality: adaptiveQ,
+          quality,
           maxWidth: 1280,
           monitorId: currentMonitorId,
           monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : undefined
         })
+
         if (!frame) {
           this.send({
-            type: 'agent:screen_unavailable',
+            type:    'agent:screen_unavailable',
             payload: { sessionId, message: 'No screen capture tool available (Linux: install scrot or imagemagick; ensure DISPLAY is set)' },
             timestamp: Date.now()
           })
@@ -845,45 +806,28 @@ export class AgentService {
           return
         }
 
-        const hash = computeFrameHash(frame.data)
-        framesSinceKeyframe++
-        const isKeyframe = framesSinceKeyframe >= KEYFRAME_EVERY
-        const timeSinceLastSend = Date.now() - lastSentAt
-        const forceByTime = timeSinceLastSend >= MAX_SKIP_MS
-
-        if (hash === prevHash && !isKeyframe && !forceByTime) {
-          idleFrames = Math.min(idleFrames + 1, 60)
-          return
-        }
-
-        // Motion detected — reset idle counter
-        if (hash !== prevHash) {
-          idleFrames = Math.max(0, idleFrames - 3)
-          motionQuality = quality
-        }
-        prevHash = hash
-        if (isKeyframe) framesSinceKeyframe = 0
-        lastSentAt = Date.now()
-
+        // Send every captured frame — no hash-based dedup.
+        // Rate limiting is handled by the setInterval above (agent side) and
+        // the server-side frame throttle (server side), so dedup is redundant
+        // and was causing false "screen frozen" behaviour.
         this.send({
-          type:      'agent:screen_frame',
-          payload:   {
+          type:    'agent:screen_frame',
+          payload: {
             sessionId,
-            data:      frame.data.toString('base64'),
-            width:     frame.width,
-            height:    frame.height,
-            seq:       seq++,
-            // T001: delta metadata — dashboard can display bandwidth stats
-            keyframe:  isKeyframe || idleFrames === 0,
-            quality:   adaptiveQ
+            data:     frame.data.toString('base64'),
+            width:    frame.width,
+            height:   frame.height,
+            seq:      seq++,
+            keyframe: true,
+            quality
           },
           timestamp: Date.now()
         })
       } catch (err) {
         console.error('[screen] Capture error:', (err as Error).message)
         this.send({
-          type:      'agent:screen_error',
-          payload:   { sessionId, message: (err as Error).message },
+          type:    'agent:screen_error',
+          payload: { sessionId, message: (err as Error).message },
           timestamp: Date.now()
         })
         this.stopScreenCapture(sessionId)
@@ -896,7 +840,7 @@ export class AgentService {
     const timer = setInterval(capture, intervalMs)
     this.screenTimers.set(sessionId, timer)
     this.screenSeq.set(sessionId, 0)
-    console.log(`🖥️  Screen capture started: sessionId=${sessionId} fps=${clampedFps} quality=${quality}`)
+    console.log(`🖥️  Screen capture started: sessionId=${sessionId} fps=${clampedFps} quality=${quality} interval=${intervalMs}ms`)
   }
 
   private stopScreenCapture(sessionId: string): void {
