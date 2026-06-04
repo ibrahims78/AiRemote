@@ -341,6 +341,7 @@ export async function handleAgentMessage(
 
     case 'agent:screen_closed': {
       const { sessionId } = message.payload as { sessionId: string }
+      deviceRegistry.clearScreenConnectTimeout(sessionId)
       const session = deviceRegistry.getScreenSession(sessionId)
       if (session?.dashboardSocket.readyState === 1) {
         try {

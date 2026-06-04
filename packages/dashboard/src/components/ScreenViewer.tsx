@@ -162,6 +162,9 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const chatEndRef         = useRef<HTMLDivElement>(null)
   const bwBytesRef         = useRef(0)
   const bwTimerRef         = useRef<ReturnType<typeof setInterval> | null>(null)
+  const reconnectTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectCountRef  = useRef(0)
+  const intentionalCloseRef = useRef(false)
 
   useEffect(() => { presetRef.current     = preset        }, [preset])
   useEffect(() => { selectedMonRef.current = selectedMonitor }, [selectedMonitor])
@@ -272,6 +275,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         const msg = JSON.parse(ev.data as string)
         switch (msg.type) {
           case 'screen:frame': {
+            if (reconnectCountRef.current > 0) reconnectCountRef.current = 0
             setStatus('streaming'); startFpsCounter(); startBwCounter()
             const { data, width, height, seq, keyframe } = msg.payload
             if (seq <= lastSeqRef.current && seq !== 0) break
@@ -332,11 +336,31 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     }
 
     ws.onclose = () => {
-      setStatus(s => (s === 'error' || s === 'unavailable') ? s : 'disconnected')
       if (fpsTimerRef.current)  { clearInterval(fpsTimerRef.current);  fpsTimerRef.current  = null }
       if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
       if (bwTimerRef.current)   { clearInterval(bwTimerRef.current);   bwTimerRef.current   = null }
       setFps(0); setLatency(-1); setBwDisplay(0)
+
+      // If the close was intentional (component unmount / user stop) or due to a
+      // hard error / unavailability, don't reconnect.
+      setStatus(s => {
+        if (s === 'error' || s === 'unavailable') return s
+        return 'disconnected'
+      })
+
+      if (!intentionalCloseRef.current && myId === connectIdRef.current) {
+        const attempt = reconnectCountRef.current + 1
+        if (attempt <= 5) {
+          reconnectCountRef.current = attempt
+          const delay = Math.min(2000 * attempt, 10_000)
+          reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null
+            if (!intentionalCloseRef.current && myId === connectIdRef.current) {
+              connect(presetRef.current, selectedMonRef.current)
+            }
+          }, delay)
+        }
+      }
     }
     ws.onerror = () => { setStatus('error'); setErrorMsg('فشل الاتصال عبر WebSocket') }
   }, [deviceId, token, drawFrame, startFpsCounter, startBwCounter, sendWs])
@@ -344,9 +368,13 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   // ── Mount / unmount ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!started) return   // wait for user to press "Start"
+    intentionalCloseRef.current = false
+    reconnectCountRef.current   = 0
     connect(preset, 0)
     return () => {
-      wsRef.current?.close()
+      intentionalCloseRef.current = true   // suppress auto-reconnect on cleanup
+      if (reconnectTimerRef.current)  { clearTimeout(reconnectTimerRef.current);  reconnectTimerRef.current  = null }
+      if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null }
       if (fpsTimerRef.current)        clearInterval(fpsTimerRef.current)
       if (pingTimerRef.current)       clearInterval(pingTimerRef.current)
       if (recTimerRef.current)        clearInterval(recTimerRef.current)
