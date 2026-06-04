@@ -150,14 +150,31 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   }, [])
 
   // ── WebSocket connect ─────────────────────────────────────────────────────
-  const connect = useCallback((p: QualityPreset, monitorId = 0) => {
+  const connect = useCallback(async (p: QualityPreset, monitorId = 0) => {
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null }
     setStatus('connecting'); setErrorMsg(''); lastSeqRef.current = -1
     setControlEnabled(false); setPermissionState('idle')
     if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
 
+    // Fetch a short-lived WS ticket so we never pass a possibly-expired JWT in the URL
+    let authParam: Record<string, string> = {}
+    try {
+      const r = await fetch('/api/auth/ws-ticket', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (r.ok) {
+        const { ticket } = await r.json()
+        authParam = { ticket }
+      } else {
+        authParam = { token: token || '' }
+      }
+    } catch {
+      authParam = { token: token || '' }
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const params   = new URLSearchParams({ token: token || '', deviceId, fps: String(p.fps), quality: String(p.quality) })
+    const params   = new URLSearchParams({ ...authParam, deviceId, fps: String(p.fps), quality: String(p.quality) })
     const ws       = new WebSocket(`${protocol}//${window.location.host}/screen?${params}`)
     wsRef.current  = ws
 
