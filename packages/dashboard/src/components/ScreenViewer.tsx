@@ -27,7 +27,7 @@ import {
   Clipboard, ClipboardPaste, EyeOff, Eye,
   Video, Tv2, Mouse, Keyboard, ChevronDown, Circle,
   Upload, Shield, Zap, CheckCircle2,
-  MessageSquare, Send, Download, Activity, X, PlayCircle
+  MessageSquare, Send, Download, Activity, X, PlayCircle, Square
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuthStore } from '../store/authStore'
@@ -659,6 +659,34 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     }
   }, [controlEnabled, deviceId, token])
 
+  // ── Stop streaming — clean shutdown ──────────────────────────────────────
+  const stopStream = useCallback(() => {
+    intentionalCloseRef.current = true
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
+    // Tell server to cleanly stop capturing on the agent side
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      try { wsRef.current.send(JSON.stringify({ type: 'screen:stop', payload: {} })) } catch {}
+    }
+    if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null }
+    if (fpsTimerRef.current)  { clearInterval(fpsTimerRef.current);  fpsTimerRef.current  = null }
+    if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
+    if (bwTimerRef.current)   { clearInterval(bwTimerRef.current);   bwTimerRef.current   = null }
+    setFps(0); setLatency(-1); setBwDisplay(0)
+    setFrameCount(0); setFrameStats({ keyframes: 0, total: 0 })
+    setControlEnabled(false); setKeyboardMode(false)
+    setStarted(false)   // return to the start splash
+  }, [])
+
+  // ── Refresh — stop current session cleanly then reconnect ────────────────
+  const refreshStream = useCallback(() => {
+    // Explicitly send screen:stop so the server cleans up the old session
+    // before the new one starts — prevents a brief period of two capture loops.
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      try { wsRef.current.send(JSON.stringify({ type: 'screen:stop', payload: {} })) } catch {}
+    }
+    connect(preset, selectedMonitor)
+  }, [connect, preset, selectedMonitor])
+
   // ── Apply preset — send quality update without reconnecting ──────────────
   const applyPreset = (p: QualityPreset) => {
     setPreset(p); setAdaptiveMode(false); setShowSettings(false)
@@ -923,7 +951,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             )}
           </div>
 
-          <button onClick={() => connect(preset, selectedMonitor)} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title="إعادة الاتصال"><RefreshCw size={13}/></button>
+          <button onClick={refreshStream} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title="إعادة الاتصال"><RefreshCw size={13}/></button>
+          <button onClick={stopStream}
+            title="إيقاف البث"
+            className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+            <Square size={13}/>
+          </button>
           <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title={fullscreen ? 'إنهاء ملء الشاشة' : 'ملء الشاشة'}>
             {fullscreen ? <Minimize2 size={13}/> : <Maximize2 size={13}/>}
           </button>

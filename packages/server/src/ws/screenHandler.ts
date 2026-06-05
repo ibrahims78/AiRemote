@@ -126,15 +126,20 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
   }, 15_000)
 
   // ── Frame throttling ──────────────────────────────────────────────────────
-  const frameIntervalMs = 1000 / fps
-  let lastFrameAt = 0
+  // makeThrottle builds a fresh closure each time quality/fps changes so
+  // the interval always reflects the CURRENT fps setting, not the initial one.
+  function makeThrottle(targetFps: number): () => boolean {
+    const intervalMs = 1000 / Math.max(1, Math.min(MAX_FPS, targetFps))
+    let lastAt = 0
+    return () => {
+      const now = Date.now()
+      if (now - lastAt < intervalMs) return false
+      lastAt = now
+      return true
+    }
+  }
 
-  deviceRegistry.setScreenFrameThrottle(sessionId, () => {
-    const now = Date.now()
-    if (now - lastFrameAt < frameIntervalMs) return false
-    lastFrameAt = now
-    return true
-  })
+  deviceRegistry.setScreenFrameThrottle(sessionId, makeThrottle(fps))
 
   // ── T006: In-session chat state ───────────────────────────────────────────
   const chatHistory: Array<{ text: string; sender: string; ts: number }> = []
@@ -154,6 +159,9 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           const newFps     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
           const newQuality = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
           const monId      = msg.payload?.monitorId ?? 0
+          // Rebuild throttle to match the new fps — without this the server would
+          // keep throttling at the original fps even after the agent switches rate.
+          deviceRegistry.setScreenFrameThrottle(sessionId, makeThrottle(newFps))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_start',
             payload: { sessionId, fps: newFps, quality: newQuality, monitorId: monId },
@@ -204,14 +212,16 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           break
 
         case 'screen:set_monitor': {
-          const monitorId = msg.payload?.monitorId ?? 0
+          const monitorId   = msg.payload?.monitorId ?? 0
+          const newFps2     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
+          const newQuality2 = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_set_monitor',
             payload: { sessionId, monitorId },
             timestamp: Date.now()
           })
-          const newFps2     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
-          const newQuality2 = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
+          // Rebuild throttle in case fps changed alongside monitor switch.
+          deviceRegistry.setScreenFrameThrottle(sessionId, makeThrottle(newFps2))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_start',
             payload: { sessionId, fps: newFps2, quality: newQuality2, monitorId },
