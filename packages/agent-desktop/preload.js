@@ -19,9 +19,12 @@ contextBridge.exposeInMainWorld('airemote', {
   onLog:         (fn)  => ipcRenderer.on('log',         (_, d) => fn(d)),
   onStats:       (fn)  => ipcRenderer.on('stats',       (_, d) => fn(d)),
   onPublicIp:    (fn)  => ipcRenderer.on('public-ip',   (_, d) => fn(d)),
-  sendChat:         (data) => ipcRenderer.send('send-chat', data),
 
-  onScreenChat:     (fn) => ipcRenderer.on('screen-chat',     (_, d) => fn(d)),
-  onScreenSessions: (fn) => ipcRenderer.on('screen-sessions', (_, d) => fn(d)),
-  onScreenPrivacy:  (fn) => ipcRenderer.on('screen-privacy',  (_, d) => fn(d)),
+  sendChat:           (data) => ipcRenderer.send('send-chat', data),
+  openChatWindow:     (opts) => ipcRenderer.send('open-chat-window', opts || {}),
+
+  onScreenChat:       (fn) => ipcRenderer.on('screen-chat',     (_, d) => fn(d)),
+  onScreenSessions:   (fn) => ipcRenderer.on('screen-sessions', (_, d) => fn(d)),
+  onScreenPrivacy:    (fn) => ipcRenderer.on('screen-privacy',  (_, d) => fn(d)),
+  onChatWindowStatus: (fn) => ipcRenderer.on('chat-win-status', (_, d) => fn(d)),
 })

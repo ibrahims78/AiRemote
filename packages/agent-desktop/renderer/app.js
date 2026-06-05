@@ -773,6 +773,52 @@ if (chatClearBtn) {
   })
 }
 
+// ── Chat Collapse Toggle ──────────────────────────────────────────────────
+const chatCollapseBtn = $('chat-collapse-btn')
+if (chatCollapseBtn) {
+  // Restore saved state
+  if (localStorage.getItem('chat-collapsed') === '1') {
+    const sec = $('chat-section')
+    if (sec) sec.classList.add('collapsed')
+  }
+  chatCollapseBtn.addEventListener('click', () => {
+    const sec = $('chat-section')
+    if (!sec) return
+    const collapsed = sec.classList.toggle('collapsed')
+    localStorage.setItem('chat-collapsed', collapsed ? '1' : '0')
+    if (!collapsed) {
+      const box = $('chat-messages')
+      if (box) box.scrollTop = box.scrollHeight
+    }
+  })
+}
+
+// ── Chat Pop-out Window ───────────────────────────────────────────────────
+const chatPopoutBtn = $('chat-popout-btn')
+if (chatPopoutBtn) {
+  chatPopoutBtn.addEventListener('click', () => {
+    if (typeof airemote.openChatWindow === 'function') {
+      airemote.openChatWindow({ theme: currentTheme })
+    }
+  })
+}
+
+if (typeof airemote.onChatWindowStatus === 'function') {
+  airemote.onChatWindowStatus(({ open }) => {
+    const sec = $('chat-section')
+    if (sec) sec.classList.toggle('popped-out', open)
+    if (chatPopoutBtn) chatPopoutBtn.classList.toggle('active', open)
+    // When popped out, also collapse to save space
+    if (open && sec && !sec.classList.contains('collapsed')) {
+      sec.classList.add('collapsed')
+    } else if (!open && sec) {
+      // Restore uncollapsed when window closes
+      sec.classList.remove('collapsed')
+      localStorage.removeItem('chat-collapsed')
+    }
+  })
+}
+
 function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;')

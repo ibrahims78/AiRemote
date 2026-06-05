@@ -1,6 +1,7 @@
 - [AiRemote monorepo setup](airemote-setup.md) — pnpm workspaces, Fastify :3001, Vite React :5000, LibSQL at ./data/airemote.db
 - [WoL implementation](wol-impl.md) — WoL endpoint POST /api/devices/:id/wol exists in server; WolModal + Zap button added to DevicesPage (shows only for offline devices)
-- [agent-desktop IPC bridge](agent-desktop-ipc.md) — full bidirectional chat IPC: main.js ↔ renderer via preload.js; host can send via sendChat() → ipcMain 'send-chat' → agent:screen_chat WS; chat section in UI with CSS panel
+- [agent-desktop IPC bridge](agent-desktop-ipc.md) — bidirectional chat IPC; pop-out chatWin (BrowserWindow + chat-preload.js + chat.html); collapse toggle; send-chat MUST include sessionId; server fallback finds active session by deviceId
+- [AiRemote version tracking](airemote-versions.md) — current version v3.2.0; update: server/routes/downloads.ts AGENT_VERSION, server/app.ts version, agent-desktop/main.js AGENT_VERSION + package.json + renderer strings, dashboard LoginPage/SetupPage/SettingsPage
 - [AiRemote Remote Desktop Fixes](airemote-rdp-fixes.md) — 8 critical bugs fixed: FPS default, coords, keyup/down, persistent PS process
 - [AiRemote Dashboard Audit](dashboard-audit.md) — full professional audit complete; all i18n, data, and eye-button bugs fixed across DevicesPage/SettingsPage/GitHubRelease/AiChatPanel
 - [Screen sharing freeze fix](screen-freeze-fix.md) — removed hash dedup from agent.ts; added persistent PS process in screenCapture.ts; intervalMs floored to 100ms

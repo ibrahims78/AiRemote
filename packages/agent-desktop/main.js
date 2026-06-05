@@ -22,10 +22,11 @@ const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
 const LOG_MAX        = 300
-const AGENT_VERSION  = '3.1.0'
+const AGENT_VERSION  = '3.2.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null
+let chatWin        = null
 let tray           = null
 let ws             = null
 let agentState     = 'stopped'
@@ -455,7 +456,9 @@ function handleMsg(msg) {
       addLog('info', `💬 [chat] ${sender || 'viewer'}: ${text}`)
       // Show a native notification so the operator knows a message arrived
       if (win && !win.isDestroyed()) {
-        win.webContents.send('screen-chat', { text, sender: sender || 'viewer', ts: Date.now() })
+        const chatPayload = { text, sender: sender || 'viewer', ts: Date.now() }
+        if (win && !win.isDestroyed()) win.webContents.send('screen-chat', chatPayload)
+        if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send('screen-chat', chatPayload)
       }
       break
     }
@@ -1230,6 +1233,9 @@ function createWindow() {
 }
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────
+ipcMain.on('minimize-chat-win', () => { if (chatWin && !chatWin.isDestroyed()) chatWin.minimize() })
+ipcMain.on('close-chat-win',   () => { if (chatWin && !chatWin.isDestroyed()) chatWin.close() })
+
 ipcMain.on('start-agent', (_, cfg) => {
   if (cfg && (cfg.serverUrl || cfg.token)) saveConfig(cfg)
   startAgent()
@@ -1242,6 +1248,37 @@ ipcMain.on('close-app',    () => { quitting = true; app.quit() })
 ipcMain.on('save-config', (_, cfg) => {
   saveConfig(cfg)
   addLog('info', '💾 تم حفظ الإعدادات')
+})
+
+// ── Chat Pop-out Window ────────────────────────────────────────────────────
+ipcMain.on('open-chat-window', (_, opts = {}) => {
+  if (chatWin && !chatWin.isDestroyed()) { chatWin.focus(); return }
+  chatWin = new BrowserWindow({
+    width:     380,
+    height:    520,
+    minWidth:  320,
+    minHeight: 380,
+    title:     'AiRemote — دردشة الجلسة',
+    frame:     false,
+    transparent: false,
+    backgroundColor: '#0f172a',
+    resizable: true,
+    webPreferences: {
+      preload:          path.join(__dirname, 'chat-preload.js'),
+      nodeIntegration:  false,
+      contextIsolation: true,
+      sandbox:          false
+    }
+  })
+  chatWin.loadFile(path.join(__dirname, 'renderer', 'chat.html'))
+  chatWin.webContents.once('did-finish-load', () => {
+    chatWin.webContents.send('chat-init', { theme: opts.theme || 'dark' })
+  })
+  chatWin.on('closed', () => {
+    chatWin = null
+    if (win && !win.isDestroyed()) win.webContents.send('chat-win-status', { open: false })
+  })
+  if (win && !win.isDestroyed()) win.webContents.send('chat-win-status', { open: true })
 })
 
 // ── T006: Host-side chat send ──────────────────────────────────────────────

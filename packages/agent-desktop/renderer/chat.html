@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>دردشة الجلسة — AiRemote</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f172a; --bg2: #1e293b; --bg3: #273045; --bg4: #0c1628;
+      --border:  rgba(100,116,139,.22); --border2: rgba(100,116,139,.10);
+      --text:    #e2e8f0; --text2: #94a3b8; --muted: #64748b;
+      --blue:    #3b82f6; --blue-h: #2563eb; --blue-glow: rgba(59,130,246,.18);
+      --green:   #22c55e; --red: #ef4444; --yellow: #f59e0b;
+      --titlebar: #07101f; --radius: 10px;
+      --font:    'Segoe UI', system-ui, sans-serif;
+      --mono:    'Cascadia Code', 'Consolas', monospace;
+      --shadow:  0 2px 12px rgba(0,0,0,.35);
+    }
+    [data-theme="light"] {
+      --bg: #f1f5f9; --bg2: #fff; --bg3: #e2e8f0; --bg4: #f8fafc;
+      --border: rgba(100,116,139,.20); --border2: rgba(100,116,139,.10);
+      --text: #0f172a; --text2: #475569; --muted: #64748b;
+      --blue: #2563eb; --blue-h: #1d4ed8; --blue-glow: rgba(37,99,235,.12);
+      --green: #16a34a; --red: #dc2626; --yellow: #d97706;
+      --titlebar: #e2e8f0; --shadow: 0 2px 8px rgba(0,0,0,.07);
+    }
+
+    html, body { height: 100%; overflow: hidden; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 13px; user-select: none; -webkit-user-select: none; }
+
+    /* ── Titlebar ── */
+    #titlebar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 8px 0 12px; height: 38px;
+      background: var(--titlebar); border-bottom: 1px solid var(--border);
+      -webkit-app-region: drag; flex-shrink: 0;
+    }
+    .brand { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 11.5px; }
+    .brand-icon { width: 20px; height: 20px; background: linear-gradient(135deg,#14b8a6,#3b82f6); border-radius: 5px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .brand-icon svg { width: 10px; height: 12px; }
+    .brand-name { background: linear-gradient(90deg,#14b8a6,#3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .win-btns { display: flex; gap: 3px; margin-inline-start: auto; -webkit-app-region: no-drag; flex-shrink: 0; }
+    .win-btn { width: 26px; height: 22px; border: none; border-radius: 4px; background: rgba(255,255,255,.06); color: var(--muted); cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s; }
+    [data-theme="light"] .win-btn { background: rgba(0,0,0,.05); }
+    .win-btn:hover { background: rgba(255,255,255,.14); color: var(--text); }
+    .win-btn.close:hover { background: var(--red); color: #fff; }
+    [data-theme="light"] .win-btn:hover { background: rgba(0,0,0,.10); }
+
+    /* ── Theme toggle ── */
+    .icon-btn { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border: 1px solid var(--border); border-radius: 5px; background: rgba(255,255,255,.05); color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 600; font-family: var(--font); transition: background .15s, color .15s; -webkit-app-region: no-drag; }
+    .icon-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
+    [data-theme="light"] .icon-btn { background: rgba(0,0,0,.04); }
+    [data-theme="light"] .icon-btn:hover { background: rgba(0,0,0,.09); }
+
+    /* ── Layout ── */
+    #app { display: flex; flex-direction: column; height: calc(100vh - 38px); }
+
+    /* ── Chat messages ── */
+    #chat-messages {
+      flex: 1; overflow-y: auto; padding: 12px 12px 6px;
+      display: flex; flex-direction: column; gap: 8px;
+      scrollbar-width: thin; scrollbar-color: var(--bg3) transparent;
+      min-height: 0;
+    }
+    #chat-messages::-webkit-scrollbar { width: 4px; }
+    #chat-messages::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+
+    .chat-empty { font-size: 11px; color: var(--text2); text-align: center; margin: auto; opacity: .55; }
+    .chat-msg { display: flex; flex-direction: column; gap: 2px; max-width: 88%; }
+    .chat-msg--host   { align-self: flex-end; align-items: flex-end; }
+    .chat-msg--viewer { align-self: flex-start; align-items: flex-start; }
+    .chat-meta { display: flex; align-items: center; gap: 5px; font-size: 9px; color: var(--text2); opacity: .7; }
+    .chat-msg--host .chat-meta { flex-direction: row-reverse; }
+    .chat-sender { font-weight: 600; }
+    .chat-time   { opacity: .7; }
+    .chat-bubble { font-size: 11.5px; line-height: 1.45; padding: 7px 11px; border-radius: 12px; word-break: break-word; user-select: text; -webkit-user-select: text; }
+    .chat-msg--host   .chat-bubble { background: var(--blue-glow); border: 1px solid rgba(59,130,246,.25); color: var(--text); border-top-right-radius: 3px; }
+    .chat-msg--viewer .chat-bubble { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-top-left-radius: 3px; }
+
+    /* ── Compose ── */
+    #compose {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 10px; border-top: 1px solid var(--border2);
+      background: var(--bg4); flex-shrink: 0;
+    }
+    #chat-input {
+      flex: 1; font-size: 11.5px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 10px;
+      color: var(--text); outline: none;
+      transition: border-color .15s, box-shadow .15s;
+      font-family: inherit;
+      user-select: text; -webkit-user-select: text;
+    }
+    #chat-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-glow); }
+    #chat-input::placeholder { color: var(--text2); opacity: .55; }
+    #send-btn {
+      flex-shrink: 0; width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--blue); color: #fff;
+      border: none; border-radius: 8px; cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    #send-btn:hover:not(:disabled) { background: var(--blue-h); }
+    #send-btn:active:not(:disabled) { transform: scale(.93); }
+    #send-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── Status bar ── */
+    #status-bar {
+      padding: 4px 12px; font-size: 9.5px; color: var(--muted);
+      border-top: 1px solid var(--border2); background: var(--bg);
+      flex-shrink: 0; text-align: center; letter-spacing: .3px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Titlebar -->
+<div id="titlebar">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg viewBox="0 0 12 14" fill="none"><path d="M7 1L1.5 7.5H5.5L4 13L10.5 6H6.5Z" fill="white"/></svg>
+    </div>
+    <span class="brand-name">دردشة الجلسة</span>
+  </div>
+  <button class="icon-btn" id="btn-theme" title="Toggle Theme" style="-webkit-app-region:no-drag">
+    <svg id="icon-moon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    <svg id="icon-sun"  width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+  </button>
+  <div class="win-btns">
+    <button class="win-btn" id="btn-min" title="Minimize">─</button>
+    <button class="win-btn close" id="btn-close" title="Close">✕</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div id="chat-messages">
+    <div class="chat-empty" id="chat-empty">لا توجد رسائل بعد...<br><span style="font-size:10px;opacity:.7">في انتظار رسائل الجلسة</span></div>
+  </div>
+
+  <div id="compose">
+    <input id="chat-input" type="text" placeholder="اكتب رداً على المشاهد..." spellcheck="false" />
+    <button id="send-btn" disabled>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+
+  <div id="status-bar">AiRemote Agent v3.2.0 · دردشة الجلسة النشطة</div>
+</div>
+
+<script>
+'use strict'
+/* global chatWin */
+
+let currentTheme = 'dark'
+
+function applyTheme(t) {
+  currentTheme = t
+  document.documentElement.setAttribute('data-theme', t)
+  document.getElementById('icon-moon').style.display = t === 'dark'  ? '' : 'none'
+  document.getElementById('icon-sun').style.display  = t === 'light' ? '' : 'none'
+}
+
+document.getElementById('btn-theme').addEventListener('click', () =>
+  applyTheme(currentTheme === 'dark' ? 'light' : 'dark')
+)
+document.getElementById('btn-min').addEventListener('click',   () => chatWin.minimizeWin())
+document.getElementById('btn-close').addEventListener('click', () => chatWin.closeWin())
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+}
+
+function appendMsg({ text, sender, ts }) {
+  const box   = document.getElementById('chat-messages')
+  const empty = box.querySelector('.chat-empty')
+  if (empty) empty.remove()
+  const isHost    = sender === 'host'
+  const timeStr   = new Date(ts || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const senderLbl = isHost ? 'أنت' : 'المشاهد'
+  const el = document.createElement('div')
+  el.className = `chat-msg ${isHost ? 'chat-msg--host' : 'chat-msg--viewer'}`
+  el.innerHTML = `
+    <div class="chat-meta">
+      <span class="chat-sender">${esc(senderLbl)}</span>
+      <span class="chat-time">${esc(timeStr)}</span>
+    </div>
+    <div class="chat-bubble">${esc(text)}</div>
+  `
+  box.appendChild(el)
+  while (box.children.length > 200) box.removeChild(box.firstChild)
+  box.scrollTop = box.scrollHeight
+}
+
+// Chat send
+const chatInput = document.getElementById('chat-input')
+const sendBtn   = document.getElementById('send-btn')
+
+function doSend() {
+  const text = chatInput.value.trim()
+  if (!text) return
+  chatWin.sendChat({ text })
+  appendMsg({ text, sender: 'host', ts: Date.now() })
+  chatInput.value = ''
+  sendBtn.disabled = true
+}
+
+chatInput.addEventListener('input', () => { sendBtn.disabled = !chatInput.value.trim() })
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend() } })
+sendBtn.addEventListener('click', doSend)
+
+// IPC
+if (typeof chatWin !== 'undefined') {
+  chatWin.onInit(({ theme }) => { applyTheme(theme || 'dark') })
+  chatWin.onScreenChat(({ text, sender, ts }) => appendMsg({ text, sender: sender || 'viewer', ts }))
+}
+</script>
+</body>
+</html>

@@ -127,7 +127,7 @@ export function LoginPage() {
 
           {/* Footer */}
           <p className="text-center text-xs text-slate-700 mt-6">
-            AiRemote v3.1.0 — Self-hosted Remote Access + AI
+            AiRemote v3.2.0 — Self-hosted Remote Access + AI
           </p>
         </div>
       </div>

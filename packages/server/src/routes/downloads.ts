@@ -4,7 +4,7 @@ import path from 'path'
 import { spawn } from 'child_process'
 import { requireAuth, requireAdmin } from '../middleware/auth'
 
-export const AGENT_VERSION = '3.1.0'
+export const AGENT_VERSION = '3.2.0'
 
 // Root of the repo (two levels up from packages/server)
 const REPO_ROOT    = path.resolve(process.cwd(), '../..')

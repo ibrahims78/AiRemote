@@ -19,7 +19,7 @@
       </svg>
     </div>
     <span class="brand-name">AiRemote Agent</span>
-    <span class="brand-version">v3.1.0</span>
+    <span class="brand-version">v3.2.0</span>
   </div>
 
   <div class="title-status" id="title-status">
@@ -316,11 +316,31 @@
         <span id="chat-header-lbl">دردشة الجلسة</span>
         <span id="chat-unread-badge" class="chat-unread hidden">0</span>
         <div style="flex:1"></div>
-        <button id="chat-clear-btn" class="icon-btn-sm" type="button" title="مسح">
+        <button id="chat-clear-btn" class="icon-btn-sm" type="button" title="مسح المحادثة">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
           </svg>
         </button>
+        <button id="chat-popout-btn" class="icon-btn-sm" type="button" title="نافذة منفصلة">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 3 21 3 21 9"/>
+            <polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/>
+            <line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        </button>
+        <button id="chat-collapse-btn" class="icon-btn-sm" type="button" title="تصغير / توسيع">
+          <svg id="chat-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      </div>
+      <div class="chat-popped-notice">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+          <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+        <span>الدردشة مفتوحة في نافذة منفصلة</span>
       </div>
       <div id="chat-messages" class="chat-messages">
         <div class="chat-empty" id="chat-empty">لا توجد رسائل بعد...</div>
@@ -402,7 +422,7 @@
     <span class="sep">·</span>
     <span>AiRemote Agent</span>
     <span class="sep">·</span>
-    <span id="footer-ver">v3.1.0</span>
+    <span id="footer-ver">v3.2.0</span>
   </div>
 
 </div><!-- /#app -->
