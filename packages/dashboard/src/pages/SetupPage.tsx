@@ -192,7 +192,7 @@ export function SetupPage({ onComplete }: { onComplete: () => void }) {
           </div>
 
           <p className="text-center text-xs text-slate-700 mt-6">
-            AiRemote v3.0.0 — Open Source Self-hosted Remote Access + AI
+            AiRemote v3.1.0 — Open Source Self-hosted Remote Access + AI
           </p>
         </div>
       </div>

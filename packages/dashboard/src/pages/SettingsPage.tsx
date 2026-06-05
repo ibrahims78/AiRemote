@@ -408,7 +408,7 @@ export function SettingsPage() {
 
           {/* Version info */}
           <div className="text-center text-xs text-slate-700 py-2">
-            AiRemote v3.0.0 — Open Source | <span className="text-slate-600">MIT License</span>
+            AiRemote v3.1.0 — Open Source | <span className="text-slate-600">MIT License</span>
           </div>
         </div>
       )}
