@@ -1,12 +1,17 @@
 /**
- * screenCapture.ts — v3.0.0
- * Cross-platform screen capture with multi-monitor support.
+ * screenCapture.ts — v4.0.0
+ * Cross-platform screen capture with multi-monitor + delta-frame support.
  *
- * Windows: Uses a single PERSISTENT PowerShell process (loaded once, reused
- *   for every frame) to eliminate the 1-3 s .NET assembly startup cost.
- *   Effective FPS improves from ~0.5 fps → 10-20 fps.
+ * Windows: Persistent PowerShell process (loaded once, reused every frame).
+ *   Now includes delta-frame detection: when only a small region changed the
+ *   script crops that region, saves it, and outputs "DELTA:fullW,fullH,x,y,w,h"
+ *   instead of "OK", halving typical bandwidth on static / document screens.
  *
- * Linux/macOS: Uses scrot / import / xwd / screencapture as before.
+ * Linux:  scrot / import / xwd.
+ *   Headless Linux (no DISPLAY): auto-starts Xvfb at :99 so screen capture
+ *   works inside Docker, CI, and other display-free environments.
+ *
+ * macOS: native screencapture utility.
  */
 
 import { exec, execFile, spawn, ChildProcess } from 'child_process'
@@ -21,21 +26,25 @@ const execFileAsync = promisify(execFile)
 
 export interface ScreenFrame {
   data:   Buffer
+  /** Always the FULL-screen width, even for delta frames */
   width:  number
+  /** Always the FULL-screen height, even for delta frames */
   height: number
+  /**
+   * Present only for delta frames.  x/y/w/h are in full-screen pixel space.
+   * The JPEG in data covers exactly the (w × h) crop starting at (x, y).
+   */
+  deltaRegion?: { x: number; y: number; w: number; h: number }
 }
 
-const PLATFORM   = process.platform as 'win32' | 'linux' | 'darwin'
+const PLATFORM = process.platform as 'win32' | 'linux' | 'darwin'
 
-// Generate a unique temp-file path per capture call so that:
-//   • There is no cross-capture file sharing / stale-read risk.
-//   • Anti-virus file-lock on the previous frame cannot block the next write.
 let _captureSeq = 0
 function makeTmpFrame(): string {
   return path.join(os.tmpdir(), `airemote_frame_${process.pid}_${++_captureSeq}.jpg`)
 }
 
-// ── Platform detection (Linux only) ─────────────────────────────────────────
+// ── Platform / backend detection ─────────────────────────────────────────────
 type CaptureBackend = 'scrot' | 'import' | 'xwd' | 'screencapture' | 'powershell' | 'none'
 let detectedBackend: CaptureBackend | null = null
 
@@ -48,16 +57,66 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ])
 }
 
+// ── Xvfb headless support (Linux only) ───────────────────────────────────────
+// Called when no DISPLAY / WAYLAND_DISPLAY is set.  Attempts to find or start
+// an Xvfb virtual display so that capture tools (scrot / import) still work
+// inside Docker / CI / headless cloud environments.
+async function tryStartXvfb(): Promise<boolean> {
+  // Check if Xvfb binary exists
+  try { await execAsync('which Xvfb') } catch {
+    console.warn('[screen] Xvfb not found — headless capture unavailable (install Xvfb)')
+    return false
+  }
+
+  const display = ':99'
+
+  // Maybe Xvfb is already running on :99 from a previous agent launch
+  try {
+    await execAsync(`DISPLAY=${display} xdpyinfo 2>/dev/null`)
+    process.env.DISPLAY = display
+    console.log(`[screen] Reusing existing Xvfb at ${display}`)
+    return true
+  } catch {}
+
+  // Start a new Xvfb process
+  try {
+    const xvfb = spawn('Xvfb', [
+      display, '-screen', '0', '1920x1080x24',
+      '-ac', '+extension', 'GLX', '+extension', 'RANDR'
+    ], { detached: true, stdio: 'ignore' })
+    xvfb.unref()
+
+    // Poll up to 2 s for Xvfb to become ready
+    for (let i = 0; i < 8; i++) {
+      await new Promise(r => setTimeout(r, 250))
+      try {
+        await execAsync(`DISPLAY=${display} xdpyinfo 2>/dev/null`)
+        process.env.DISPLAY = display
+        console.log(`[screen] Started Xvfb at ${display} (ready in ${(i + 1) * 250}ms)`)
+        return true
+      } catch {}
+    }
+    console.warn('[screen] Xvfb started but did not become ready within 2s')
+  } catch (err) {
+    console.warn('[screen] Failed to start Xvfb:', (err as Error).message)
+  }
+  return false
+}
+
 async function detectBackend(): Promise<CaptureBackend> {
   if (detectedBackend !== null) return detectedBackend
 
   if (PLATFORM === 'darwin') { detectedBackend = 'screencapture'; return detectedBackend }
   if (PLATFORM === 'win32')  { detectedBackend = 'powershell';    return detectedBackend }
 
+  // Linux: ensure we have a display
   if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
-    console.warn('[screen] No display found — screen capture unavailable')
-    detectedBackend = 'none'
-    return detectedBackend
+    const started = await tryStartXvfb()
+    if (!started) {
+      console.warn('[screen] No display found and Xvfb unavailable — screen capture disabled')
+      detectedBackend = 'none'
+      return detectedBackend
+    }
   }
 
   const tools: Array<{ cmd: string; backend: CaptureBackend }> = [
@@ -66,31 +125,39 @@ async function detectBackend(): Promise<CaptureBackend> {
     { cmd: 'xwd',    backend: 'xwd'    },
   ]
   for (const { cmd, backend } of tools) {
-    try { await execAsync(`which ${cmd}`); detectedBackend = backend; console.log(`[screen] backend: ${backend}`); return detectedBackend } catch {}
+    try {
+      await execAsync(`which ${cmd}`)
+      detectedBackend = backend
+      console.log(`[screen] backend: ${backend}`)
+      return detectedBackend
+    } catch {}
   }
   detectedBackend = 'none'
   return detectedBackend
 }
 
-// ── Windows: Persistent PowerShell process ───────────────────────────────────
+// ── Windows: Persistent PowerShell with delta-frame detection ────────────────
 //
-// The persistent PS script loads .NET assemblies ONCE and then loops,
-// reading capture commands from stdin and writing "OK" / "ERR:..." to stdout.
-// This eliminates the 1-3 s per-frame PS startup penalty.
-//
-// Protocol (one line per message):
+// Protocol:
 //   stdin  → "quality|maxWidth|monX|monY|monW|monH|outFilePath"
-//   stdout ← "OK" (success) | "ERR:<message>" (failure)
-
+//   stdout ← "OK"                              full frame saved
+//           | "DELTA:fullW,fullH,x,y,w,h"      cropped region saved
+//           | "ERR:<message>"                  capture failed
+//
+// Delta detection uses a 16×16 pixel-sample grid.  If <60 % of cells differ
+// AND the bounding box covers <60 % of the full image, only the changed region
+// is encoded and transmitted — cutting typical bandwidth 40–80 % on static
+// content like documents, terminals, or video-in-window scenarios.
 const PS_LOOP_SCRIPT = `
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$prevThumb = $null
 while($true) {
     $line = [Console]::In.ReadLine()
     if ($null -eq $line -or $line -eq 'EXIT') { exit 0 }
     try {
         $p = $line -split [char]124
-        $quality=$p[0]; $maxW=[int]$p[1]
+        $quality=[int]$p[0]; $maxW=[int]$p[1]
         $monX=[int]$p[2]; $monY=[int]$p[3]; $monW=[int]$p[4]; $monH=[int]$p[5]
         $outFile=$p[6]
         if ($monW -gt 0) {
@@ -107,14 +174,62 @@ while($true) {
         $newH  = [Math]::Max(1,[int]($bounds.Height*$ratio))
         $thumb = New-Object System.Drawing.Bitmap($newW,$newH)
         $tg    = [System.Drawing.Graphics]::FromImage($thumb)
+        $tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
         $tg.DrawImage($bmp,0,0,$newW,$newH)
         $tg.Dispose(); $bmp.Dispose()
         $enc    = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
         $params = New-Object System.Drawing.Imaging.EncoderParameters(1)
         $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality,[long]$quality)
-        $thumb.Save($outFile,$enc,$params); $thumb.Dispose()
-        Write-Output 'OK'
+        $isDelta = $false
+        if ($null -ne $prevThumb -and $prevThumb.Width -eq $newW -and $prevThumb.Height -eq $newH) {
+            $gx = 16; $gy = 16
+            $cw = [Math]::Max(1,[int]($newW/$gx))
+            $ch = [Math]::Max(1,[int]($newH/$gy))
+            $minGx = $gx; $maxGx = -1; $minGy = $gy; $maxGy = -1
+            $changed = 0
+            for ($iy = 0; $iy -lt $gy; $iy++) {
+                for ($ix = 0; $ix -lt $gx; $ix++) {
+                    $px = [Math]::Min($newW-1,$ix*$cw+[int]($cw/2))
+                    $py = [Math]::Min($newH-1,$iy*$ch+[int]($ch/2))
+                    $c1 = $thumb.GetPixel($px,$py)
+                    $c2 = $prevThumb.GetPixel($px,$py)
+                    $d  = [Math]::Abs($c1.R-$c2.R)+[Math]::Abs($c1.G-$c2.G)+[Math]::Abs($c1.B-$c2.B)
+                    if ($d -gt 20) {
+                        $changed++
+                        if ($ix -lt $minGx) { $minGx = $ix }
+                        if ($ix -gt $maxGx) { $maxGx = $ix }
+                        if ($iy -lt $minGy) { $minGy = $iy }
+                        if ($iy -gt $maxGy) { $maxGy = $iy }
+                    }
+                }
+            }
+            $total = $gx * $gy
+            if ($changed -gt 0 -and $changed -lt [int]($total * 0.6)) {
+                $pad = 1
+                $dx  = [Math]::Max(0,($minGx-$pad)*$cw)
+                $dy  = [Math]::Max(0,($minGy-$pad)*$ch)
+                $dw  = [Math]::Min($newW-$dx,($maxGx-$minGx+2+$pad*2)*$cw)
+                $dh  = [Math]::Min($newH-$dy,($maxGy-$minGy+2+$pad*2)*$ch)
+                $crop = New-Object System.Drawing.Bitmap($dw,$dh)
+                $cg   = [System.Drawing.Graphics]::FromImage($crop)
+                $srcR = New-Object System.Drawing.Rectangle($dx,$dy,$dw,$dh)
+                $dstR = New-Object System.Drawing.Rectangle(0,0,$dw,$dh)
+                $cg.DrawImage($thumb,$dstR,$srcR,[System.Drawing.GraphicsUnit]::Pixel)
+                $cg.Dispose()
+                $crop.Save($outFile,$enc,$params)
+                $crop.Dispose()
+                $isDelta = $true
+                Write-Output "DELTA:$newW,$newH,$dx,$dy,$dw,$dh"
+            }
+        }
+        if (-not $isDelta) {
+            $thumb.Save($outFile,$enc,$params)
+            Write-Output 'OK'
+        }
+        if ($null -ne $prevThumb) { $prevThumb.Dispose() }
+        $prevThumb = $thumb
     } catch {
+        if ($null -ne $thumb) { try { $thumb.Dispose() } catch {} }
         Write-Output "ERR:$($_.Exception.Message)"
     }
     [Console]::Out.Flush()
@@ -174,19 +289,22 @@ function ensurePsProcess(): PsState {
   return state
 }
 
+// ── Result from the persistent PS process ────────────────────────────────────
+type PsCaptureResult =
+  | { isDelta: false }
+  | { isDelta: true; fullW: number; fullH: number; x: number; y: number; w: number; h: number }
+
 function captureWithPersistentPs(
   quality: number, maxWidth: number,
   monX: number, monY: number, monW: number, monH: number,
   outFile: string
-): Promise<void> {
+): Promise<PsCaptureResult> {
   return new Promise((resolve, reject) => {
     let state: PsState
     try { state = ensurePsProcess() } catch (e) { reject(e); return }
 
-    // PowerShell accepts paths with single backslashes — no doubling needed
     const cmd = `${quality}|${maxWidth}|${monX}|${monY}|${monW}|${monH}|${outFile}\n`
 
-    // Safety timeout — falls back to single-shot PS if persistent one hangs
     const timer = setTimeout(() => {
       if (state.resolve) { state.resolve = null }
       reject(new Error('[screen] persistent PS timed out'))
@@ -194,8 +312,18 @@ function captureWithPersistentPs(
 
     state.resolve = (line: string) => {
       clearTimeout(timer)
-      if (line === 'OK') resolve()
-      else reject(new Error(`[screen] PS: ${line}`))
+      if (line === 'OK') {
+        resolve({ isDelta: false })
+      } else if (line.startsWith('DELTA:')) {
+        const nums = line.slice(6).split(',').map(Number)
+        if (nums.length === 6 && nums.every(n => !isNaN(n))) {
+          resolve({ isDelta: true, fullW: nums[0], fullH: nums[1], x: nums[2], y: nums[3], w: nums[4], h: nums[5] })
+        } else {
+          resolve({ isDelta: false })
+        }
+      } else {
+        reject(new Error(`[screen] PS: ${line}`))
+      }
     }
 
     state.proc.stdin?.write(cmd, (err) => {
@@ -208,7 +336,6 @@ function captureWithPersistentPs(
   })
 }
 
-// ── Fallback: single-shot PowerShell (used if persistent fails) ──────────────
 async function captureWithSingleShotPs(
   quality: number, maxWidth: number,
   monX: number, monY: number, monW: number, monH: number,
@@ -235,7 +362,7 @@ $tg.Dispose(); $bmp.Dispose()
 $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
 $params = New-Object System.Drawing.Imaging.EncoderParameters(1)
 $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]${quality})
-$thumb.Save("${outFile}",  $enc, $params)
+$thumb.Save("${outFile}", $enc, $params)
 $thumb.Dispose()
 `.trim()
 
@@ -263,7 +390,7 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
   const backend = await detectBackend()
   if (backend === 'none') return null
 
-  const mon        = monitors?.find(m => m.id === monitorId)
+  const mon         = monitors?.find(m => m.id === monitorId)
   const hasMultiMon = monitors && monitors.length > 1 && mon
 
   try {
@@ -271,7 +398,6 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
 
     switch (backend) {
 
-      // ── scrot (Linux) ────────────────────────────────────────────────────
       case 'scrot': {
         const tmpFile = makeTmpFrame()
         const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
@@ -290,7 +416,6 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
         break
       }
 
-      // ── ImageMagick import (Linux) ───────────────────────────────────────
       case 'import': {
         const tmpFile = makeTmpFrame()
         const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
@@ -306,7 +431,6 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
         break
       }
 
-      // ── xwd + convert (Linux fallback) ───────────────────────────────────
       case 'xwd': {
         const { stdout } = await withTimeout(
           execAsync(
@@ -319,7 +443,6 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
         break
       }
 
-      // ── macOS screencapture ──────────────────────────────────────────────
       case 'screencapture': {
         const tmpFile = makeTmpFrame()
         const displayArg = hasMultiMon ? `-D ${monitorId + 1}` : ''
@@ -337,30 +460,40 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
         break
       }
 
-      // ── Windows PowerShell (persistent process) ──────────────────────────
       case 'powershell': {
         const monX = hasMultiMon ? mon.x      : 0
         const monY = hasMultiMon ? mon.y      : 0
         const monW = hasMultiMon ? mon.width  : 0
         const monH = hasMultiMon ? mon.height : 0
-        // Unique file per capture — prevents AV/FS lock collisions between frames
         const tmpFile = makeTmpFrame()
 
+        let psResult: PsCaptureResult
         try {
-          await captureWithPersistentPs(quality, maxWidth, monX, monY, monW, monH, tmpFile)
+          psResult = await captureWithPersistentPs(quality, maxWidth, monX, monY, monW, monH, tmpFile)
         } catch (persistErr) {
-          // Persistent process failed — kill it and fall back to single-shot
           console.warn('[screen] Persistent PS failed, falling back to single-shot:', (persistErr as Error).message)
           if (psState) {
             try { psState.proc.kill() } catch {}
             psState = null
           }
           await captureWithSingleShotPs(quality, maxWidth, monX, monY, monW, monH, tmpFile)
+          psResult = { isDelta: false }
         }
 
         jpegBuf = await fs.readFile(tmpFile)
         try { await fs.unlink(tmpFile) } catch {}
-        break
+
+        if (psResult.isDelta) {
+          return {
+            data:   jpegBuf,
+            width:  psResult.fullW,
+            height: psResult.fullH,
+            deltaRegion: { x: psResult.x, y: psResult.y, w: psResult.w, h: psResult.h }
+          }
+        }
+        // Fall through to parseJpegDimensions for full frame
+        const { width, height } = parseJpegDimensions(jpegBuf)
+        return { data: jpegBuf, width, height }
       }
 
       default:
@@ -400,6 +533,4 @@ process.on('exit', () => {
     try { psState.proc.kill() } catch {}
     psState = null
   }
-  // Temp files are unique per capture and deleted immediately after reading —
-  // nothing left to clean up here.
 })

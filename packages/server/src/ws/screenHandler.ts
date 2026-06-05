@@ -10,7 +10,6 @@ import {
   getRecordingMeta, exportRecordingAsZip, deleteRecording
 } from '../services/recording'
 
-// ── Throttle settings ────────────────────────────────────────────────────────
 const DEFAULT_FPS     = 20
 const MAX_FPS         = 30
 const CONNECT_TIMEOUT = 60_000
@@ -21,7 +20,6 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
     fps?: string; quality?: string
   }
 
-  // ── Auth — ticket preferred, JWT fallback ────────────────────────────────
   let userId = '', userEmail = '', userRole = ''
 
   if (query.ticket) {
@@ -66,92 +64,93 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
 
   const fps     = Math.min(MAX_FPS, Math.max(1, parseInt(query.fps     || String(DEFAULT_FPS))))
   const quality = Math.min(95,      Math.max(10, parseInt(query.quality || '65')))
-  const sessionId = uuidv4()
 
-  // ── Register screen session ───────────────────────────────────────────────
-  deviceRegistry.addScreenSession(sessionId, socket, deviceId, userId)
+  // Per-viewer DB session ID (unique for every WS connection, for history tracking)
+  const viewerSessionId = uuidv4()
 
-  // ── Record session in DB ──────────────────────────────────────────────────
+  // ── Register viewer — join existing agent capture if possible ─────────────
+  const { agentSessionId, isNew } = deviceRegistry.addScreenSession(
+    viewerSessionId, socket, deviceId, userId
+  )
+
+  // ── Record this viewer's session in DB ────────────────────────────────────
   const startedAt = new Date().toISOString()
   getDb().execute({
     sql: `INSERT INTO sessions (id, device_id, user_id, type, started_at, ip_address)
           VALUES (?, ?, ?, 'screen', ?, ?)`,
-    args: [sessionId, deviceId, userId, startedAt, request.ip]
+    args: [viewerSessionId, deviceId, userId, startedAt, request.ip]
   }).catch(() => {})
 
-  // ── Tell agent to start capturing ─────────────────────────────────────────
-  const sent = deviceRegistry.sendToDevice(deviceId, {
-    type:      'server:screen_start',
-    payload:   { sessionId, fps, quality },
-    timestamp: Date.now()
-  })
-
-  if (!sent) {
-    deviceRegistry.removeScreenSession(sessionId)
-    socket.send(JSON.stringify({ type: 'screen:error', payload: { message: 'Failed to reach device agent' } }))
-    socket.close()
-    return
+  // ── Notify this viewer of how many others are watching ───────────────────
+  const viewerCount = deviceRegistry.getScreenViewerCount(agentSessionId)
+  if (viewerCount > 1) {
+    socket.send(JSON.stringify({
+      type:    'screen:viewer_count',
+      payload: { count: viewerCount }
+    }))
   }
+  // Notify all OTHER viewers of the new count
+  broadcastViewerCount(agentSessionId)
 
-  // ── Connect timeout ───────────────────────────────────────────────────────
-  const connectTimer = setTimeout(() => {
-    const s = deviceRegistry.getScreenSession(sessionId)
-    if (s) {
-      try {
-        s.dashboardSocket.send(JSON.stringify({
+  if (isNew) {
+    // ── New capture session: ask agent to start capturing ─────────────────
+    const sent = deviceRegistry.sendToDevice(deviceId, {
+      type:      'server:screen_start',
+      payload:   { sessionId: agentSessionId, fps, quality },
+      timestamp: Date.now()
+    })
+
+    if (!sent) {
+      deviceRegistry.removeViewerFromScreenSession(agentSessionId, socket)
+      deviceRegistry.removeScreenSession(agentSessionId)
+      socket.send(JSON.stringify({ type: 'screen:error', payload: { message: 'Failed to reach device agent' } }))
+      socket.close()
+      return
+    }
+
+    // ── Connect timeout (only for new capture sessions) ───────────────────
+    const connectTimer = setTimeout(() => {
+      const s = deviceRegistry.getScreenSession(agentSessionId)
+      if (s) {
+        deviceRegistry.closeAllScreenViewers(agentSessionId, {
           type: 'screen:error',
           payload: { message: 'Agent did not start screen capture — make sure the agent is v2.0.0+' }
-        }))
-        s.dashboardSocket.close()
-      } catch {}
-      cleanup(sessionId, deviceId)
-    }
-  }, CONNECT_TIMEOUT)
-  deviceRegistry.setScreenConnectTimeout(sessionId, connectTimer)
+        })
+        cleanup(agentSessionId, deviceId)
+      }
+    }, CONNECT_TIMEOUT)
+    deviceRegistry.setScreenConnectTimeout(agentSessionId, connectTimer)
 
-  console.log(`🖥️  Screen session started: ${sessionId} (device=${deviceId}, fps=${fps}, quality=${quality})`)
+    // ── Frame throttling (new session only) ───────────────────────────────
+    deviceRegistry.setScreenFrameThrottle(agentSessionId, makeThrottle(fps))
 
-  // ── Keep-alive: prevent Replit proxy from closing idle WS connections ─────
-  // Sends protocol-level ping every 15s AND a JSON keepalive so the proxy sees
-  // activity even when no frames are flowing (e.g. static screen, privacy mode).
+    console.log(`🖥️  Screen session started: ${agentSessionId} (device=${deviceId}, fps=${fps}, quality=${quality})`)
+  } else {
+    console.log(`🖥️  Viewer joined screen session: ${agentSessionId} (device=${deviceId}, viewers=${viewerCount})`)
+  }
+
+  // ── Keep-alive ────────────────────────────────────────────────────────────
   const keepAliveTimer = setInterval(() => {
     if (socket.readyState === 1) {
-      try { socket.ping() } catch { /* socket closing */ }
+      try { socket.ping() } catch {}
       try {
         socket.send(JSON.stringify({ type: 'screen:keepalive', payload: { ts: Date.now() } }))
-      } catch { /* socket closing */ }
+      } catch {}
     } else {
       clearInterval(keepAliveTimer)
     }
   }, 15_000)
 
-  // ── Frame throttling ──────────────────────────────────────────────────────
-  // makeThrottle builds a fresh closure each time quality/fps changes so
-  // the interval always reflects the CURRENT fps setting, not the initial one.
-  function makeThrottle(targetFps: number): () => boolean {
-    const intervalMs = 1000 / Math.max(1, Math.min(MAX_FPS, targetFps))
-    let lastAt = 0
-    return () => {
-      const now = Date.now()
-      if (now - lastAt < intervalMs) return false
-      lastAt = now
-      return true
-    }
-  }
-
-  deviceRegistry.setScreenFrameThrottle(sessionId, makeThrottle(fps))
-
-  // ── T006: In-session chat state ───────────────────────────────────────────
+  // ── Handle dashboard → server messages ───────────────────────────────────
   const chatHistory: Array<{ text: string; sender: string; ts: number }> = []
 
-  // ── Handle dashboard messages ─────────────────────────────────────────────
   socket.on('message', (raw: Buffer) => {
     try {
       const msg = JSON.parse(raw.toString())
 
       switch (msg.type) {
         case 'screen:stop':
-          cleanup(sessionId, deviceId)
+          leaveSession(agentSessionId, viewerSessionId, deviceId, socket)
           socket.close()
           break
 
@@ -159,22 +158,19 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           const newFps     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
           const newQuality = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
           const monId      = msg.payload?.monitorId ?? 0
-          // Rebuild throttle to match the new fps — without this the server would
-          // keep throttling at the original fps even after the agent switches rate.
-          deviceRegistry.setScreenFrameThrottle(sessionId, makeThrottle(newFps))
+          deviceRegistry.setScreenFrameThrottle(agentSessionId, makeThrottle(newFps))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_start',
-            payload: { sessionId, fps: newFps, quality: newQuality, monitorId: monId },
+            payload: { sessionId: agentSessionId, fps: newFps, quality: newQuality, monitorId: monId },
             timestamp: Date.now()
           })
           break
         }
 
-        // ── v2.0.0 Remote Control ──────────────────────────────────────────
         case 'screen:mouse_event':
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_mouse',
-            payload: { ...msg.payload, sessionId },
+            payload: { ...msg.payload, sessionId: agentSessionId },
             timestamp: Date.now()
           })
           break
@@ -182,7 +178,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
         case 'screen:key_event':
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_key',
-            payload: { ...msg.payload, sessionId },
+            payload: { ...msg.payload, sessionId: agentSessionId },
             timestamp: Date.now()
           })
           break
@@ -190,7 +186,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
         case 'screen:clipboard_read':
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_clipboard_read',
-            payload: { sessionId },
+            payload: { sessionId: agentSessionId },
             timestamp: Date.now()
           })
           break
@@ -198,7 +194,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
         case 'screen:clipboard_write':
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_clipboard_write',
-            payload: { sessionId, text: msg.payload?.text || '' },
+            payload: { sessionId: agentSessionId, text: msg.payload?.text || '' },
             timestamp: Date.now()
           })
           break
@@ -206,7 +202,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
         case 'screen:get_monitors':
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_get_monitors',
-            payload: { sessionId },
+            payload: { sessionId: agentSessionId },
             timestamp: Date.now()
           })
           break
@@ -217,14 +213,13 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           const newQuality2 = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_set_monitor',
-            payload: { sessionId, monitorId },
+            payload: { sessionId: agentSessionId, monitorId },
             timestamp: Date.now()
           })
-          // Rebuild throttle in case fps changed alongside monitor switch.
-          deviceRegistry.setScreenFrameThrottle(sessionId, makeThrottle(newFps2))
+          deviceRegistry.setScreenFrameThrottle(agentSessionId, makeThrottle(newFps2))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_start',
-            payload: { sessionId, fps: newFps2, quality: newQuality2, monitorId },
+            payload: { sessionId: agentSessionId, fps: newFps2, quality: newQuality2, monitorId },
             timestamp: Date.now()
           })
           break
@@ -242,13 +237,12 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           const requestId = msg.payload?.requestId || uuidv4()
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_control_request',
-            payload: { sessionId, requestId, requesterName: userEmail },
+            payload: { sessionId: agentSessionId, requestId, requesterName: userEmail },
             timestamp: Date.now()
           })
           break
         }
 
-        // ── T006: In-session text chat (dashboard → agent) ────────────────
         case 'screen:chat': {
           const text   = (msg.payload?.text || '').toString().slice(0, 2000)
           const sender = 'viewer'
@@ -258,32 +252,27 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           const entry = { text, sender, ts }
           chatHistory.push(entry)
 
-          // Relay to agent (shows notification on desktop agent)
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_chat',
-            payload: { sessionId, text, sender, ts },
+            payload: { sessionId: agentSessionId, text, sender, ts },
             timestamp: ts
           })
 
-          // Echo back to dashboard so the sender sees their own message
+          // Echo back only to THIS viewer (sender)
           if (socket.readyState === 1) {
-            socket.send(JSON.stringify({
-              type:    'screen:chat',
-              payload: { text, sender, ts }
-            }))
+            socket.send(JSON.stringify({ type: 'screen:chat', payload: { text, sender, ts } }))
           }
           break
         }
 
-        // ── T008: Session recording ───────────────────────────────────────
         case 'screen:record_start': {
-          if (!isRecording(sessionId)) {
+          if (!isRecording(agentSessionId)) {
             const maxFrames = Math.min(msg.payload?.maxFrames || 600, 3600)
-            startRecording(sessionId, deviceId, userId, maxFrames)
+            startRecording(agentSessionId, deviceId, userId, maxFrames)
             if (socket.readyState === 1) {
               socket.send(JSON.stringify({
                 type:    'screen:record_status',
-                payload: { recording: true, sessionId }
+                payload: { recording: true, sessionId: agentSessionId }
               }))
             }
           }
@@ -291,28 +280,27 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
         }
 
         case 'screen:record_stop': {
-          const meta = stopRecording(sessionId)
+          const meta = stopRecording(agentSessionId)
           if (socket.readyState === 1) {
             socket.send(JSON.stringify({
               type:    'screen:record_status',
-              payload: { recording: false, sessionId, meta }
+              payload: { recording: false, sessionId: agentSessionId, meta }
             }))
           }
           break
         }
 
         case 'screen:record_status': {
-          const meta = getRecordingMeta(sessionId)
+          const meta = getRecordingMeta(agentSessionId)
           if (socket.readyState === 1) {
             socket.send(JSON.stringify({
               type:    'screen:record_status',
-              payload: { recording: isRecording(sessionId), sessionId, meta }
+              payload: { recording: isRecording(agentSessionId), sessionId: agentSessionId, meta }
             }))
           }
           break
         }
 
-        // ── Latency ping-pong ─────────────────────────────────────────────
         case 'screen:ping':
           if (socket.readyState === 1) {
             socket.send(JSON.stringify({
@@ -326,37 +314,86 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
     } catch {}
   })
 
-  socket.on('close', () => { clearInterval(keepAliveTimer); cleanup(sessionId, deviceId) })
-  socket.on('error', () => { clearInterval(keepAliveTimer); cleanup(sessionId, deviceId) })
+  socket.on('close', () => {
+    clearInterval(keepAliveTimer)
+    leaveSession(agentSessionId, viewerSessionId, deviceId, socket)
+  })
+  socket.on('error', () => {
+    clearInterval(keepAliveTimer)
+    leaveSession(agentSessionId, viewerSessionId, deviceId, socket)
+  })
 }
 
-// ── Cleanup helper ────────────────────────────────────────────────────────────
-function cleanup(sessionId: string, deviceId: string): void {
-  const session = deviceRegistry.removeScreenSession(sessionId)
+// ── makeThrottle ─────────────────────────────────────────────────────────────
+function makeThrottle(targetFps: number): () => boolean {
+  const intervalMs = 1000 / Math.max(1, Math.min(MAX_FPS, targetFps))
+  let lastAt = 0
+  return () => {
+    const now = Date.now()
+    if (now - lastAt < intervalMs) return false
+    lastAt = now
+    return true
+  }
+}
+
+// ── broadcastViewerCount ──────────────────────────────────────────────────────
+function broadcastViewerCount(agentSessionId: string): void {
+  const count = deviceRegistry.getScreenViewerCount(agentSessionId)
+  deviceRegistry.sendToScreenViewers(agentSessionId, JSON.stringify({
+    type:    'screen:viewer_count',
+    payload: { count }
+  }))
+}
+
+// ── leaveSession ──────────────────────────────────────────────────────────────
+// Called when a viewer disconnects (close / stop / error).
+// If this is the last viewer, cleanly stops the agent capture loop.
+function leaveSession(
+  agentSessionId: string,
+  viewerSessionId: string,
+  deviceId: string,
+  socket: WebSocket
+): void {
+  const isLast = deviceRegistry.removeViewerFromScreenSession(agentSessionId, socket)
+
+  // Always end this viewer's own DB session
+  const endedAt     = new Date().toISOString()
+  const session     = deviceRegistry.getScreenSession(agentSessionId)
+  const durationSec = session
+    ? Math.round((Date.now() - session.startedAt) / 1000)
+    : 0
+  getDb().execute({
+    sql:  `UPDATE sessions SET ended_at = ?, duration_sec = ? WHERE id = ?`,
+    args: [endedAt, durationSec, viewerSessionId]
+  }).catch(() => {})
+
+  if (isLast) {
+    // No more viewers — stop agent capture and clean up fully
+    cleanup(agentSessionId, deviceId)
+  } else {
+    // Remaining viewers still watching — just broadcast updated count
+    broadcastViewerCount(agentSessionId)
+    console.log(`🖥️  Viewer left screen session: ${agentSessionId} viewers=${deviceRegistry.getScreenViewerCount(agentSessionId)}`)
+  }
+}
+
+// ── cleanup ───────────────────────────────────────────────────────────────────
+function cleanup(agentSessionId: string, deviceId: string): void {
+  const session = deviceRegistry.removeScreenSession(agentSessionId)
   if (!session) return
 
-  // Stop recording if still active
-  if (isRecording(sessionId)) {
-    stopRecording(sessionId)
-  }
+  if (isRecording(agentSessionId)) stopRecording(agentSessionId)
 
   deviceRegistry.sendToDevice(deviceId, {
     type:      'server:screen_stop',
-    payload:   { sessionId },
+    payload:   { sessionId: agentSessionId },
     timestamp: Date.now()
   })
 
-  const endedAt    = new Date().toISOString()
-  const durationSec = Math.round((Date.now() - session.startedAt) / 1000)
-  getDb().execute({
-    sql:  `UPDATE sessions SET ended_at = ?, duration_sec = ? WHERE id = ?`,
-    args: [endedAt, durationSec, sessionId]
-  }).catch(() => {})
-
-  console.log(`🖥️  Screen session ended: ${sessionId} (${durationSec}s)`)
+  console.log(`🖥️  Screen session ended: ${agentSessionId}`)
 }
 
-// ── T008: Recording download HTTP endpoint (called from route registration) ──
+// ── Recording download ────────────────────────────────────────────────────────
 export async function handleRecordingDownload(
   sessionId: string,
   reply: {
@@ -385,6 +422,5 @@ export async function handleRecordingDownload(
   reply.header('Content-Disposition', `attachment; filename="recording-${sessionId.slice(0, 8)}.zip"`)
   reply.send(zip)
 
-  // Auto-cleanup after download
   deleteRecording(sessionId)
 }

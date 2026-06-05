@@ -96,6 +96,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const [frameCount,     setFrameCount]     = useState(0)
   const [resolution,     setResolution]     = useState({ w: 0, h: 0 })
   const [latency,        setLatency]        = useState(-1)
+  const [viewerCount,    setViewerCount]    = useState(1)
 
   // ── UI ────────────────────────────────────────────────────────────────────
   const [fullscreen,     setFullscreen]     = useState(false)
@@ -205,27 +206,47 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       canvas.width = width; canvas.height = height
       setResolution({ w: width, h: height })
     }
-    // Tag this decode with a monotonically-increasing ID
     const drawId = ++drawSeqRef.current
-    // Convert base64 → Blob → ImageBitmap (GPU-decoded, no onload queue)
     const byteStr = atob(base64)
     const bytes   = new Uint8Array(byteStr.length)
     for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i)
     const blob = new Blob([bytes], { type: 'image/jpeg' })
     createImageBitmap(blob).then(bmp => {
-      // Discard if a newer decode already completed (race-condition guard)
       if (drawId < drawSeqRef.current) { bmp.close(); return }
       ctx.drawImage(bmp, 0, 0)
       bmp.close()
       fpsCountRef.current++
       setFrameCount(c => c + 1)
     }).catch(() => {
-      if (drawId < drawSeqRef.current) return   // stale — discard
-      // fallback to img tag if createImageBitmap fails
+      if (drawId < drawSeqRef.current) return
       const img = imgRef.current
       img.onload = () => { ctx.drawImage(img, 0, 0); fpsCountRef.current++; setFrameCount(c => c + 1) }
       img.src = `data:image/jpeg;base64,${base64}`
     })
+  }, [])
+
+  // ── Draw delta frame (partial update — only the changed region) ───────────
+  // The JPEG covers exactly (delta.w × delta.h) pixels. We stamp it at
+  // (delta.x, delta.y) on the existing canvas without resizing or clearing.
+  const drawDeltaFrame = useCallback((
+    base64: string,
+    delta:  { x: number; y: number; w: number; h: number }
+  ) => {
+    const canvas = canvasRef.current; if (!canvas) return
+    const ctx    = canvas.getContext('2d'); if (!ctx) return
+    const drawId = ++drawSeqRef.current
+    const byteStr = atob(base64)
+    const bytes   = new Uint8Array(byteStr.length)
+    for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i)
+    const blob = new Blob([bytes], { type: 'image/jpeg' })
+    createImageBitmap(blob).then(bmp => {
+      if (drawId < drawSeqRef.current) { bmp.close(); return }
+      // Stamp the cropped region at its origin in full-screen coordinates
+      ctx.drawImage(bmp, delta.x, delta.y)
+      bmp.close()
+      fpsCountRef.current++
+      setFrameCount(c => c + 1)
+    }).catch(() => {})
   }, [])
 
   // ── Send WS ───────────────────────────────────────────────────────────────
@@ -245,6 +266,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     const myId = ++connectIdRef.current
     if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); wsRef.current = null }
     setStatus('connecting'); setErrorMsg(''); lastSeqRef.current = -1
+    setViewerCount(1)
     setControlEnabled(false); setPermissionState('idle')
     if (permissionTimerRef.current) { clearTimeout(permissionTimerRef.current); permissionTimerRef.current = null }
 
@@ -325,13 +347,18 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         const msg = JSON.parse(ev.data as string)
         switch (msg.type) {
           case 'screen:frame': {
-            // Legacy JSON frame fallback (pre-v3.1 agents)
+            // JSON frame path: legacy agents + headless agent delta frames
             if (reconnectCountRef.current > 0) reconnectCountRef.current = 0
             setStatus('streaming'); startFpsCounter(); startBwCounter()
-            const { data, width, height, seq, keyframe } = msg.payload
+            const { data, width, height, seq, keyframe, deltaRegion } = msg.payload
             if (seq <= lastSeqRef.current && seq !== 0) break
             lastSeqRef.current = seq
-            drawFrame(data, width, height)
+            if (deltaRegion) {
+              // Partial update: stamp only the changed region on the existing canvas
+              drawDeltaFrame(data, deltaRegion)
+            } else {
+              drawFrame(data, width, height)
+            }
             bwBytesRef.current += Math.ceil((data?.length ?? 0) * 3 / 4)
             setFrameStats(prev => ({
               total:     prev.total + 1,
@@ -351,6 +378,8 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             setClipboardText(msg.payload?.text || ''); setShowClipboard(true); break
           case 'screen:pong':
             setLatency(Date.now() - (msg.payload?.clientTs ?? Date.now())); break
+          case 'screen:viewer_count':
+            setViewerCount(msg.payload?.count ?? 1); break
 
           // ── v3.0.0 Permission responses ──────────────────────────────────
           case 'screen:control_granted':
@@ -951,6 +980,12 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             )}
           </div>
 
+          {viewerCount > 1 && (
+            <div title={`${viewerCount} مشاهدون نشطون`}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[11px] font-medium select-none">
+              <Eye size={10}/>{viewerCount}
+            </div>
+          )}
           <button onClick={refreshStream} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title="إعادة الاتصال"><RefreshCw size={13}/></button>
           <button onClick={stopStream}
             title="إيقاف البث"

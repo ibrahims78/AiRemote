@@ -4,3 +4,4 @@
 - [AiRemote Remote Desktop Fixes](airemote-rdp-fixes.md) — 8 critical bugs fixed: FPS default, coords, keyup/down, persistent PS process
 - [AiRemote Dashboard Audit](dashboard-audit.md) — full professional audit complete; all i18n, data, and eye-button bugs fixed across DevicesPage/SettingsPage/GitHubRelease/AiChatPanel
 - [Screen sharing freeze fix](screen-freeze-fix.md) — removed hash dedup from agent.ts; added persistent PS process in screenCapture.ts; intervalMs floored to 100ms
+- [Multi-viewer + delta frames + Xvfb](screen-multiviewer.md) — registry uses Set<WebSocket>, delta JPEG stamped at canvas offset, Xvfb auto-start on Linux, viewer count badge in toolbar

@@ -810,16 +810,18 @@ export class AgentService {
         // Rate limiting is handled by the setInterval above (agent side) and
         // the server-side frame throttle (server side), so dedup is redundant
         // and was causing false "screen frozen" behaviour.
+        // deltaRegion is present for Windows delta frames (partial screen crop).
         this.send({
           type:    'agent:screen_frame',
           payload: {
             sessionId,
-            data:     frame.data.toString('base64'),
-            width:    frame.width,
-            height:   frame.height,
-            seq:      seq++,
-            keyframe: true,
-            quality
+            data:        frame.data.toString('base64'),
+            width:       frame.width,
+            height:      frame.height,
+            seq:         seq++,
+            keyframe:    !frame.deltaRegion,
+            quality,
+            deltaRegion: frame.deltaRegion
           },
           timestamp: Date.now()
         })

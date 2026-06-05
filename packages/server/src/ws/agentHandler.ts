@@ -20,7 +20,6 @@ const pendingFsOps = new Map<string, {
   timeout: NodeJS.Timeout
 }>()
 
-// Chunked file-download tracking (read_chunked op)
 const pendingFsChunks = new Map<string, {
   chunks:   Map<number, Buffer>
   received: number
@@ -35,10 +34,9 @@ const SAVE_EVERY_N = 3
 // ── Binary screen frame handler (v3.1+ agents) ────────────────────────────
 // Packet layout (from agent): [0x01][sessionId:36B][width:4B][height:4B][seq:4B][flags:1B][JPEG...]
 // Forwarded to dashboard as:  [width:4B][height:4B][seq:4B][flags:1B][JPEG...]
-// No JSON / base64 involved — server just validates header, checks throttle, forwards.
 export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Promise<void> {
-  if (buf.length < 50) return                 // header too short
-  if (buf[0] !== 0x01) return                 // unknown binary message type
+  if (buf.length < 50) return
+  if (buf[0] !== 0x01) return
 
   const sessionId = buf.slice(1, 37).toString('utf8').replace(/\0/g, '')
   const width     = buf.readUInt32BE(37)
@@ -51,29 +49,23 @@ export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Pr
   const session = deviceRegistry.getScreenSession(sessionId)
   if (!session) return
 
-  // Frame count milestone logging
   const fc = ((session as Record<string, unknown>)._frameCount =
     (((session as Record<string, unknown>)._frameCount as number) ?? 0) + 1) as number
   if (fc === 1 || fc % 200 === 0) {
-    console.log(`📸 [bin] session=${sessionId.slice(0, 8)} frames=${fc} size=${jpegData.length >> 10}KB`)
+    console.log(`📸 [bin] session=${sessionId.slice(0, 8)} viewers=${deviceRegistry.getScreenViewerCount(sessionId)} frames=${fc} size=${jpegData.length >> 10}KB`)
   }
 
-  // Recording (if active)
   try {
     if (isRecording(sessionId)) addFrame(sessionId, jpegData, width, height, seq)
-  } catch { /* recording errors must not drop frames */ }
+  } catch {}
 
-  // Throttle + forward to dashboard
   if (!session.frameThrottle || session.frameThrottle()) {
-    if (session.dashboardSocket.readyState === 1) {
-      // Dashboard binary header: [width:4][height:4][seq:4][flags:1]
-      const hdr = Buffer.allocUnsafe(13)
-      hdr.writeUInt32BE(width,  0)
-      hdr.writeUInt32BE(height, 4)
-      hdr.writeUInt32BE(seq,    8)
-      hdr[12] = flags
-      try { session.dashboardSocket.send(Buffer.concat([hdr, jpegData])) } catch { /* ws closing */ }
-    }
+    const hdr = Buffer.allocUnsafe(13)
+    hdr.writeUInt32BE(width,  0)
+    hdr.writeUInt32BE(height, 4)
+    hdr.writeUInt32BE(seq,    8)
+    hdr[12] = flags
+    deviceRegistry.sendToScreenViewers(sessionId, Buffer.concat([hdr, jpegData]))
   }
 }
 
@@ -84,7 +76,6 @@ export async function handleAgentMessage(
 ): Promise<{ deviceId: string } | null> {
   switch (message.type) {
 
-    // ── Registration ─────────────────────────────────────────────────────────
     case 'agent:register': {
       const payload = message.payload as AgentRegisterPayload
       const device  = await getDeviceByToken(payload.token)
@@ -99,7 +90,6 @@ export async function handleAgentMessage(
         return null
       }
 
-      // Extract capabilities including new docker flag (v3.0.0)
       const caps = {
         pty:           true,
         sshAvailable:  payload.sshInfo?.available ?? payload.capabilities?.sshAvailable ?? false,
@@ -130,7 +120,6 @@ export async function handleAgentMessage(
       return { deviceId: device.id }
     }
 
-    // ── Heartbeat ─────────────────────────────────────────────────────────────
     case 'agent:heartbeat': {
       const payload = message.payload as AgentHeartbeatPayload
 
@@ -138,8 +127,7 @@ export async function handleAgentMessage(
       if (!registeredId || registeredId !== payload.deviceId) {
         socket.send(JSON.stringify({
           type: 'server:error',
-          payload: { message: 'Heartbeat rejected: device mismatch' },
-          timestamp: Date.now()
+          payload: { message: 'Heartbeat rejected: device mismatch' }
         }))
         return null
       }
@@ -178,7 +166,6 @@ export async function handleAgentMessage(
       return { deviceId: payload.deviceId }
     }
 
-    // ── Command result ────────────────────────────────────────────────────────
     case 'agent:command_result': {
       const payload = message.payload as AgentCommandResultPayload
       const pending = pendingCommands.get(payload.commandId)
@@ -190,7 +177,6 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── FS result ─────────────────────────────────────────────────────────────
     case 'agent:fs_result': {
       const p = message.payload as { opId: string; data?: unknown; error?: string }
       const pending = pendingFsOps.get(p.opId)
@@ -200,7 +186,6 @@ export async function handleAgentMessage(
         if (p.error) pending.reject(new Error(p.error))
         else pending.resolve(p.data)
       }
-      // Also handle errors for pending chunked downloads
       if (p.error) {
         const pc = pendingFsChunks.get(p.opId)
         if (pc) {
@@ -212,7 +197,6 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── FS chunk (chunked file download) ──────────────────────────────────────
     case 'agent:fs_chunk': {
       const p = message.payload as { opId: string; seq: number; data: string; done: boolean; total: number }
       const pc = pendingFsChunks.get(p.opId)
@@ -232,7 +216,6 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── SSH capability update ─────────────────────────────────────────────────
     case 'agent:ssh_info': {
       const p = message.payload as {
         deviceId: string
@@ -255,7 +238,6 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── SSH Tunnel: agent → server → dashboard ────────────────────────────────
     case 'agent:ssh_opened': {
       const { sessionId } = message.payload as { sessionId: string }
       deviceRegistry.clearSshConnectTimeout(sessionId)
@@ -296,7 +278,6 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── PTY: agent → server → dashboard ──────────────────────────────────────
     case 'agent:pty_opened': {
       const { sessionId } = message.payload as { sessionId: string }
       deviceRegistry.clearPtyConnectTimeout(sessionId)
@@ -341,7 +322,7 @@ export async function handleAgentMessage(
       return null
     }
 
-    // ── Screen frame (agent → server → dashboard) ─────────────────────────────
+    // ── Screen frame (agent → server → ALL viewers) ───────────────────────
     case 'agent:screen_frame': {
       const p = message.payload as {
         sessionId: string
@@ -351,40 +332,35 @@ export async function handleAgentMessage(
         seq:       number
         keyframe?: boolean
         quality?:  number
+        deltaRegion?: { x: number; y: number; w: number; h: number }
       }
       deviceRegistry.clearScreenConnectTimeout(p.sessionId)
       const session = deviceRegistry.getScreenSession(p.sessionId)
       if (session) {
-        // Diagnostic: log frame count milestones so we can confirm frames flow
         const fc = ((session as any)._frameCount = ((session as any)._frameCount ?? 0) + 1) as number
         if (fc === 1 || fc % 200 === 0) {
-          console.log(`📸 [screen] session=${p.sessionId.slice(0,8)} frames=${fc} size=${p.data.length >> 10}KB`)
+          console.log(`📸 [screen] session=${p.sessionId.slice(0,8)} viewers=${session.dashboardSockets.size} frames=${fc} delta=${!!p.deltaRegion}`)
         }
 
-        // Recording: add frame to recording if active (static import — no per-frame await)
         try {
           if (isRecording(p.sessionId)) {
             addFrame(p.sessionId, Buffer.from(p.data, 'base64'), p.width, p.height, p.seq)
           }
         } catch {}
 
-        // Apply throttle — drop frame if too early
         if (!session.frameThrottle || session.frameThrottle()) {
-          if (session.dashboardSocket.readyState === 1) {
-            try {
-              session.dashboardSocket.send(JSON.stringify({
-                type:    'screen:frame',
-                payload: {
-                  data:     p.data,
-                  width:    p.width,
-                  height:   p.height,
-                  seq:      p.seq,
-                  keyframe: p.keyframe,
-                  quality:  p.quality
-                }
-              }))
-            } catch {}
-          }
+          deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
+            type:    'screen:frame',
+            payload: {
+              data:        p.data,
+              width:       p.width,
+              height:      p.height,
+              seq:         p.seq,
+              keyframe:    p.keyframe,
+              quality:     p.quality,
+              deltaRegion: p.deltaRegion
+            }
+          }))
         }
       }
       return null
@@ -393,12 +369,7 @@ export async function handleAgentMessage(
     case 'agent:screen_closed': {
       const { sessionId } = message.payload as { sessionId: string }
       deviceRegistry.clearScreenConnectTimeout(sessionId)
-      const session = deviceRegistry.getScreenSession(sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({ type: 'screen:closed', payload: {} }))
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(sessionId, JSON.stringify({ type: 'screen:closed', payload: {} }))
       deviceRegistry.removeScreenSession(sessionId)
       return null
     }
@@ -406,13 +377,8 @@ export async function handleAgentMessage(
     case 'agent:screen_error': {
       const { sessionId, message: errMsg } = message.payload as { sessionId: string; message: string }
       deviceRegistry.clearScreenConnectTimeout(sessionId)
-      const session = deviceRegistry.getScreenSession(sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({ type: 'screen:error', payload: { message: errMsg } }))
-          session.dashboardSocket.close()
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(sessionId, JSON.stringify({ type: 'screen:error', payload: { message: errMsg } }))
+      deviceRegistry.closeAllScreenViewers(sessionId)
       deviceRegistry.removeScreenSession(sessionId)
       return null
     }
@@ -420,90 +386,57 @@ export async function handleAgentMessage(
     case 'agent:screen_unavailable': {
       const { sessionId, message: errMsg } = message.payload as { sessionId: string; message: string }
       deviceRegistry.clearScreenConnectTimeout(sessionId)
-      const session = deviceRegistry.getScreenSession(sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({
-            type: 'screen:unavailable',
-            payload: { message: errMsg }
-          }))
-          session.dashboardSocket.close()
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(sessionId, JSON.stringify({
+        type: 'screen:unavailable',
+        payload: { message: errMsg }
+      }))
+      deviceRegistry.closeAllScreenViewers(sessionId)
       deviceRegistry.removeScreenSession(sessionId)
       return null
     }
 
-    // ── v2.0.0 Remote Control: agent → dashboard ──────────────────────
     case 'agent:screen_monitors': {
       const p = message.payload as { sessionId: string; monitors: unknown[] }
-      const session = deviceRegistry.getScreenSession(p.sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({
-            type:    'screen:monitors',
-            payload: { monitors: p.monitors }
-          }))
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
+        type:    'screen:monitors',
+        payload: { monitors: p.monitors }
+      }))
       return null
     }
 
     case 'agent:screen_clipboard': {
       const p = message.payload as { sessionId: string; text: string }
-      const session = deviceRegistry.getScreenSession(p.sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({
-            type:    'screen:clipboard',
-            payload: { text: p.text }
-          }))
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
+        type:    'screen:clipboard',
+        payload: { text: p.text }
+      }))
       return null
     }
 
-    // ── T006: In-session chat agent → dashboard ────────────────────────────
     case 'agent:screen_chat': {
       const p = message.payload as { sessionId: string; text: string; sender: string; ts: number }
-      const session = deviceRegistry.getScreenSession(p.sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({
-            type:    'screen:chat',
-            payload: { text: p.text, sender: p.sender || 'host', ts: p.ts || Date.now() }
-          }))
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
+        type:    'screen:chat',
+        payload: { text: p.text, sender: p.sender || 'host', ts: p.ts || Date.now() }
+      }))
       return null
     }
 
-    // ── v3.0.0 Permission system ──────────────────────────────────────────
     case 'agent:screen_control_granted': {
       const p = message.payload as { sessionId: string; requestId: string }
-      const session = deviceRegistry.getScreenSession(p.sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({
-            type:    'screen:control_granted',
-            payload: { requestId: p.requestId }
-          }))
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
+        type:    'screen:control_granted',
+        payload: { requestId: p.requestId }
+      }))
       return null
     }
 
     case 'agent:screen_control_denied': {
       const p = message.payload as { sessionId: string; requestId: string }
-      const session = deviceRegistry.getScreenSession(p.sessionId)
-      if (session?.dashboardSocket.readyState === 1) {
-        try {
-          session.dashboardSocket.send(JSON.stringify({
-            type:    'screen:control_denied',
-            payload: { requestId: p.requestId }
-          }))
-        } catch {}
-      }
+      deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
+        type:    'screen:control_denied',
+        payload: { requestId: p.requestId }
+      }))
       return null
     }
 
@@ -543,16 +476,13 @@ export function sendFsRequest(
   })
 }
 
-// ── T002: Chunked file upload — server → agent (v3.0.0) ──────────────────────
-// Splits large files into 512KB chunks and sends them sequentially.
-// Agent accumulates and writes on the final chunk (isLast=true).
 export async function sendFsWriteChunked(
   deviceId:  string,
   filePath:  string,
   data:      Buffer,
   timeoutMs  = 300000
 ): Promise<void> {
-  const CHUNK_SIZE = 512 * 1024   // 512 KB
+  const CHUNK_SIZE = 512 * 1024
   const total      = Math.ceil(data.length / CHUNK_SIZE) || 1
   const opId       = uuidv4()
 
@@ -562,7 +492,6 @@ export async function sendFsWriteChunked(
   }
 
   return new Promise((resolve, reject) => {
-    // Wait for agent:fs_result on the final chunk
     const timeout = setTimeout(() => {
       pendingFsOps.delete(opId)
       reject(new Error('انتهت مهلة رفع الملف — الملف كبير أو الاتصال بطيء'))
@@ -580,80 +509,73 @@ export async function sendFsWriteChunked(
           opId, path: filePath,
           data:   chunk.toString('base64'),
           seq:    i,
-          total,
-          isLast
+          isLast, total
         },
         timestamp: Date.now()
       })
-
-      if (!sent) {
-        clearTimeout(timeout)
-        pendingFsOps.delete(opId)
-        reject(new Error('الجهاز انقطع أثناء رفع الملف'))
-        return
-      }
-
-      if (!isLast) {
-        // Small async yield between chunks to keep the event loop responsive
-        setImmediate(() => sendChunk(i + 1))
-      }
-      // For the last chunk, wait for agent:fs_result (handled by pendingFsOps)
+      if (!sent) { reject(new Error('الجهاز انقطع أثناء رفع الملف')); return }
+      if (!isLast) sendChunk(i + 1)
     }
 
     sendChunk(0)
   })
 }
 
-export function sendFsDownload(
+export async function sendFsReadChunked(
   deviceId:  string,
   filePath:  string,
-  timeoutMs  = 120000
+  timeoutMs  = 300000
 ): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const opId   = uuidv4()
-    const device = deviceRegistry.getDevice(deviceId)
-    if (!device || device.socket.readyState !== 1) {
-      reject(new Error('الجهاز غير متصل أو الاتصال منقطع'))
-      return
-    }
-    const sent = deviceRegistry.sendToDevice(deviceId, {
-      type:      'server:fs_request',
-      payload:   { opId, op: 'read_chunked', path: filePath },
-      timestamp: Date.now()
-    })
-    if (!sent) { reject(new Error('الجهاز غير متصل')); return }
+  const opId = uuidv4()
 
+  const device = deviceRegistry.getDevice(deviceId)
+  if (!device || device.socket.readyState !== 1) {
+    throw new Error('الجهاز غير متصل أو الاتصال منقطع')
+  }
+
+  return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pendingFsChunks.delete(opId)
       reject(new Error('انتهت مهلة تنزيل الملف — الملف كبير أو الاتصال بطيء'))
     }, timeoutMs)
 
-    pendingFsChunks.set(opId, { chunks: new Map(), received: 0, resolve, reject, timeout })
+    pendingFsChunks.set(opId, {
+      chunks: new Map(), received: 0, resolve, reject, timeout
+    })
+
+    const sent = deviceRegistry.sendToDevice(deviceId, {
+      type: 'server:fs_request',
+      payload: { opId, op: 'read_chunked', path: filePath },
+      timestamp: Date.now()
+    })
+    if (!sent) {
+      clearTimeout(timeout)
+      pendingFsChunks.delete(opId)
+      reject(new Error('الجهاز غير متصل'))
+    }
   })
 }
 
-export function sendCommandToAgent(
-  deviceId: string,
-  commandId: string,
-  command: string,
-  timeoutMs = 30000
+export async function sendCommand(
+  deviceId:  string,
+  command:   string,
+  timeoutMs  = 30000
 ): Promise<AgentCommandResultPayload> {
   return new Promise((resolve, reject) => {
+    const commandId = uuidv4()
+
     const sent = deviceRegistry.sendToDevice(deviceId, {
       type: 'server:command',
       payload: { commandId, type: 'shell', command },
       timestamp: Date.now()
     })
-    if (!sent) { reject(new Error('Device not online')); return }
+    if (!sent) { reject(new Error('الجهاز غير متصل')); return }
+
     const timeout = setTimeout(() => {
       pendingCommands.delete(commandId)
-      reject(new Error('Command timeout'))
+      reject(new Error('انتهت مهلة تنفيذ الأمر'))
     }, timeoutMs)
+
     pendingCommands.set(commandId, { resolve, timeout })
   })
-}
-
-export function cleanupDevice(deviceId: string): void {
-  heartbeatCount.delete(deviceId)
-  fireDeviceOfflineAlert(deviceId).catch(() => {})
 }
