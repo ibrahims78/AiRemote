@@ -672,10 +672,58 @@ function appendLog(entry) {
 
 airemote.onLog(entry => appendLog(entry))
 
-// ─── T006: In-session chat notifications ─────────────────────────────────────
+// ─── T006: In-session chat panel ──────────────────────────────────────────────
+let chatUnread = 0
+
+function showChatSection() {
+  const sec = $('chat-section')
+  if (sec) sec.classList.remove('hidden')
+}
+
+function appendChatMessage({ text, sender, ts }) {
+  const box = $('chat-messages')
+  if (!box) return
+  const empty = box.querySelector('.chat-empty')
+  if (empty) empty.remove()
+
+  const isHost   = sender === 'host'
+  const timeStr  = new Date(ts || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const senderLbl = isHost
+    ? (currentLang === 'ar' ? 'أنت' : 'You')
+    : (currentLang === 'ar' ? 'المشاهد' : 'Viewer')
+
+  const el = document.createElement('div')
+  el.className = `chat-msg ${isHost ? 'chat-msg--host' : 'chat-msg--viewer'}`
+  el.innerHTML = `
+    <div class="chat-meta">
+      <span class="chat-sender">${esc(senderLbl)}</span>
+      <span class="chat-time">${esc(timeStr)}</span>
+    </div>
+    <div class="chat-bubble">${esc(text)}</div>
+  `
+  box.appendChild(el)
+  while (box.children.length > 120) box.removeChild(box.firstChild)
+  box.scrollTop = box.scrollHeight
+}
+
+function updateChatUnread(delta) {
+  chatUnread = Math.max(0, chatUnread + delta)
+  const badge = $('chat-unread-badge')
+  if (!badge) return
+  if (chatUnread > 0) {
+    badge.textContent = chatUnread > 9 ? '9+' : String(chatUnread)
+    badge.classList.remove('hidden')
+  } else {
+    badge.classList.add('hidden')
+  }
+}
+
 if (typeof airemote.onScreenChat === 'function') {
   airemote.onScreenChat(({ text, sender, ts }) => {
     appendLog({ level: 'info', msg: `💬 ${sender}: ${text}`, ts: ts || Date.now() })
+    showChatSection()
+    appendChatMessage({ text, sender: sender || 'viewer', ts })
+    updateChatUnread(+1)
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('AiRemote — رسالة دردشة', { body: `${sender}: ${text}`, silent: false })
     }
@@ -683,6 +731,46 @@ if (typeof airemote.onScreenChat === 'function') {
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission().catch(() => {})
   }
+}
+
+// Chat send
+const chatInput   = $('chat-input')
+const chatSendBtn = $('chat-send-btn')
+
+function doSendChat() {
+  if (!chatInput) return
+  const text = chatInput.value.trim()
+  if (!text) return
+  if (typeof airemote.sendChat === 'function') {
+    airemote.sendChat({ text })
+    appendChatMessage({ text, sender: 'host', ts: Date.now() })
+    showChatSection()
+  }
+  chatInput.value = ''
+  if (chatSendBtn) chatSendBtn.disabled = true
+}
+
+if (chatInput) {
+  chatInput.addEventListener('input', () => {
+    if (chatSendBtn) chatSendBtn.disabled = !chatInput.value.trim()
+  })
+  chatInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSendChat() }
+  })
+}
+
+if (chatSendBtn) {
+  chatSendBtn.addEventListener('click', doSendChat)
+}
+
+const chatClearBtn = $('chat-clear-btn')
+if (chatClearBtn) {
+  chatClearBtn.addEventListener('click', () => {
+    const box = $('chat-messages')
+    if (!box) return
+    box.innerHTML = '<div class="chat-empty" id="chat-empty">لا توجد رسائل بعد...</div>'
+    updateChatUnread(-chatUnread)
+  })
 }
 
 function esc(s) {

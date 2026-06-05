@@ -417,8 +417,10 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
             const { text, sender, ts } = msg.payload as ChatMessage
             if (!text) break
             setChatMessages(prev => [...prev.slice(-99), { text, sender: sender || 'host', ts: ts || Date.now() }])
-            setChatOpen(true)
-            setUnreadChat(prev => prev + 1)
+            setChatOpen(prev => {
+              if (!prev) setUnreadChat(c => c + 1)
+              return prev
+            })
             break
           }
 
@@ -1188,58 +1190,94 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         {/* ── T006: In-session chat panel ── */}
         {chatOpen && (
           <div
-            className="absolute bottom-3 right-3 z-40 flex flex-col w-72 h-80 bg-navy-900/97 border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden"
+            className="absolute bottom-3 right-3 z-40 flex flex-col w-80 rounded-2xl shadow-2xl overflow-hidden"
+            style={{ height: '360px', background: 'rgba(8,12,28,0.97)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/50 bg-navy-800/50">
-              <span className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                <MessageSquare size={11}/> دردشة الجلسة
-              </span>
-              <button onClick={() => setChatOpen(false)} className="text-slate-600 hover:text-slate-400 transition-colors">
-                <X size={13}/>
+            <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.03)' }}>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: 'rgba(56,189,248,0.15)' }}>
+                  <MessageSquare size={11} className="text-sky-400"/>
+                </div>
+                <span className="text-xs font-semibold text-slate-200 tracking-wide">دردشة الجلسة</span>
+                {chatMessages.length > 0 && (
+                  <span className="text-[10px] text-slate-500">{chatMessages.length}</span>
+                )}
+              </div>
+              <button
+                onClick={() => setChatOpen(false)}
+                className="w-5 h-5 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-300 transition-all"
+                style={{ background: 'transparent' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <X size={11}/>
               </button>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700">
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700/50">
               {chatMessages.length === 0 ? (
-                <p className="text-center text-slate-600 text-xs mt-8">لا توجد رسائل بعد</p>
+                <div className="flex flex-col items-center justify-center h-full gap-2 opacity-40">
+                  <MessageSquare size={22} className="text-slate-500"/>
+                  <p className="text-slate-500 text-xs">لا توجد رسائل بعد</p>
+                </div>
               ) : chatMessages.map((m, i) => (
-                <div key={i} className={clsx('flex flex-col gap-0.5', m.sender === 'viewer' ? 'items-end' : 'items-start')}>
+                <div key={i} className={clsx('flex flex-col gap-1', m.sender === 'viewer' ? 'items-end' : 'items-start')}>
+                  <div className={clsx('flex items-center gap-1.5 text-[10px] text-slate-500', m.sender === 'viewer' ? 'flex-row-reverse' : 'flex-row')}>
+                    <div className={clsx(
+                      'w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold',
+                      m.sender === 'viewer' ? 'bg-sky-500/25 text-sky-300' : 'bg-slate-600/60 text-slate-400'
+                    )}>
+                      {m.sender === 'viewer' ? 'أ' : 'ج'}
+                    </div>
+                    <span>{m.sender === 'viewer' ? 'أنت' : 'الجهاز'}</span>
+                    <span className="opacity-50">
+                      {new Date(m.ts).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                    </span>
+                  </div>
                   <div className={clsx(
-                    'max-w-[85%] text-xs px-2.5 py-1.5 rounded-xl',
+                    'max-w-[82%] text-xs leading-relaxed px-3 py-2 rounded-2xl',
                     m.sender === 'viewer'
-                      ? 'bg-brand-blue/25 text-slate-200 rounded-br-sm'
-                      : 'bg-slate-700/60 text-slate-300 rounded-bl-sm'
-                  )}>
+                      ? 'bg-sky-500/18 text-sky-50 rounded-tr-sm'
+                      : 'bg-slate-700/55 text-slate-200 rounded-tl-sm'
+                  )} style={{
+                    border: m.sender === 'viewer'
+                      ? '1px solid rgba(56,189,248,0.18)'
+                      : '1px solid rgba(100,116,139,0.25)'
+                  }}>
                     {m.text}
                   </div>
-                  <span className="text-[9px] text-slate-600">
-                    {m.sender === 'viewer' ? 'أنت' : 'الجهاز'}
-                    {' · '}
-                    {new Date(m.ts).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                  </span>
                 </div>
               ))}
               <div ref={chatEndRef}/>
             </div>
 
             {/* Input */}
-            <div className="flex gap-1.5 p-2 border-t border-slate-700/50">
+            <div className="flex gap-2 p-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)' }}>
               <input
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={handleChatKey}
                 placeholder="اكتب رسالة..."
-                className="flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-brand-blue/50 transition-colors"
+                className="flex-1 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-600 outline-none transition-all"
+                style={{
+                  background: 'rgba(30,41,59,0.7)',
+                  border: '1px solid rgba(100,116,139,0.3)',
+                }}
+                onFocus={e => { e.currentTarget.style.border = '1px solid rgba(56,189,248,0.45)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56,189,248,0.08)' }}
+                onBlur={e => { e.currentTarget.style.border = '1px solid rgba(100,116,139,0.3)'; e.currentTarget.style.boxShadow = 'none' }}
               />
               <button
                 onClick={sendChat}
                 disabled={!chatInput.trim()}
-                className="p-1.5 bg-brand-blue/20 hover:bg-brand-blue/30 text-brand-blue rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center text-sky-400 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.2)' }}
+                onMouseEnter={e => { if (!e.currentTarget.disabled) { e.currentTarget.style.background = 'rgba(56,189,248,0.25)'; e.currentTarget.style.borderColor = 'rgba(56,189,248,0.4)' } }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(56,189,248,0.15)'; e.currentTarget.style.borderColor = 'rgba(56,189,248,0.2)' }}
               >
-                <Send size={12}/>
+                <Send size={13}/>
               </button>
             </div>
           </div>

@@ -19,7 +19,7 @@
       </svg>
     </div>
     <span class="brand-name">AiRemote Agent</span>
-    <span class="brand-version">v3.0.0</span>
+    <span class="brand-version">v3.1.0</span>
   </div>
 
   <div class="title-status" id="title-status">
@@ -306,6 +306,36 @@
 
   </div><!-- /#upper -->
 
+  <!-- ── T006: Session Chat Section ──────────────────────────────────── -->
+  <div id="chat-section" class="chat-section hidden">
+    <div class="card chat-card">
+      <div class="chat-card-header">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span id="chat-header-lbl">دردشة الجلسة</span>
+        <span id="chat-unread-badge" class="chat-unread hidden">0</span>
+        <div style="flex:1"></div>
+        <button id="chat-clear-btn" class="icon-btn-sm" type="button" title="مسح">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+          </svg>
+        </button>
+      </div>
+      <div id="chat-messages" class="chat-messages">
+        <div class="chat-empty" id="chat-empty">لا توجد رسائل بعد...</div>
+      </div>
+      <div class="chat-compose">
+        <input id="chat-input" type="text" class="chat-input" placeholder="اكتب رداً على المشاهد..." spellcheck="false" />
+        <button id="chat-send-btn" class="chat-send-btn" type="button" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Log Section ─────────────────────────────────────────────────── -->
   <div id="log-section">
     <div class="card log-card">
@@ -372,7 +402,7 @@
     <span class="sep">·</span>
     <span>AiRemote Agent</span>
     <span class="sep">·</span>
-    <span id="footer-ver">v3.0.0</span>
+    <span id="footer-ver">v3.1.0</span>
   </div>
 
 </div><!-- /#app -->

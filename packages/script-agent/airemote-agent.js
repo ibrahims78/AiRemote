@@ -15,7 +15,7 @@ const CONFIG_FILE = path.join(__dirname, 'config.json')
 const HEARTBEAT_MS   = 10_000
 const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
-const VERSION        = '1.1.0'
+const VERSION        = '3.1.0'
 
 let ws = null, deviceId = null, heartbeatTimer = null
 let reconnectTimer = null, reconnectDelay = RECONNECT_BASE
@@ -161,6 +161,9 @@ function handleMsg(msg) {
     })
   } else if (msg.type === 'server:ping') {
     send({ type:'agent:pong', payload:{}, timestamp:Date.now() })
+  } else if (msg.type === 'server:screen_chat') {
+    const { text, sender } = msg.payload || {}
+    if (text) log('info', `💬 [chat] ${sender || 'viewer'}: ${text}`)
   }
 }
 

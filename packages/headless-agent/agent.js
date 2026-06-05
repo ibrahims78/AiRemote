@@ -31,7 +31,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 const HEARTBEAT_MS          = 10_000
 const RECONNECT_BASE        = 2_000
 const RECONNECT_MAX         = 30_000
-const VERSION               = '3.0.0'
+const VERSION               = '3.1.0'
 const CONSENT_TIMEOUT_SEC   = parseInt(process.env.AGENT_CONSENT_TIMEOUT || '30', 10)
 
 // ─── State ────────────────────────────────────────────────────────────────

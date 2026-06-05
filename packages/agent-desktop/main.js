@@ -22,7 +22,7 @@ const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
 const CONFIG_FILE    = path.join(app.getPath('userData'), 'airemote-config.json')
 const LOG_MAX        = 300
-const AGENT_VERSION  = '3.0.0'
+const AGENT_VERSION  = '3.1.0'
 
 // ─── State ────────────────────────────────────────────────────────────────
 let win            = null
@@ -1242,6 +1242,17 @@ ipcMain.on('close-app',    () => { quitting = true; app.quit() })
 ipcMain.on('save-config', (_, cfg) => {
   saveConfig(cfg)
   addLog('info', '💾 تم حفظ الإعدادات')
+})
+
+// ── T006: Host-side chat send ──────────────────────────────────────────────
+ipcMain.on('send-chat', (_, { text }) => {
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return
+  send({
+    type:      'agent:screen_chat',
+    payload:   { text: String(text).trim(), sender: 'host', ts: Date.now() },
+    timestamp: Date.now()
+  })
+  addLog('info', `💬 [chat sent] ${text}`)
 })
 
 ipcMain.handle('get-state', () => ({
