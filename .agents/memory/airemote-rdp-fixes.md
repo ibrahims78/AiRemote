@@ -63,12 +63,38 @@ description: Critical bugs fixed + agent-desktop UI improvements for v3.0.0 audi
 - main → capWin: `start-capture`, `stop-capture`, `set-quality`, `get-monitors`, `set-monitor`, `set-privacy`
 - capWin → main: `screen-frame`, `screen-error`, `screen-monitors` (via ipcMain.on)
 
+## Round 2 Fixes — Screen Stream Freeze & Tab Switch Bugs
+
+### 13. backgroundThrottling: false in createCaptureWindow (CRITICAL)
+- capWin created with `show: false` — Chromium throttled `setInterval` to ≥1000ms in hidden windows
+- Added `backgroundThrottling: false` to webPreferences → timer now fires at true 33ms (30fps)
+
+### 14. ScreenViewer kept mounted across tab switches (DeviceWorkspacePage.tsx)
+- Was: `{tab === 'screen' && <ScreenViewer/>}` — unmount on tab switch closed WebSocket + stopped agent capture
+- Fixed: always render ScreenViewer; use `style={{ display: tab === 'screen' ? 'flex' : 'none' }}`
+- ScreenViewer only unmounts when navigating away from DeviceWorkspace (intended teardown)
+
+### 15. Zombie detection tightened (handler.ts)
+- PING_INTERVAL_MS: 8000 → 5000; PONG_TIMEOUT_MS: 20000 → 12000
+- Max disconnect detection: 28s → 17s
+
+### 16. Screen WS keepalive improved (screenHandler.ts)
+- Protocol ping interval: 30s → 15s
+- Added JSON `screen:keepalive` alongside protocol ping for proxy compatibility
+
+### 17. Removed per-frame dynamic import in agentHandler.ts
+- `await import('../services/recording')` was called on EVERY frame — async microtask overhead
+- Moved to static top-level import: `import { isRecording, addFrame } from '../services/recording'`
+
 ## Why
 - These bugs collectively made remote desktop broken on Windows + agent UI showed no feedback
 - Privacy mode stub meant the feature was non-functional despite being in the message protocol
+- backgroundThrottling default=true silently throttles hidden renderer setIntervals (key insight)
 
 ## How to apply
 - Mouse coordinates are always relative 0.0–1.0 — always multiply by capScreenW/H
 - Persistent PS process is shared for ALL mouse+keyboard ops — never spawn new processes
 - Frame dedup uses pixel sampling (not full JPEG comparison) for speed
 - Any new screen session state change in main.js must call broadcastScreenSessions()
+- Hidden Electron windows MUST have `backgroundThrottling: false` for real-time timers
+- ScreenViewer must stay mounted (CSS hide) not unmounted — keeps WS alive across tab switches

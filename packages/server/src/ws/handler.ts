@@ -10,9 +10,9 @@ import { updateDeviceStatus } from '../db/devices'
 // Uses BOTH protocol-level WebSocket pings AND application-level JSON pings
 // so the cycle works even when a reverse proxy intercepts protocol frames.
 // On every incoming agent message the full cycle is reset.
-// Max silent window before kill: PING_INTERVAL_MS + PONG_TIMEOUT_MS = 28s.
-const PING_INTERVAL_MS = 8000
-const PONG_TIMEOUT_MS  = 20000  // generous — covers 10s heartbeat + stats collection delay
+// Max silent window before kill: PING_INTERVAL_MS + PONG_TIMEOUT_MS = 17s.
+const PING_INTERVAL_MS = 5000
+const PONG_TIMEOUT_MS  = 12000  // covers 10s heartbeat + stats collection delay
 
 export function wsHandler(socket: WebSocket, request: FastifyRequest) {
   const clientIp = request.ip

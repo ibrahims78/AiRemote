@@ -7,6 +7,7 @@ import type {
 } from '@airemote/shared'
 import { getDb } from '../db/database'
 import { evaluateAlerts, fireDeviceOfflineAlert, fireDeviceOnlineAlert } from '../services/alertEngine'
+import { isRecording, addFrame } from '../services/recording'
 
 const pendingCommands = new Map<string, {
   resolve: (result: AgentCommandResultPayload) => void
@@ -315,9 +316,8 @@ export async function handleAgentMessage(
           console.log(`📸 [screen] session=${p.sessionId.slice(0,8)} frames=${fc} size=${p.data.length >> 10}KB`)
         }
 
-        // Recording: add frame to recording if active
+        // Recording: add frame to recording if active (static import — no per-frame await)
         try {
-          const { isRecording, addFrame } = await import('../services/recording')
           if (isRecording(p.sessionId)) {
             addFrame(p.sessionId, Buffer.from(p.data, 'base64'), p.width, p.height, p.seq)
           }

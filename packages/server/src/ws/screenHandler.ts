@@ -112,15 +112,18 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
   console.log(`🖥️  Screen session started: ${sessionId} (device=${deviceId}, fps=${fps}, quality=${quality})`)
 
   // ── Keep-alive: prevent Replit proxy from closing idle WS connections ─────
-  // Sends a protocol-level WebSocket ping every 30s so the proxy sees activity
-  // even when no frames are flowing (e.g., static screen with no changes).
+  // Sends protocol-level ping every 15s AND a JSON keepalive so the proxy sees
+  // activity even when no frames are flowing (e.g. static screen, privacy mode).
   const keepAliveTimer = setInterval(() => {
     if (socket.readyState === 1) {
       try { socket.ping() } catch { /* socket closing */ }
+      try {
+        socket.send(JSON.stringify({ type: 'screen:keepalive', payload: { ts: Date.now() } }))
+      } catch { /* socket closing */ }
     } else {
       clearInterval(keepAliveTimer)
     }
-  }, 30_000)
+  }, 15_000)
 
   // ── Frame throttling ──────────────────────────────────────────────────────
   const frameIntervalMs = 1000 / fps

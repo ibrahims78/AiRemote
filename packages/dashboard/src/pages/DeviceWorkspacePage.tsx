@@ -216,8 +216,11 @@ export function DeviceWorkspacePage() {
           </div>
         )}
 
-        {tab === 'screen' && deviceId && (
-          <div className="h-full p-5">
+        {/* ScreenViewer stays mounted even when switching tabs so the stream
+            remains alive. CSS hides it; only the user navigating away from the
+            DeviceWorkspace page unmounts it (and tears down the WebSocket). */}
+        {deviceId && (
+          <div className="h-full p-5" style={{ display: tab === 'screen' ? 'flex' : 'none' }}>
             <ScreenViewer deviceId={deviceId} deviceName={device.name} />
           </div>
         )}

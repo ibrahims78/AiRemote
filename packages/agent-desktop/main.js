@@ -859,10 +859,11 @@ function createCaptureWindow() {
     width:  200,
     height: 200,
     webPreferences: {
-      nodeIntegration:  true,
-      contextIsolation: false,
-      offscreen:        false,
-      webSecurity:      false
+      nodeIntegration:      true,
+      contextIsolation:     false,
+      offscreen:            false,
+      webSecurity:          false,
+      backgroundThrottling: false   // prevent Chromium from throttling setInterval in hidden window
     }
   })
 
