@@ -2,7 +2,7 @@ import type { WebSocket } from 'ws'
 import type { FastifyRequest } from 'fastify'
 import type { AuthTokenPayload } from '@airemote/shared'
 import { deviceRegistry } from './registry'
-import { handleAgentMessage, cleanupDevice } from './agentHandler'
+import { handleAgentMessage, handleAgentBinaryFrame, cleanupDevice } from './agentHandler'
 import { handleClientMessage } from './clientHandler'
 import { updateDeviceStatus } from '../db/devices'
 
@@ -81,7 +81,16 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
 
   console.log(`🔌 New WebSocket connection from ${clientIp}`)
 
-  socket.on('message', (raw: Buffer) => {
+  socket.on('message', (raw: Buffer, isBinary: boolean) => {
+    // ── Binary frame: raw JPEG from v3.1+ agent (no JSON/base64 overhead) ──
+    if (isBinary) {
+      if (connectionType === 'unknown') connectionType = 'agent'
+      clearPongTimer()
+      schedulePing()
+      handleAgentBinaryFrame(socket, raw).catch(err => console.error('Binary frame error:', err))
+      return
+    }
+
     try {
       const message = JSON.parse(raw.toString())
       if (!message.type || message.payload === undefined) {

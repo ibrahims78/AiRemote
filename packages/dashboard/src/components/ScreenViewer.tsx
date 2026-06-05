@@ -269,6 +269,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const params   = new URLSearchParams({ ...authParam, deviceId, fps: String(p.fps), quality: String(p.quality) })
     const ws       = new WebSocket(`${protocol}//${window.location.host}/screen?${params}`)
+    ws.binaryType  = 'arraybuffer'   // receive binary frames as ArrayBuffer, not Blob
     wsRef.current  = ws
 
     ws.onopen = () => {
@@ -281,17 +282,56 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     }
 
     ws.onmessage = (ev) => {
+      // ── Binary frame: v3.1+ server sends raw JPEG with 13-byte header ─────
+      // Header layout: [width:4][height:4][seq:4][flags:1][JPEG bytes...]
+      // No JSON.parse, no atob(), no Uint8Array conversion — direct Blob path.
+      if (ev.data instanceof ArrayBuffer) {
+        const buf = ev.data
+        if (buf.byteLength < 13) return
+        const view   = new DataView(buf)
+        const width  = view.getUint32(0)
+        const height = view.getUint32(4)
+        const seq    = view.getUint32(8)
+        const flags  = view.getUint8(12)
+        if (seq !== 0 && seq <= lastSeqRef.current) return
+        lastSeqRef.current = seq
+        if (reconnectCountRef.current > 0) reconnectCountRef.current = 0
+        setStatus('streaming'); startFpsCounter(); startBwCounter()
+        bwBytesRef.current += buf.byteLength - 13
+        setFrameStats(prev => ({
+          total:     prev.total + 1,
+          keyframes: flags & 1 ? prev.keyframes + 1 : prev.keyframes
+        }))
+        const jpeg   = new Blob([buf.slice(13)], { type: 'image/jpeg' })
+        const drawId = ++drawSeqRef.current
+        createImageBitmap(jpeg).then(bmp => {
+          if (drawId < drawSeqRef.current) { bmp.close(); return }
+          const canvas = canvasRef.current; if (!canvas) { bmp.close(); return }
+          const ctx    = canvas.getContext('2d'); if (!ctx) { bmp.close(); return }
+          if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width; canvas.height = height
+            setResolution({ w: width, h: height })
+          }
+          ctx.drawImage(bmp, 0, 0)
+          bmp.close()
+          fpsCountRef.current++
+          setFrameCount(c => c + 1)
+        }).catch(() => { /* ignore decode errors */ })
+        return
+      }
+
+      // ── JSON text message (control / status) ──────────────────────────────
       try {
         const msg = JSON.parse(ev.data as string)
         switch (msg.type) {
           case 'screen:frame': {
+            // Legacy JSON frame fallback (pre-v3.1 agents)
             if (reconnectCountRef.current > 0) reconnectCountRef.current = 0
             setStatus('streaming'); startFpsCounter(); startBwCounter()
             const { data, width, height, seq, keyframe } = msg.payload
             if (seq <= lastSeqRef.current && seq !== 0) break
             lastSeqRef.current = seq
             drawFrame(data, width, height)
-            // T001: bandwidth + delta stats
             bwBytesRef.current += Math.ceil((data?.length ?? 0) * 3 / 4)
             setFrameStats(prev => ({
               total:     prev.total + 1,

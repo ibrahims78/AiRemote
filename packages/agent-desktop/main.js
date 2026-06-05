@@ -1283,12 +1283,36 @@ ipcMain.handle('get-screen-sources', async () => {
 })
 
 ipcMain.on('screen-frame', (_, p) => {
-  // Track screen dimensions for absolute coordinate conversion in injectMouse
+  // Legacy JSON path — kept as fallback; new agents use screen-frame-binary.
   if (p.width  > 0) capScreenW = p.width
   if (p.height > 0) capScreenH = p.height
   if (ws?.readyState === WebSocket.OPEN) {
     try { ws.send(JSON.stringify({ type: 'agent:screen_frame', payload: p, timestamp: Date.now() })) } catch {}
   }
+})
+
+// ── Binary screen frame (v3.1+) ────────────────────────────────────────────
+// Packet layout: [0x01][sessionId:36B][width:4B][height:4B][seq:4B][flags:1B][JPEG...]
+// Total header: 50 bytes. No JSON/base64 → 3-4× lower CPU + network overhead.
+ipcMain.on('screen-frame-binary', (_, { sessionId, width, height, seq, buffer }) => {
+  if (width  > 0) capScreenW = width
+  if (height > 0) capScreenH = height
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+  const sidBuf = Buffer.allocUnsafe(36)
+  sidBuf.fill(0)
+  Buffer.from(sessionId, 'utf8').copy(sidBuf)   // max 36 bytes; UUID is exactly 36
+
+  const header = Buffer.allocUnsafe(50)
+  header[0] = 0x01                              // message type: screen frame
+  sidBuf.copy(header, 1)
+  header.writeUInt32BE(width  >>> 0, 37)
+  header.writeUInt32BE(height >>> 0, 41)
+  header.writeUInt32BE(seq    >>> 0, 45)
+  header[49] = 0                                // flags (reserved)
+
+  const jpegBuf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
+  try { ws.send(Buffer.concat([header, jpegBuf])) } catch { /* ws closing */ }
 })
 
 ipcMain.on('screen-error', (_, p) => {

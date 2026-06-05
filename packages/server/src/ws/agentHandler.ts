@@ -32,6 +32,51 @@ const pendingFsChunks = new Map<string, {
 const heartbeatCount = new Map<string, number>()
 const SAVE_EVERY_N = 3
 
+// ── Binary screen frame handler (v3.1+ agents) ────────────────────────────
+// Packet layout (from agent): [0x01][sessionId:36B][width:4B][height:4B][seq:4B][flags:1B][JPEG...]
+// Forwarded to dashboard as:  [width:4B][height:4B][seq:4B][flags:1B][JPEG...]
+// No JSON / base64 involved — server just validates header, checks throttle, forwards.
+export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Promise<void> {
+  if (buf.length < 50) return                 // header too short
+  if (buf[0] !== 0x01) return                 // unknown binary message type
+
+  const sessionId = buf.slice(1, 37).toString('utf8').replace(/\0/g, '')
+  const width     = buf.readUInt32BE(37)
+  const height    = buf.readUInt32BE(41)
+  const seq       = buf.readUInt32BE(45)
+  const flags     = buf[49]
+  const jpegData  = buf.slice(50)
+
+  deviceRegistry.clearScreenConnectTimeout(sessionId)
+  const session = deviceRegistry.getScreenSession(sessionId)
+  if (!session) return
+
+  // Frame count milestone logging
+  const fc = ((session as Record<string, unknown>)._frameCount =
+    (((session as Record<string, unknown>)._frameCount as number) ?? 0) + 1) as number
+  if (fc === 1 || fc % 200 === 0) {
+    console.log(`📸 [bin] session=${sessionId.slice(0, 8)} frames=${fc} size=${jpegData.length >> 10}KB`)
+  }
+
+  // Recording (if active)
+  try {
+    if (isRecording(sessionId)) addFrame(sessionId, jpegData, width, height, seq)
+  } catch { /* recording errors must not drop frames */ }
+
+  // Throttle + forward to dashboard
+  if (!session.frameThrottle || session.frameThrottle()) {
+    if (session.dashboardSocket.readyState === 1) {
+      // Dashboard binary header: [width:4][height:4][seq:4][flags:1]
+      const hdr = Buffer.allocUnsafe(13)
+      hdr.writeUInt32BE(width,  0)
+      hdr.writeUInt32BE(height, 4)
+      hdr.writeUInt32BE(seq,    8)
+      hdr[12] = flags
+      try { session.dashboardSocket.send(Buffer.concat([hdr, jpegData])) } catch { /* ws closing */ }
+    }
+  }
+}
+
 export async function handleAgentMessage(
   socket: WebSocket,
   message: WSMessage,
