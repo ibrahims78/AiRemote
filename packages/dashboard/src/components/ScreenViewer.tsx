@@ -989,8 +989,9 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           <button onClick={refreshStream} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title="إعادة الاتصال"><RefreshCw size={13}/></button>
           <button onClick={stopStream}
             title="إيقاف البث"
-            className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-            <Square size={13}/>
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-red-400 hover:text-red-300 hover:bg-red-500/15 transition-colors text-[11px] font-medium">
+            <Square size={12} className="fill-current"/>
+            <span>إيقاف</span>
           </button>
           <button onClick={() => setFullscreen(f => !f)} className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors" title={fullscreen ? 'إنهاء ملء الشاشة' : 'ملء الشاشة'}>
             {fullscreen ? <Minimize2 size={13}/> : <Maximize2 size={13}/>}
