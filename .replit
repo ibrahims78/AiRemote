@@ -63,7 +63,6 @@ HOST = "0.0.0.0"
 NODE_ENV = "development"
 LOG_LEVEL = "info"
 DB_PATH = "./data/airemote.db"
-JWT_SECRET = "0d85db3ab62f51ae98c057268da088d5921f4d40e5e6c13099b601b911035f0e"
 
 [nix]
 channel = "stable-25_05"
