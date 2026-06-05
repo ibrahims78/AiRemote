@@ -47,7 +47,7 @@ interface MonitorInfo {
 }
 
 interface QualityPreset {
-  label: string; fps: number; quality: number
+  label: string; fps: number; quality: number; maxWidth: number
 }
 
 interface ChatMessage {
@@ -64,13 +64,13 @@ interface RecordingMeta {
   active:      boolean
 }
 
-// v3.0.0 — adds 30fps "عالي الأداء" option
+// maxWidth controls the agent-side resize — smaller = less bandwidth + faster encode
 const QUALITY_PRESETS: QualityPreset[] = [
-  { label: 'توفير',       fps: 1,  quality: 40 },
-  { label: 'متوسط',       fps: 3,  quality: 60 },
-  { label: 'جودة عالية',  fps: 5,  quality: 75 },
-  { label: 'ممتاز',       fps: 10, quality: 85 },
-  { label: 'عالي الأداء', fps: 30, quality: 85 },
+  { label: 'توفير',       fps: 1,  quality: 40, maxWidth: 640  },
+  { label: 'متوسط',       fps: 3,  quality: 60, maxWidth: 800  },
+  { label: 'جودة عالية',  fps: 5,  quality: 75, maxWidth: 1024 },
+  { label: 'ممتاز',       fps: 10, quality: 85, maxWidth: 1280 },
+  { label: 'عالي الأداء', fps: 30, quality: 85, maxWidth: 1280 },
 ]
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000
@@ -289,7 +289,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     if (myId !== connectIdRef.current) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const params   = new URLSearchParams({ ...authParam, deviceId, fps: String(p.fps), quality: String(p.quality) })
+    const params   = new URLSearchParams({ ...authParam, deviceId, fps: String(p.fps), quality: String(p.quality), maxWidth: String(p.maxWidth) })
     const ws       = new WebSocket(`${protocol}//${window.location.host}/screen?${params}`)
     ws.binaryType  = 'arraybuffer'   // receive binary frames as ArrayBuffer, not Blob
     wsRef.current  = ws
@@ -524,7 +524,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       setPreset(adj)
       // Reset seq so frames from the restarted capture loop are not dropped.
       lastSeqRef.current = -1
-      sendWs({ type: 'screen:set_quality', payload: { fps: newFps, quality: p.quality, monitorId: selectedMonRef.current } })
+      sendWs({ type: 'screen:set_quality', payload: { fps: newFps, quality: p.quality, maxWidth: p.maxWidth, monitorId: selectedMonRef.current } })
     }
   }, [latency]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -570,7 +570,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     setSelectedMonitor(id); setShowMonitors(false)
     // Reset seq so frames from the restarted capture loop are not dropped.
     lastSeqRef.current = -1
-    sendWs({ type: 'screen:set_monitor', payload: { monitorId: id, fps: preset.fps, quality: preset.quality } })
+    sendWs({ type: 'screen:set_monitor', payload: { monitorId: id, fps: preset.fps, quality: preset.quality, maxWidth: preset.maxWidth } })
   }
 
   // ── Clipboard ─────────────────────────────────────────────────────────────
@@ -726,7 +726,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       // Already connected — just tell the agent to change quality, no reconnect
       sendWs({
         type:    'screen:set_quality',
-        payload: { fps: p.fps, quality: p.quality, monitorId: selectedMonRef.current }
+        payload: { fps: p.fps, quality: p.quality, maxWidth: p.maxWidth, monitorId: selectedMonRef.current }
       })
     } else {
       // Not connected — do a full reconnect

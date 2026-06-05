@@ -17,7 +17,7 @@ const CONNECT_TIMEOUT = 60_000
 export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest) {
   const query = request.query as {
     ticket?: string; token?: string; deviceId?: string
-    fps?: string; quality?: string
+    fps?: string; quality?: string; maxWidth?: string
   }
 
   let userId = '', userEmail = '', userRole = ''
@@ -62,8 +62,9 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
     return
   }
 
-  const fps     = Math.min(MAX_FPS, Math.max(1, parseInt(query.fps     || String(DEFAULT_FPS))))
-  const quality = Math.min(95,      Math.max(10, parseInt(query.quality || '65')))
+  const fps      = Math.min(MAX_FPS, Math.max(1,   parseInt(query.fps      || String(DEFAULT_FPS))))
+  const quality  = Math.min(95,      Math.max(10,  parseInt(query.quality  || '65')))
+  const maxWidth = Math.min(1920,    Math.max(320, parseInt(query.maxWidth || '1280')))
 
   // Per-viewer DB session ID (unique for every WS connection, for history tracking)
   const viewerSessionId = uuidv4()
@@ -96,7 +97,7 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
     // ── New capture session: ask agent to start capturing ─────────────────
     const sent = deviceRegistry.sendToDevice(deviceId, {
       type:      'server:screen_start',
-      payload:   { sessionId: agentSessionId, fps, quality },
+      payload:   { sessionId: agentSessionId, fps, quality, maxWidth },
       timestamp: Date.now()
     })
 
@@ -155,13 +156,13 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           break
 
         case 'screen:set_quality': {
-          const newFps     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
-          const newQuality = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
-          const monId      = msg.payload?.monitorId ?? 0
-          deviceRegistry.setScreenFrameThrottle(agentSessionId, makeThrottle(newFps))
+          const newFps      = Math.min(MAX_FPS, Math.max(1,   parseInt(msg.payload?.fps      || fps)))
+          const newQuality  = Math.min(95,      Math.max(10,  parseInt(msg.payload?.quality  || quality)))
+          const newMaxWidth = Math.min(1920,    Math.max(320, parseInt(msg.payload?.maxWidth || maxWidth)))
+          const monId       = msg.payload?.monitorId ?? 0
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_start',
-            payload: { sessionId: agentSessionId, fps: newFps, quality: newQuality, monitorId: monId },
+            payload: { sessionId: agentSessionId, fps: newFps, quality: newQuality, maxWidth: newMaxWidth, monitorId: monId },
             timestamp: Date.now()
           })
           break
@@ -208,18 +209,18 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           break
 
         case 'screen:set_monitor': {
-          const monitorId   = msg.payload?.monitorId ?? 0
-          const newFps2     = Math.min(MAX_FPS, Math.max(1, parseInt(msg.payload?.fps     || fps)))
-          const newQuality2 = Math.min(95,      Math.max(10, parseInt(msg.payload?.quality || quality)))
+          const monitorId    = msg.payload?.monitorId ?? 0
+          const newFps2      = Math.min(MAX_FPS, Math.max(1,   parseInt(msg.payload?.fps      || fps)))
+          const newQuality2  = Math.min(95,      Math.max(10,  parseInt(msg.payload?.quality  || quality)))
+          const newMaxWidth2 = Math.min(1920,    Math.max(320, parseInt(msg.payload?.maxWidth || maxWidth)))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_set_monitor',
             payload: { sessionId: agentSessionId, monitorId },
             timestamp: Date.now()
           })
-          deviceRegistry.setScreenFrameThrottle(agentSessionId, makeThrottle(newFps2))
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_start',
-            payload: { sessionId: agentSessionId, fps: newFps2, quality: newQuality2, monitorId },
+            payload: { sessionId: agentSessionId, fps: newFps2, quality: newQuality2, maxWidth: newMaxWidth2, monitorId },
             timestamp: Date.now()
           })
           break

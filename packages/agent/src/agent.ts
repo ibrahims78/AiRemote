@@ -233,7 +233,7 @@ export class AgentService {
           break
         }
         case 'server:screen_start': {
-          const p = message.payload as { sessionId: string; fps: number; quality: number; monitorId?: number }
+          const p = message.payload as { sessionId: string; fps: number; quality: number; maxWidth?: number; monitorId?: number }
           this.handleScreenStart(p)
           break
         }
@@ -761,8 +761,8 @@ export class AgentService {
     }
   }
 
-  private handleScreenStart(p: { sessionId: string; fps: number; quality: number; monitorId?: number }): void {
-    const { sessionId, fps, quality, monitorId = 0 } = p
+  private handleScreenStart(p: { sessionId: string; fps: number; quality: number; maxWidth?: number; monitorId?: number }): void {
+    const { sessionId, fps, quality, maxWidth = 1280, monitorId = 0 } = p
 
     // Use clearScreenTimer (not stopScreenCapture) so we do NOT send agent:screen_closed
     // to the server when restarting for quality / monitor changes on the same session.
@@ -791,7 +791,7 @@ export class AgentService {
       try {
         const frame = await captureScreen({
           quality,
-          maxWidth: 1280,
+          maxWidth,
           monitorId: currentMonitorId,
           monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : undefined
         })

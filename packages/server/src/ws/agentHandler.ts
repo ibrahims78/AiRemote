@@ -59,14 +59,14 @@ export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Pr
     if (isRecording(sessionId)) addFrame(sessionId, jpegData, width, height, seq)
   } catch {}
 
-  if (!session.frameThrottle || session.frameThrottle()) {
-    const hdr = Buffer.allocUnsafe(13)
-    hdr.writeUInt32BE(width,  0)
-    hdr.writeUInt32BE(height, 4)
-    hdr.writeUInt32BE(seq,    8)
-    hdr[12] = flags
-    deviceRegistry.sendToScreenViewers(sessionId, Buffer.concat([hdr, jpegData]))
-  }
+  // No server-side throttle — the agent already respects the requested FPS via
+  // its own setInterval guard.  A second throttle here only introduces jitter.
+  const hdr = Buffer.allocUnsafe(13)
+  hdr.writeUInt32BE(width,  0)
+  hdr.writeUInt32BE(height, 4)
+  hdr.writeUInt32BE(seq,    8)
+  hdr[12] = flags
+  deviceRegistry.sendToScreenViewers(sessionId, Buffer.concat([hdr, jpegData]))
 }
 
 export async function handleAgentMessage(
@@ -348,7 +348,8 @@ export async function handleAgentMessage(
           }
         } catch {}
 
-        if (!session.frameThrottle || session.frameThrottle()) {
+        // No server-side throttle (agent already limits FPS via setInterval guard)
+        {
           deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
             type:    'screen:frame',
             payload: {
