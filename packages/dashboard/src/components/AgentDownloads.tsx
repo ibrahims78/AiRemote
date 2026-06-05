@@ -79,7 +79,7 @@ const BUILD_STATUS_POLL_MS = 2500
 export function AgentDownloads({ isAr }: Props) {
   const [releases,    setReleases]    = useState<Release[]>([])
   const [loading,     setLoading]     = useState(true)
-  const [version,     setVersion]     = useState('1.4.0')
+  const [version,     setVersion]     = useState('3.0.0')
   const [downloading] = useState<string | null>(null)
   const [buildStates, setBuildStates] = useState<Record<string, BuildState>>({})
   const [expanded,    setExpanded]    = useState<Record<string, boolean>>({})
