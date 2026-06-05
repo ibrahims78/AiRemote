@@ -163,6 +163,9 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const bwBytesRef         = useRef(0)
   const bwTimerRef         = useRef<ReturnType<typeof setInterval> | null>(null)
   const reconnectTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Monotonically increasing draw-call counter — used to discard stale
+  // createImageBitmap promises that complete out-of-order (race condition fix).
+  const drawSeqRef         = useRef(0)
   const reconnectCountRef  = useRef(0)
   const intentionalCloseRef = useRef(false)
 
@@ -193,6 +196,8 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   }, [])
 
   // ── Draw frame (createImageBitmap — faster decoding, no layout thrash) ───
+  // Each call gets a unique drawId; the .then() callback discards its result if
+  // a newer frame has already started decoding (prevents out-of-order redraws).
   const drawFrame = useCallback((base64: string, width: number, height: number) => {
     const canvas = canvasRef.current; if (!canvas) return
     const ctx    = canvas.getContext('2d'); if (!ctx) return
@@ -200,17 +205,22 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       canvas.width = width; canvas.height = height
       setResolution({ w: width, h: height })
     }
+    // Tag this decode with a monotonically-increasing ID
+    const drawId = ++drawSeqRef.current
     // Convert base64 → Blob → ImageBitmap (GPU-decoded, no onload queue)
     const byteStr = atob(base64)
     const bytes   = new Uint8Array(byteStr.length)
     for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i)
     const blob = new Blob([bytes], { type: 'image/jpeg' })
     createImageBitmap(blob).then(bmp => {
+      // Discard if a newer decode already completed (race-condition guard)
+      if (drawId < drawSeqRef.current) { bmp.close(); return }
       ctx.drawImage(bmp, 0, 0)
       bmp.close()
       fpsCountRef.current++
       setFrameCount(c => c + 1)
     }).catch(() => {
+      if (drawId < drawSeqRef.current) return   // stale — discard
       // fallback to img tag if createImageBitmap fails
       const img = imgRef.current
       img.onload = () => { ctx.drawImage(img, 0, 0); fpsCountRef.current++; setFrameCount(c => c + 1) }

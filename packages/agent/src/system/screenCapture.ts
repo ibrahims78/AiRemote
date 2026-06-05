@@ -26,7 +26,14 @@ export interface ScreenFrame {
 }
 
 const PLATFORM   = process.platform as 'win32' | 'linux' | 'darwin'
-const TMP_FRAME  = path.join(os.tmpdir(), `airemote_frame_${process.pid}.jpg`)
+
+// Generate a unique temp-file path per capture call so that:
+//   • There is no cross-capture file sharing / stale-read risk.
+//   • Anti-virus file-lock on the previous frame cannot block the next write.
+let _captureSeq = 0
+function makeTmpFrame(): string {
+  return path.join(os.tmpdir(), `airemote_frame_${process.pid}_${++_captureSeq}.jpg`)
+}
 
 // ── Platform detection (Linux only) ─────────────────────────────────────────
 type CaptureBackend = 'scrot' | 'import' | 'xwd' | 'screencapture' | 'powershell' | 'none'
@@ -176,8 +183,8 @@ function captureWithPersistentPs(
     let state: PsState
     try { state = ensurePsProcess() } catch (e) { reject(e); return }
 
-    const safeOut = outFile.replace(/\\/g, '\\\\')
-    const cmd = `${quality}|${maxWidth}|${monX}|${monY}|${monW}|${monH}|${safeOut}\n`
+    // PowerShell accepts paths with single backslashes — no doubling needed
+    const cmd = `${quality}|${maxWidth}|${monX}|${monY}|${monW}|${monH}|${outFile}\n`
 
     // Safety timeout — falls back to single-shot PS if persistent one hangs
     const timer = setTimeout(() => {
@@ -228,7 +235,7 @@ $tg.Dispose(); $bmp.Dispose()
 $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object {$_.MimeType -eq 'image/jpeg'}
 $params = New-Object System.Drawing.Imaging.EncoderParameters(1)
 $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Drawing.Imaging.Encoder]::Quality, [long]${quality})
-$thumb.Save("${outFile.replace(/\\/g, '\\\\')}",  $enc, $params)
+$thumb.Save("${outFile}",  $enc, $params)
 $thumb.Dispose()
 `.trim()
 
@@ -266,32 +273,36 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
 
       // ── scrot (Linux) ────────────────────────────────────────────────────
       case 'scrot': {
+        const tmpFile = makeTmpFrame()
         const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
         const cmd = hasMultiMon
-          ? `scrot --quality ${quality} --silent -a ${mon.x},${mon.y},${mon.width},${mon.height} "${TMP_FRAME}"`
-          : `scrot --quality ${quality} --silent "${TMP_FRAME}"`
+          ? `scrot --quality ${quality} --silent -a ${mon.x},${mon.y},${mon.width},${mon.height} "${tmpFile}"`
+          : `scrot --quality ${quality} --silent "${tmpFile}"`
         await withTimeout(execAsync(cmd, { env: envX }), 5000, 'scrot')
         try {
           await withTimeout(
-            execAsync(`convert "${TMP_FRAME}" -resize ${maxWidth}x\\> -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+            execAsync(`convert "${tmpFile}" -resize ${maxWidth}x\\> -quality ${quality} "${tmpFile}"`, { env: envX }),
             3000, 'convert'
           )
         } catch {}
-        jpegBuf = await fs.readFile(TMP_FRAME)
+        jpegBuf = await fs.readFile(tmpFile)
+        try { await fs.unlink(tmpFile) } catch {}
         break
       }
 
       // ── ImageMagick import (Linux) ───────────────────────────────────────
       case 'import': {
+        const tmpFile = makeTmpFrame()
         const envX = { ...process.env, DISPLAY: process.env.DISPLAY || ':0' }
         const cropArg = hasMultiMon
           ? `-crop ${mon.width}x${mon.height}+${mon.x}+${mon.y} +repage`
           : ''
         await withTimeout(
-          execAsync(`import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`, { env: envX }),
+          execAsync(`import -window root ${cropArg} -resize ${maxWidth}x -quality ${quality} "${tmpFile}"`, { env: envX }),
           5000, 'import'
         )
-        jpegBuf = await fs.readFile(TMP_FRAME)
+        jpegBuf = await fs.readFile(tmpFile)
+        try { await fs.unlink(tmpFile) } catch {}
         break
       }
 
@@ -310,17 +321,19 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
 
       // ── macOS screencapture ──────────────────────────────────────────────
       case 'screencapture': {
+        const tmpFile = makeTmpFrame()
         const displayArg = hasMultiMon ? `-D ${monitorId + 1}` : ''
-        await withTimeout(execAsync(`screencapture -x ${displayArg} -t jpg "${TMP_FRAME}"`), 5000, 'screencapture')
-        let raw = await fs.readFile(TMP_FRAME)
+        await withTimeout(execAsync(`screencapture -x ${displayArg} -t jpg "${tmpFile}"`), 5000, 'screencapture')
+        let raw = await fs.readFile(tmpFile)
         try {
           await withTimeout(
-            execAsync(`convert "${TMP_FRAME}" -resize ${maxWidth}x -quality ${quality} "${TMP_FRAME}"`),
+            execAsync(`convert "${tmpFile}" -resize ${maxWidth}x -quality ${quality} "${tmpFile}"`),
             3000, 'convert'
           )
-          raw = await fs.readFile(TMP_FRAME)
+          raw = await fs.readFile(tmpFile)
         } catch {}
         jpegBuf = raw
+        try { await fs.unlink(tmpFile) } catch {}
         break
       }
 
@@ -330,9 +343,11 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
         const monY = hasMultiMon ? mon.y      : 0
         const monW = hasMultiMon ? mon.width  : 0
         const monH = hasMultiMon ? mon.height : 0
+        // Unique file per capture — prevents AV/FS lock collisions between frames
+        const tmpFile = makeTmpFrame()
 
         try {
-          await captureWithPersistentPs(quality, maxWidth, monX, monY, monW, monH, TMP_FRAME)
+          await captureWithPersistentPs(quality, maxWidth, monX, monY, monW, monH, tmpFile)
         } catch (persistErr) {
           // Persistent process failed — kill it and fall back to single-shot
           console.warn('[screen] Persistent PS failed, falling back to single-shot:', (persistErr as Error).message)
@@ -340,10 +355,11 @@ export async function captureScreen(opts: Partial<CaptureOptions> = {}): Promise
             try { psState.proc.kill() } catch {}
             psState = null
           }
-          await captureWithSingleShotPs(quality, maxWidth, monX, monY, monW, monH, TMP_FRAME)
+          await captureWithSingleShotPs(quality, maxWidth, monX, monY, monW, monH, tmpFile)
         }
 
-        jpegBuf = await fs.readFile(TMP_FRAME)
+        jpegBuf = await fs.readFile(tmpFile)
+        try { await fs.unlink(tmpFile) } catch {}
         break
       }
 
@@ -384,5 +400,6 @@ process.on('exit', () => {
     try { psState.proc.kill() } catch {}
     psState = null
   }
-  try { require('fs').unlinkSync(TMP_FRAME) } catch {}
+  // Temp files are unique per capture and deleted immediately after reading —
+  // nothing left to clean up here.
 })

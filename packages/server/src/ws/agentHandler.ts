@@ -309,6 +309,12 @@ export async function handleAgentMessage(
       deviceRegistry.clearScreenConnectTimeout(p.sessionId)
       const session = deviceRegistry.getScreenSession(p.sessionId)
       if (session) {
+        // Diagnostic: log frame count milestones so we can confirm frames flow
+        const fc = ((session as any)._frameCount = ((session as any)._frameCount ?? 0) + 1) as number
+        if (fc === 1 || fc % 200 === 0) {
+          console.log(`📸 [screen] session=${p.sessionId.slice(0,8)} frames=${fc} size=${p.data.length >> 10}KB`)
+        }
+
         // Recording: add frame to recording if active
         try {
           const { isRecording, addFrame } = await import('../services/recording')
