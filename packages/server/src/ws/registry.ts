@@ -368,6 +368,49 @@ class DeviceRegistry {
     return undefined
   }
 
+  /** Returns a snapshot of every currently active screen session */
+  getAllActiveScreenSessions(): Array<{ sessionId: string; deviceId: string; userId?: string; startedAt: number }> {
+    const result: Array<{ sessionId: string; deviceId: string; userId?: string; startedAt: number }> = []
+    for (const [sessionId, s] of this.screenSessions) {
+      result.push({ sessionId, deviceId: s.deviceId, userId: s.userId, startedAt: s.startedAt })
+    }
+    return result
+  }
+
+  /**
+   * Force-stop a screen session from the server side (admin action).
+   * Notifies the dashboard that the session was closed, tells the agent to stop
+   * capturing, and removes the session from the registry.
+   * Returns the removed session (for DB update by the caller), or undefined if not found.
+   */
+  forceStopScreenSession(sessionId: string): { deviceId: string; startedAt: number } | undefined {
+    const session = this.screenSessions.get(sessionId)
+    if (!session) return undefined
+
+    // 1. Notify dashboard viewer — session closed by admin
+    try {
+      if (session.dashboardSocket.readyState === 1) {
+        session.dashboardSocket.send(JSON.stringify({
+          type:    'screen:closed',
+          payload: { reason: 'stopped_by_server' }
+        }))
+        session.dashboardSocket.close()
+      }
+    } catch {}
+
+    // 2. Tell the agent to stop capturing
+    this.sendToDevice(session.deviceId, {
+      type:      'server:screen_stop',
+      payload:   { sessionId },
+      timestamp: Date.now()
+    })
+
+    // 3. Remove from registry (clears connectTimeout if any)
+    this.removeScreenSession(sessionId)
+
+    return { deviceId: session.deviceId, startedAt: session.startedAt }
+  }
+
   getStats() {
     return {
       onlineDevices:    this.devices.size,

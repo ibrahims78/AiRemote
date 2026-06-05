@@ -4,6 +4,7 @@ import { getDb } from '../db/database'
 import { getDeviceById } from '../db/devices'
 import { getAllSessions, getSessionsByDevice, getSessionsByUser } from '../db/sessions'
 import type { AuthTokenPayload } from '@airemote/shared'
+import { deviceRegistry } from '../ws/registry'
 
 interface SessionWithDevice {
   id: string
@@ -59,5 +60,55 @@ export async function sessionRoutes(fastify: FastifyInstance) {
 
     const sessions = await getSessionsByDevice(deviceId)
     return enrichSessionsWithDeviceNames(sessions)
+  })
+
+  // ── Active screen sessions (in-memory registry) ──────────────────────────
+
+  /** List all currently active screen-sharing sessions (admin only) */
+  fastify.get('/screen/active', async (request, reply) => {
+    const user = request.user as unknown as AuthTokenPayload
+    if (user.role !== 'admin') return reply.code(403).send({ error: 'Forbidden' })
+
+    const raw = deviceRegistry.getAllActiveScreenSessions()
+
+    // Enrich with device names from DB
+    const db = getDb()
+    const deviceIds = [...new Set(raw.map(s => s.deviceId))]
+    let nameMap = new Map<string, string>()
+    if (deviceIds.length > 0) {
+      const placeholders = deviceIds.map(() => '?').join(',')
+      const result = await db.execute({ sql: `SELECT id, name FROM devices WHERE id IN (${placeholders})`, args: deviceIds })
+      for (const row of result.rows as unknown as { id: string; name: string }[]) {
+        nameMap.set(row.id, row.name)
+      }
+    }
+
+    return raw.map(s => ({
+      sessionId:  s.sessionId,
+      deviceId:   s.deviceId,
+      deviceName: nameMap.get(s.deviceId) || s.deviceId.slice(0, 8),
+      userId:     s.userId,
+      startedAt:  new Date(s.startedAt).toISOString()
+    }))
+  })
+
+  /** Force-stop a screen-sharing session (admin only) */
+  fastify.delete<{ Params: { sessionId: string } }>('/screen/:sessionId', async (request, reply) => {
+    const user = request.user as unknown as AuthTokenPayload
+    if (user.role !== 'admin') return reply.code(403).send({ error: 'Forbidden' })
+
+    const { sessionId } = request.params
+    const stopped = deviceRegistry.forceStopScreenSession(sessionId)
+    if (!stopped) return reply.code(404).send({ error: 'Screen session not found' })
+
+    // Update the DB record
+    const endedAt     = new Date().toISOString()
+    const durationSec = Math.round((Date.now() - stopped.startedAt) / 1000)
+    await getDb().execute({
+      sql:  `UPDATE sessions SET ended_at = ?, duration_sec = ? WHERE id = ?`,
+      args: [endedAt, durationSec, sessionId]
+    }).catch(() => {})
+
+    return { ok: true, sessionId, durationSec }
   })
 }
