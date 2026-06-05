@@ -1247,9 +1247,11 @@ ipcMain.on('save-config', (_, cfg) => {
 // ── T006: Host-side chat send ──────────────────────────────────────────────
 ipcMain.on('send-chat', (_, { text }) => {
   if (!text || !ws || ws.readyState !== WebSocket.OPEN) return
+  // Pick the first active screen session — agent-desktop runs one at a time
+  const sessionId = [...screenSessions.keys()][0] || undefined
   send({
     type:      'agent:screen_chat',
-    payload:   { text: String(text).trim(), sender: 'host', ts: Date.now() },
+    payload:   { sessionId, text: String(text).trim(), sender: 'host', ts: Date.now() },
     timestamp: Date.now()
   })
   addLog('info', `💬 [chat sent] ${text}`)

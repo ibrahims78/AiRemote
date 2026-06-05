@@ -250,19 +250,14 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
           const ts     = Date.now()
           if (!text.trim()) break
 
-          const entry = { text, sender, ts }
-          chatHistory.push(entry)
+          chatHistory.push({ text, sender, ts })
 
+          // Forward to agent — no echo back to sender (client adds optimistically)
           deviceRegistry.sendToDevice(deviceId, {
             type:    'server:screen_chat',
             payload: { sessionId: agentSessionId, text, sender, ts },
             timestamp: ts
           })
-
-          // Echo back only to THIS viewer (sender)
-          if (socket.readyState === 1) {
-            socket.send(JSON.stringify({ type: 'screen:chat', payload: { text, sender, ts } }))
-          }
           break
         }
 

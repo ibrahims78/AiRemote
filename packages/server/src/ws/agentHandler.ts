@@ -415,8 +415,15 @@ export async function handleAgentMessage(
     }
 
     case 'agent:screen_chat': {
-      const p = message.payload as { sessionId: string; text: string; sender: string; ts: number }
-      deviceRegistry.sendToScreenViewers(p.sessionId, JSON.stringify({
+      const p = message.payload as { sessionId?: string; text: string; sender: string; ts: number }
+      // Resolve sessionId: use explicit value, or fall back to the device's active session
+      let sid = p.sessionId
+      if (!sid) {
+        const devId = deviceRegistry.getDeviceIdBySocket(socket)
+        if (devId) sid = deviceRegistry.getActiveScreenSessionForDevice(devId)
+      }
+      if (!sid) return null
+      deviceRegistry.sendToScreenViewers(sid, JSON.stringify({
         type:    'screen:chat',
         payload: { text: p.text, sender: p.sender || 'host', ts: p.ts || Date.now() }
       }))
@@ -555,6 +562,20 @@ export async function sendFsReadChunked(
       reject(new Error('الجهاز غير متصل'))
     }
   })
+}
+
+/**
+ * Called by handler.ts when an agent WebSocket disconnects.
+ * Cleans up per-device in-memory state that the registry doesn't track.
+ */
+export function cleanupDevice(deviceId: string): void {
+  heartbeatCount.delete(deviceId)
+
+  // Cancel pending commands owned by this device.
+  // pendingCommands doesn't track deviceId, so we cancel ALL timed-out ones
+  // by letting their timeouts fire — nothing extra to do here.
+  // heartbeatCount is the only per-device Map we own.
+  void deviceId
 }
 
 export async function sendCommand(
