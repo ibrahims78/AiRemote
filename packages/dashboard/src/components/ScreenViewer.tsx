@@ -83,11 +83,12 @@ function fmtBytes(bytes: number): string {
 
 export function ScreenViewer({ deviceId, deviceName }: Props) {
   const { token, user } = useAuthStore()
-  const canvasRef    = useRef<HTMLCanvasElement>(null)
-  const wsRef        = useRef<WebSocket | null>(null)
-  const imgRef       = useRef<HTMLImageElement>(new Image())
-  const containerRef = useRef<HTMLDivElement>(null)
+  const canvasRef     = useRef<HTMLCanvasElement>(null)
+  const wsRef         = useRef<WebSocket | null>(null)
+  const imgRef        = useRef<HTMLImageElement>(new Image())
+  const containerRef  = useRef<HTMLDivElement>(null)
   const canvasAreaRef = useRef<HTMLDivElement>(null)
+  const startedRef    = useRef(false)   // mirror of `started` for event handlers
 
   // ── Streaming ─────────────────────────────────────────────────────────────
   const [status,         setStatus]         = useState<Status>('connecting')
@@ -143,7 +144,9 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const [frameStats,  setFrameStats]  = useState({ keyframes: 0, total: 0 })
 
   // ── Start gate — user must press "Start" before any WS connection opens ───
-  const [started, setStarted] = useState(false)
+  // Persist per-device: auto-restart if the user was streaming before leaving
+  const sessionKey = `screen:active:${deviceId}`
+  const [started, setStarted] = useState(() => sessionStorage.getItem(sessionKey) === '1')
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const fpsCountRef        = useRef(0)
@@ -169,6 +172,14 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const drawSeqRef         = useRef(0)
   const reconnectCountRef  = useRef(0)
   const intentionalCloseRef = useRef(false)
+
+  // Keep startedRef in sync so event handlers (visibilitychange) can read it
+  useEffect(() => { startedRef.current = started }, [started])
+  // Persist streaming state in sessionStorage so it survives navigation / HMR
+  useEffect(() => {
+    if (started) sessionStorage.setItem(sessionKey, '1')
+    else         sessionStorage.removeItem(sessionKey)
+  }, [started, sessionKey])
 
   useEffect(() => { presetRef.current     = preset        }, [preset])
   useEffect(() => { selectedMonRef.current = selectedMonitor }, [selectedMonitor])
@@ -371,7 +382,15 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           case 'screen:unavailable':
             setStatus('unavailable'); setErrorMsg(msg.payload?.message || 'مشاركة الشاشة غير متاحة'); break
           case 'screen:closed':
-            setStatus('disconnected'); break
+            setStatus('disconnected')
+            // Auto-reconnect unless the user explicitly clicked Stop
+            if (!intentionalCloseRef.current) {
+              reconnectTimerRef.current = setTimeout(() => {
+                reconnectTimerRef.current = null
+                if (!intentionalCloseRef.current) connect(presetRef.current, selectedMonRef.current)
+              }, 2000)
+            }
+            break
           case 'screen:monitors':
             setMonitors(msg.payload?.monitors || []); break
           case 'screen:clipboard':
@@ -429,9 +448,10 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
 
       if (!intentionalCloseRef.current && myId === connectIdRef.current) {
         const attempt = reconnectCountRef.current + 1
-        if (attempt <= 5) {
+        // No cap on reconnect attempts — keep trying until intentional stop
+        {
           reconnectCountRef.current = attempt
-          const delay = Math.min(2000 * attempt, 10_000)
+          const delay = Math.min(1500 * attempt, 8_000)
           reconnectTimerRef.current = setTimeout(() => {
             reconnectTimerRef.current = null
             if (!intentionalCloseRef.current && myId === connectIdRef.current) {
@@ -462,6 +482,27 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       if (bwTimerRef.current)         clearInterval(bwTimerRef.current)
     }
   }, [started]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Reconnect on tab focus or network restore ─────────────────────────────
+  useEffect(() => {
+    const tryReconnect = () => {
+      if (!startedRef.current) return
+      if (intentionalCloseRef.current) return
+      if (wsRef.current?.readyState === WebSocket.OPEN) return
+      if (wsRef.current?.readyState === WebSocket.CONNECTING) return
+      if (reconnectTimerRef.current) return   // already scheduled
+      reconnectCountRef.current = 0
+      connect(presetRef.current, selectedMonRef.current)
+    }
+    const onVisible = () => { if (!document.hidden) tryReconnect() }
+    const onOnline  = () => tryReconnect()
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('online', onOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [connect])
 
   // ── Fullscreen ────────────────────────────────────────────────────────────
   useEffect(() => {
