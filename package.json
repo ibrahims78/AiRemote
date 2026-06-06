@@ -15,6 +15,6 @@
     "packages/*"
   ],
   "dependencies": {
-    "pnpm": "^11.5.0"
+    "pnpm": "^11.5.1"
   }
 }

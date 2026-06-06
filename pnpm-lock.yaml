@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       pnpm:
-        specifier: ^11.5.0
+        specifier: ^11.5.1
         version: 11.5.1
 
   packages/agent:
