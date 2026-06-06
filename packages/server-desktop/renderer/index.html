@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ar" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
+  <title>AiRemote Server</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-logo">AI</div>
+    <span class="header-title">AiRemote Server</span>
+    <span class="header-version" id="hdr-version">v3.2.0</span>
+    <div class="header-spacer"></div>
+    <div class="header-status">
+      <div class="status-dot offline" id="hdr-dot"></div>
+      <span id="hdr-status-text">Stopped</span>
+    </div>
+  </header>
+
+  <div class="body-wrap">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Main</div>
+        <div class="nav-item active" data-page="dashboard">
+          <span class="nav-icon">⚡</span>
+          <span class="nav-label">Dashboard</span>
+        </div>
+        <div class="nav-item" data-page="devices">
+          <span class="nav-icon">🖥</span>
+          <span class="nav-label">Devices</span>
+          <span class="nav-badge" id="devices-badge" style="display:none">0</span>
+        </div>
+      </div>
+      <div class="sidebar-section" style="margin-top:8px">
+        <div class="sidebar-label">System</div>
+        <div class="nav-item" data-page="logs">
+          <span class="nav-icon">📋</span>
+          <span class="nav-label">Logs</span>
+        </div>
+        <div class="nav-item" data-page="backup">
+          <span class="nav-icon">💾</span>
+          <span class="nav-label">Backup</span>
+        </div>
+        <div class="nav-item" data-page="settings">
+          <span class="nav-icon">⚙</span>
+          <span class="nav-label">Settings</span>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <div class="version-text">AiRemote Server Desktop<br>v3.2.0 © 2025</div>
+      </div>
+    </nav>
+
+    <!-- Content -->
+    <main class="content">
+
+      <!-- ── Dashboard ──────────────────────────────────────────────────── -->
+      <section class="page active" id="page-dashboard">
+        <div class="page-header">
+          <div class="page-title">Dashboard</div>
+          <div class="page-subtitle" id="dash-uptime">Server is offline</div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Status</div>
+            <div class="stat-value" id="stat-status">Offline</div>
+            <div class="stat-sub" id="stat-port">Port: —</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Devices Online</div>
+            <div class="stat-value" id="stat-devices">0</div>
+            <div class="stat-sub">Connected agents</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Local IP</div>
+            <div class="stat-value" id="stat-ip" style="font-size:14px">—</div>
+            <div class="stat-sub">LAN address</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Tunnel</div>
+            <div class="stat-value" id="stat-tunnel" style="font-size:13px">OFF</div>
+            <div class="stat-sub" id="stat-tunnel-mode">Mode: LAN</div>
+          </div>
+        </div>
+
+        <!-- Server control -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Server Control</span>
+            <div class="btn-group">
+              <button class="btn btn-primary" id="btn-start-server">▶ Start Server</button>
+              <button class="btn btn-danger"  id="btn-stop-server" style="display:none">■ Stop Server</button>
+              <button class="btn btn-ghost"   id="btn-open-dashboard">🌐 Open Dashboard</button>
+            </div>
+          </div>
+
+          <!-- URLs -->
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div class="url-box">
+              <span class="url-label">LAN</span>
+              <span class="url-value offline" id="url-lan">Server offline</span>
+              <button class="btn btn-ghost btn-sm" id="btn-copy-lan" style="display:none">Copy</button>
+            </div>
+            <div class="url-box" id="url-cf-row">
+              <span class="url-label">Cloudflare</span>
+              <span class="url-value offline" id="url-cf">Not connected</span>
+              <button class="btn btn-ghost btn-sm" id="btn-copy-cf" style="display:none">Copy</button>
+            </div>
+          </div>
+
+          <hr class="divider">
+          <div class="btn-group">
+            <button class="btn btn-success btn-sm" id="btn-tunnel-start">🌐 Start CF Tunnel</button>
+            <button class="btn btn-ghost   btn-sm" id="btn-tunnel-stop" style="display:none">Stop Tunnel</button>
+          </div>
+        </div>
+
+        <!-- Agent connection string -->
+        <div class="card" id="card-connect-str" style="display:none">
+          <div class="card-header"><span class="card-title">Agent Connection String</span></div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">
+            Use this URL when registering agents. Cloudflare URL is used when tunnel is active.
+          </div>
+          <div class="url-box">
+            <span class="url-label">WS URL</span>
+            <span class="url-value" id="url-ws-connect" style="font-size:11px">—</span>
+            <button class="btn btn-ghost btn-sm" id="btn-copy-ws">Copy</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Devices ─────────────────────────────────────────────────────── -->
+      <section class="page" id="page-devices">
+        <div class="page-header">
+          <div class="page-title">Devices</div>
+          <div class="page-subtitle">Registered agents — click to copy token</div>
+        </div>
+        <div class="btn-group" style="margin-bottom:14px">
+          <button class="btn btn-primary btn-sm" id="btn-add-device">+ Add Device</button>
+          <button class="btn btn-ghost   btn-sm" id="btn-refresh-devices">↻ Refresh</button>
+        </div>
+        <div id="device-list" class="device-list">
+          <div class="empty-state"><div class="empty-icon">🖥</div><div class="empty-text">No devices registered</div></div>
+        </div>
+      </section>
+
+      <!-- ── Logs ───────────────────────────────────────────────────────── -->
+      <section class="page" id="page-logs">
+        <div class="page-header"><div class="page-title">Logs</div></div>
+        <div class="log-toolbar">
+          <div class="log-filter">
+            <button class="log-filter-btn active all" data-filter="all">All</button>
+            <button class="log-filter-btn info"  data-filter="info">INFO</button>
+            <button class="log-filter-btn warn"  data-filter="warn">WARN</button>
+            <button class="log-filter-btn error" data-filter="error">ERROR</button>
+          </div>
+          <div style="flex:1"></div>
+          <button class="btn btn-ghost btn-sm" id="btn-clear-logs">Clear</button>
+          <button class="btn btn-ghost btn-sm" id="btn-export-logs">⬇ Export</button>
+          <label class="form-check" style="font-size:11px">
+            <input type="checkbox" id="chk-autoscroll" checked> Auto-scroll
+          </label>
+        </div>
+        <div class="log-container" id="log-container"></div>
+      </section>
+
+      <!-- ── Backup ─────────────────────────────────────────────────────── -->
+      <section class="page" id="page-backup">
+        <div class="page-header">
+          <div class="page-title">Backup & Restore</div>
+          <div class="page-subtitle">Database and configuration backup</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Manual Backup</span></div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+            Creates a ZIP containing your database (airemote.db) and config (config.json)
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary btn-sm" id="btn-export-backup">⬇ Export Backup</button>
+            <button class="btn btn-ghost   btn-sm" id="btn-import-backup">⬆ Restore from ZIP</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Auto Backup</span></div>
+          <div class="form-group">
+            <label class="toggle-wrap">
+              <label class="toggle"><input type="checkbox" id="chk-backup-enabled"><span class="toggle-slider"></span></label>
+              <span class="toggle-label">Enable automatic backups</span>
+            </label>
+          </div>
+          <div id="backup-sched-opts">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Interval (hours)</label>
+                <input class="form-input" type="number" id="inp-backup-interval" min="1" max="720" value="24">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Save to folder</label>
+                <div style="display:flex;gap:6px">
+                  <input class="form-input" type="text" id="inp-backup-dir" placeholder="Select folder..." readonly>
+                  <button class="btn btn-ghost btn-sm" id="btn-pick-backup-dir">...</button>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-save-backup-sched">Save Schedule</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Data Location</span></div>
+          <div class="url-box" style="margin-bottom:8px">
+            <span class="url-label">Data Dir</span>
+            <span class="url-value" id="txt-data-dir" style="font-size:11px">Loading...</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-open-data-dir">Open in Explorer</button>
+        </div>
+      </section>
+
+      <!-- ── Settings ───────────────────────────────────────────────────── -->
+      <section class="page" id="page-settings">
+        <div class="page-header">
+          <div class="page-title">Settings</div>
+          <div class="page-subtitle">Server configuration</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Connection</span></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Server Port</label>
+              <input class="form-input" type="number" id="inp-port" value="3001" min="1024" max="65535">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Connection Mode</label>
+              <select class="form-select" id="sel-mode">
+                <option value="lan">LAN (Local Network)</option>
+                <option value="cloudflare">Cloudflare Tunnel (Internet)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-hint">Changing port requires server restart.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Startup</span></div>
+          <div class="form-group">
+            <label class="toggle-wrap">
+              <label class="toggle"><input type="checkbox" id="chk-auto-start"><span class="toggle-slider"></span></label>
+              <span class="toggle-label">Start server automatically on app launch</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="toggle-wrap">
+              <label class="toggle"><input type="checkbox" id="chk-win-startup"><span class="toggle-slider"></span></label>
+              <span class="toggle-label">Launch AiRemote Server with Windows</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Security</span></div>
+          <div class="form-group">
+            <label class="form-label">JWT Secret (auto-generated)</label>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" type="password" id="inp-jwt" readonly placeholder="Auto-generated — never share this">
+              <button class="btn btn-ghost btn-sm" id="btn-show-jwt">Show</button>
+            </div>
+            <div class="form-hint">This secret signs all authentication tokens. Never share it.</div>
+          </div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Add device modal -->
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center;">
+  <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:24px;width:360px;max-width:90vw;">
+    <h3 style="font-size:15px;margin-bottom:16px;color:var(--text-primary)">Add New Device</h3>
+    <div class="form-group">
+      <label class="form-label">Device Name</label>
+      <input class="form-input" type="text" id="modal-device-name" placeholder="e.g. Home PC">
+    </div>
+    <div class="btn-group" style="justify-content:flex-end">
+      <button class="btn btn-ghost" id="btn-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="btn-modal-confirm">Create Device</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

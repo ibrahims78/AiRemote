@@ -156,6 +156,32 @@ const RELEASE_DEFS: ReleaseDef[] = [
       ],
     },
   },
+  {
+    id:        'server-win',
+    label_ar:  'AiRemote Server (Windows Desktop)',
+    label_en:  'AiRemote Server (Windows Desktop)',
+    badge_ar:  'سيرفر',
+    badge_en:  'Server',
+    desc_ar:   'تطبيق سطح مكتب Windows لتشغيل سيرفر AiRemote — واجهة رسومية، Cloudflare Tunnel، نسخ احتياطي',
+    desc_en:   'Windows Desktop app that runs AiRemote server — UI, Cloudflare Tunnel, backup, watchdog',
+    filename:  `AiRemote-Server-v${AGENT_VERSION}-Windows-x64.zip`,
+    dir:       'server-windows',
+    platform:  'windows',
+    size_hint: '~135 MB',
+    buildCmd: {
+      cwd:  path.join(REPO_ROOT, 'packages', 'server-desktop'),
+      cmd:  'sh',
+      args: [
+        '-c',
+        [
+          // Download cloudflared Windows binary if missing
+          `node ../../scripts/download-cloudflared.js`,
+          // Build electron app for Windows x64
+          `node_modules/.bin/electron-builder --win --x64 --config.compression=maximum`,
+        ].join(' && '),
+      ],
+    },
+  },
 ]
 
 // ── Helpers ────────────────────────────────────────────────────────────────
