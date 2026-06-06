@@ -53,6 +53,34 @@ let psInputReady   = false
 let capScreenW     = 1920   // updated from captured frame dimensions (used for abs coords)
 let capScreenH     = 1080
 
+// ─── FPS & Frame Tracking ─────────────────────────────────────────────────
+const sessionFrameCounts  = new Map()   // sessionId → total frames sent
+const sessionFrameTimes   = new Map()   // sessionId → [recent timestamps]
+const SESSION_FPS_WINDOW  = 30          // rolling window for FPS calculation
+
+function recordFrame(sessionId) {
+  const now = Date.now()
+  let times = sessionFrameTimes.get(sessionId) || []
+  times.push(now)
+  if (times.length > SESSION_FPS_WINDOW) times = times.slice(-SESSION_FPS_WINDOW)
+  sessionFrameTimes.set(sessionId, times)
+  const count = (sessionFrameCounts.get(sessionId) || 0) + 1
+  sessionFrameCounts.set(sessionId, count)
+  return count
+}
+
+function getSessionFps(sessionId) {
+  const times = sessionFrameTimes.get(sessionId) || []
+  if (times.length < 2) return 0
+  const elapsed = (times[times.length - 1] - times[0]) / 1000
+  return elapsed > 0 ? ((times.length - 1) / elapsed).toFixed(1) : 0
+}
+
+function clearSessionStats(sessionId) {
+  sessionFrameCounts.delete(sessionId)
+  sessionFrameTimes.delete(sessionId)
+}
+
 // ─── v3.0.0 State ─────────────────────────────────────────────────────────
 let dockerAvailable  = false
 /** @type {Map<string, {chunks: Map<number, Buffer>, total: number, path: string}>} */
@@ -111,10 +139,25 @@ function fetchPublicIp() {
 
 // ─── Logging ──────────────────────────────────────────────────────────────
 function addLog(level, msg) {
-  const entry = { t: new Date().toLocaleTimeString('en', { hour12: false }), level, msg }
+  const ts    = new Date()
+  const clock = ts.toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const ms    = String(ts.getMilliseconds()).padStart(3, '0')
+  const entry = { t: `${clock}.${ms}`, level, msg }
   logEntries.push(entry)
   if (logEntries.length > LOG_MAX) logEntries.shift()
   if (win && !win.isDestroyed()) win.webContents.send('log', entry)
+  // Mirror to console so Electron DevTools / --inspect sees everything
+  if (level === 'error') console.error(`[${entry.t}] ${msg}`)
+  else if (level === 'warn')  console.warn(`[${entry.t}] ${msg}`)
+  else                        console.log(`[${entry.t}] ${msg}`)
+}
+
+// ─── Tray Balloon Notification ─────────────────────────────────────────────
+function notify(title, body, icon = 'info') {
+  if (!tray) return
+  try {
+    tray.displayBalloon({ title, content: body, iconType: icon, largeIcon: false, respectQuietTime: false })
+  } catch { /* displayBalloon not available on all platforms */ }
 }
 
 // ─── Status ───────────────────────────────────────────────────────────────
@@ -305,20 +348,21 @@ function doConnect() {
 
   ws.on('open', async () => {
     reconnectDelay = RECONNECT_BASE
-    addLog('info', '✅ اتصل بالخادم — جاري التسجيل...')
+    addLog('info', `✅ [ws] اتصل بالخادم — جاري التسجيل... (v${AGENT_VERSION})`)
+    notify('AiRemote — متصل', `🔗 متصل بالخادم (v${AGENT_VERSION})`)
     try {
-      // T005: detect Docker once per connection
       dockerAvailable = await detectDocker()
-      if (dockerAvailable) addLog('info', '🐳 Docker: متاح')
+      if (dockerAvailable) addLog('info', '🐳 [docker] متاح على هذا الجهاز')
 
       const info  = getDeviceInfo()
       const stats = await getStats()
       const shell = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
+      addLog('info', `📋 [register] hostname=${info.hostname} os=${info.osVersion} shell=${shell}`)
       send({
         type: 'agent:register',
         payload: {
           token:        config.token.trim(),
-          info,
+          info:         { ...info, agentVersion: AGENT_VERSION },
           stats,
           tunnelLayer:  'relay',
           capabilities: {
@@ -330,9 +374,9 @@ function doConnect() {
         timestamp: Date.now()
       })
       startHeartbeat()
-      addLog('info', `🖥 PTY Shell: مفعّل | v${AGENT_VERSION} | Screen: مفعّل`)
+      addLog('info', `🖥️ [caps] PTY=${shell} · Screen=مفعّل · Clipboard=مفعّل · Docker=${dockerAvailable}`)
     } catch (e) {
-      addLog('error', `خطأ في التسجيل: ${e.message}`)
+      addLog('error', `❌ [register] خطأ في التسجيل: ${e.message}`)
     }
   })
 
@@ -340,17 +384,19 @@ function doConnect() {
     try { handleMsg(JSON.parse(data.toString())) } catch {}
   })
 
-  ws.on('close', (code) => {
+  ws.on('close', (code, reason) => {
     clearTimers()
     if (agentState !== 'stopped') {
-      addLog('warn', `📴 انقطع الاتصال (${code}) — إعادة الاتصال...`)
+      const why = reason?.toString() || `code=${code}`
+      addLog('warn', `📴 [ws] انقطع الاتصال — ${why} — إعادة المحاولة خلال ${(reconnectDelay / 1000).toFixed(0)}ث`)
+      notify('AiRemote — انقطع الاتصال', `📴 ${why}`, 'warning')
       setState('connecting')
       scheduleReconnect()
     }
   })
 
   ws.on('error', err => {
-    addLog('error', `🔴 ${err.message}`)
+    addLog('error', `🔴 [ws] ${err.message}`)
   })
 }
 
@@ -359,7 +405,8 @@ function handleMsg(msg) {
     case 'server:registered': {
       deviceId = msg.payload?.deviceId
       setState('connected')
-      addLog('info', `✅ مسجل بنجاح — Device ID: ${deviceId?.slice(0, 12)}...`)
+      addLog('info', `✅ [server] مسجل بنجاح — Device ID: ${deviceId}`)
+      notify('AiRemote — تم التسجيل', `✅ Device: ${deviceId?.slice(0, 12)}...`)
       // Pre-warm the capture window so the first screen session starts instantly
       setTimeout(() => { try { createCaptureWindow() } catch {} }, 1500)
       break
@@ -699,7 +746,7 @@ goto loop
 
 function handlePtyOpen(payload) {
   const { sessionId, rows = 24, cols = 80, shell: hint = 'auto' } = payload
-  addLog('info', `🖥 PTY فُتح (${sessionId.slice(0, 8)})`)
+  addLog('info', `🖥️ [pty] فُتح — session=${sessionId.slice(0, 8)} shell=${hint} ${cols}×${rows}`)
 
   let cmd, args, tmpScript = null
 
@@ -756,13 +803,13 @@ function handlePtyOpen(payload) {
       ptyProcs.delete(sessionId)
       _cleanWinBuf(sessionId)
       if (win && !win.isDestroyed()) win.webContents.send('pty-state', { active: false, sessionId })
-      addLog('info', `🖥 PTY أُغلق (${sessionId.slice(0, 8)})`)
+      addLog('info', `🖥️ [pty] أُغلق — session=${sessionId.slice(0, 8)}`)
     })
     proc.on('error', err => {
       send({ type: 'agent:pty_error', payload: { sessionId, message: err.message }, timestamp: Date.now() })
       ptyProcs.delete(sessionId)
       _cleanWinBuf(sessionId)
-      addLog('error', `PTY error: ${err.message}`)
+      addLog('error', `🖥️ [pty] خطأ — ${err.message}`)
     })
   } catch (e) {
     _cleanWinBuf(sessionId)
@@ -896,9 +943,14 @@ function broadcastScreenSessions() {
 
 function handleScreenStart(payload) {
   const { sessionId, fps, quality, monitorId } = payload
-  addLog('info', `🖥️ Screen: بدء البث (${sessionId.slice(0, 8)})`)
-  screenSessions.set(sessionId, { fps, quality })
+  const sid8 = sessionId.slice(0, 8)
+  addLog('info', `🖥️ [screen] بدء البث — session=${sid8} fps=${fps} quality=${quality}% monitor=${monitorId ?? 0}`)
+  screenSessions.set(sessionId, { fps, quality, startedAt: Date.now() })
+  sessionFrameCounts.delete(sessionId)
+  sessionFrameTimes.delete(sessionId)
   broadcastScreenSessions()
+  refreshTray()
+  notify('AiRemote — بث الشاشة', `📡 بدأ البث (${fps} fps · جودة ${quality}%)`)
   const cw     = createCaptureWindow()
   const doSend = () => cw.webContents.send('start-capture', { sessionId, fps, quality, monitorIndex: monitorId || 0 })
   if (cw.webContents.isLoading()) cw.webContents.once('did-finish-load', doSend)
@@ -908,9 +960,17 @@ function handleScreenStart(payload) {
 
 function handleScreenStop(payload) {
   const { sessionId } = payload
-  addLog('info', `🖥️ Screen: إيقاف (${sessionId.slice(0, 8)})`)
+  const sid8   = sessionId.slice(0, 8)
+  const info   = screenSessions.get(sessionId)
+  const total  = sessionFrameCounts.get(sessionId) || 0
+  const dur    = info?.startedAt ? ((Date.now() - info.startedAt) / 1000).toFixed(1) : '?'
+  const avgFps = dur > 0 && total > 0 ? (total / Number(dur)).toFixed(1) : '?'
+  addLog('info', `🖥️ [screen] إيقاف البث — session=${sid8} frames=${total} duration=${dur}s avgFps=${avgFps}`)
+  clearSessionStats(sessionId)
   screenSessions.delete(sessionId)
   broadcastScreenSessions()
+  refreshTray()
+  notify('AiRemote — انتهى البث', `⏹️ انتهت الجلسة (${total} إطار · ${dur}s)`, 'none')
   if (capWin && !capWin.isDestroyed()) capWin.webContents.send('stop-capture', { sessionId })
   send({ type: 'agent:screen_closed', payload: { sessionId }, timestamp: Date.now() })
   if (screenSessions.size === 0) destroyCaptureWindow()
@@ -1050,10 +1110,13 @@ function injectKey(payload) {
 function executeCommand(payload) {
   if (payload.type !== 'shell' || !payload.command) return
   const cmd = payload.command
-  addLog('info', `▶ تنفيذ: ${cmd}`)
+  addLog('info', `▶ [cmd] تنفيذ: ${cmd}`)
   const t0 = Date.now()
   exec(cmd, { shell: 'cmd.exe', timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-    addLog(err ? 'error' : 'info', `✔ انتهى في ${Date.now() - t0}ms`)
+    const dur     = Date.now() - t0
+    const preview = (stdout || stderr || '').trim().slice(0, 120)
+    const level   = err ? 'error' : 'info'
+    addLog(level, `${err ? '✖' : '✔'} [cmd] exitCode=${err?.code ?? 0} dur=${dur}ms${preview ? ' → ' + preview : ''}`)
     send({
       type: 'agent:command_result',
       payload: {
@@ -1061,7 +1124,7 @@ function executeCommand(payload) {
         stdout:    stdout || '',
         stderr:    stderr || (err?.message || ''),
         exitCode:  err?.code ?? 0,
-        duration:  Date.now() - t0
+        duration:  dur
       },
       timestamp: Date.now()
     })
@@ -1126,16 +1189,29 @@ function createTray() {
 
 function refreshTray() {
   if (!tray) return
+  const activeSessions = screenSessions.size
+  const streaming      = activeSessions > 0
+  const streamingLabel = streaming ? ` · 📡 بث (${activeSessions} جلسة)` : ''
   const labels = {
     stopped:    'Stopped / متوقف',
     connecting: 'Connecting... / جاري الاتصال',
     connected:  `Connected — ${os.hostname()}`,
     error:      'Error / خطأ'
   }
-  tray.setToolTip(`AiRemote Agent  ·  ${labels[agentState] || agentState}`)
+  const statusLabel = labels[agentState] || agentState
+  tray.setToolTip(`AiRemote Agent v${AGENT_VERSION}  ·  ${statusLabel}${streamingLabel}`)
+
+  const sessionItems = []
+  for (const [sid, info] of screenSessions) {
+    const fps   = getSessionFps(sid)
+    const total = sessionFrameCounts.get(sid) || 0
+    sessionItems.push({ label: `  📸 ${sid.slice(0,8)} — ${fps} fps · ${total} إطار`, enabled: false })
+  }
+
   const menu = Menu.buildFromTemplate([
-    { label: 'AiRemote Agent', enabled: false },
-    { label: labels[agentState] || agentState, enabled: false },
+    { label: `AiRemote Agent  v${AGENT_VERSION}`, enabled: false },
+    { label: statusLabel + streamingLabel, enabled: false },
+    ...(sessionItems.length ? [{ type: 'separator' }, ...sessionItems] : []),
     { type: 'separator' },
     { label: 'Open / فتح', click: showWindow },
     { type: 'separator' },
@@ -1351,25 +1427,36 @@ ipcMain.on('screen-frame-binary', (_, { sessionId, width, height, seq, buffer })
 
   const sidBuf = Buffer.allocUnsafe(36)
   sidBuf.fill(0)
-  Buffer.from(sessionId, 'utf8').copy(sidBuf)   // max 36 bytes; UUID is exactly 36
+  Buffer.from(sessionId, 'utf8').copy(sidBuf)
 
   const header = Buffer.allocUnsafe(50)
-  header[0] = 0x01                              // message type: screen frame
+  header[0] = 0x01
   sidBuf.copy(header, 1)
   header.writeUInt32BE(width  >>> 0, 37)
   header.writeUInt32BE(height >>> 0, 41)
   header.writeUInt32BE(seq    >>> 0, 45)
-  header[49] = 0                                // flags (reserved)
+  header[49] = 0
 
   const jpegBuf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
   try { ws.send(Buffer.concat([header, jpegBuf])) } catch { /* ws closing */ }
+
+  // Track FPS & log milestones
+  const count = recordFrame(sessionId)
+  if (count === 1 || count % 100 === 0) {
+    const fps  = getSessionFps(sessionId)
+    const kb   = (jpegBuf.length / 1024).toFixed(1)
+    addLog('info', `📸 [screen] frame=${count} fps=${fps} size=${kb}KB ${width}×${height} session=${sessionId.slice(0,8)}`)
+  }
 })
 
 ipcMain.on('screen-error', (_, p) => {
-  addLog('warn', `🖥️ Screen error: ${p.message}`)
+  addLog('warn', `🖥️ [screen] خطأ في البث — ${p.message}`)
+  notify('AiRemote — خطأ في البث', `⚠️ ${p.message}`, 'warning')
   send({ type: 'agent:screen_error', payload: p, timestamp: Date.now() })
+  clearSessionStats(p.sessionId)
   screenSessions.delete(p.sessionId)
   broadcastScreenSessions()
+  refreshTray()
   if (screenSessions.size === 0) destroyCaptureWindow()
 })
 

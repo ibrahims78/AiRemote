@@ -8,10 +8,6 @@ localPort = 3001
 externalPort = 3001
 
 [[ports]]
-localPort = 5000
-externalPort = 80
-
-[[ports]]
 localPort = 5001
 externalPort = 3000
 
@@ -40,7 +36,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @airemote/shared build && pnpm --filter @airemote/ai-engine build && cd packages/server && pnpm dev"
+args = "packages/server/node_modules/.bin/tsx watch packages/server/src/index.ts"
 waitForPort = 3001
 
 [[workflows.workflow]]

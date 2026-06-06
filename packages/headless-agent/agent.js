@@ -1,17 +1,20 @@
 'use strict'
 
 /**
- * AiRemote Agent — Headless / CLI  v3.0.0
+ * AiRemote Agent — Headless / CLI  v3.2.0
  * No UI, no Electron. Runs as a background process or service.
  * Config: SERVER_URL and DEVICE_TOKEN env vars, or config file, or --server/--token CLI args
  *
- * v3.0.0 features:
+ * v3.2.0 features:
  *   T001 Screen delta encoding (hash deduplication + adaptive quality)
  *   T002 Chunked file write (server:fs_write_chunk, 512 KB chunks)
  *   T003 PTY resize on Windows (VT100 \x1b[8;rows;colst hint)
  *   T004 Consent dialog (AGENT_UNATTENDED + AGENT_CONSENT_TIMEOUT)
  *   T005 Docker capability detection
  *   T006 In-session text chat relay
+ *   T007 Millisecond-precision log timestamps
+ *   T008 Binary screen frame support (sendBinaryFrame — no base64)
+ *   T009 ffmpeg gdigrab capture (15–30 fps on Windows)
  */
 
 const WebSocket = require('ws')
@@ -31,7 +34,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 const HEARTBEAT_MS          = 10_000
 const RECONNECT_BASE        = 2_000
 const RECONNECT_MAX         = 30_000
-const VERSION               = '3.1.0'
+const VERSION               = '3.2.0'
 const CONSENT_TIMEOUT_SEC   = parseInt(process.env.AGENT_CONSENT_TIMEOUT || '30', 10)
 
 // ─── State ────────────────────────────────────────────────────────────────
@@ -85,9 +88,13 @@ function saveConfig(cfg) {
 
 // ─── Logging ──────────────────────────────────────────────────────────────
 function log(level, msg) {
-  const ts   = new Date().toISOString().replace('T', ' ').slice(0, 19)
-  const icon = level === 'error' ? '✖' : level === 'warn' ? '⚠' : '●'
-  console.log(`[${ts}] ${icon} ${msg}`)
+  const now  = new Date()
+  const ts   = now.toISOString().replace('T', ' ').slice(0, 19) + '.' + String(now.getMilliseconds()).padStart(3, '0')
+  const icon = level === 'error' ? '✖' : level === 'warn' ? '⚠' : level === 'debug' ? '·' : '●'
+  const out  = `[${ts}] ${icon} ${msg}`
+  if (level === 'error') console.error(out)
+  else if (level === 'warn') console.warn(out)
+  else console.log(out)
 }
 
 // ─── T005: Docker detection ───────────────────────────────────────────────
@@ -423,7 +430,7 @@ function connect() {
 
   ws.on('open', async () => {
     reconnectDelay = RECONNECT_BASE
-    log('info', '✅ Connected — registering...')
+    log('info', `✅ [ws] Connected to ${url} (v${VERSION})`)
     try {
       const info   = getDeviceInfo()
       const stats  = await getStats()
@@ -431,13 +438,14 @@ function connect() {
       dockerAvailable = await detectDocker()
       const shell  = process.platform === 'win32' ? 'powershell' : (process.env.SHELL || '/bin/bash')
 
-      log('info', `🐳 Docker: ${dockerAvailable ? 'available' : 'not found'}`)
+      log('info', `📋 [register] hostname=${info.hostname} os=${info.osVersion} ip=${info.ipLocal}`)
+      log('info', `🐳 [docker] ${dockerAvailable ? 'available' : 'not found'} | SSH: ${sshAvailable ? 'port 22 open' : 'not detected'}`)
 
       send({
         type: 'agent:register',
         payload: {
           token: config.token.trim(),
-          info,
+          info:  { ...info, agentVersion: VERSION },
           stats,
           tunnelLayer: 'relay',
           capabilities: {
@@ -455,9 +463,9 @@ function connect() {
         timestamp: Date.now()
       })
       startHeartbeat()
-      log('info', `🖥  PTY: ready | SSH: ${sshAvailable ? 'available' : 'not detected'} | Docker: ${dockerAvailable ? 'yes' : 'no'} | v${VERSION}`)
+      log('info', `🖥️ [caps] PTY=${shell} · SSH=${sshAvailable} · Docker=${dockerAvailable} · v${VERSION}`)
     } catch (e) {
-      log('error', `Registration error: ${e.message}`)
+      log('error', `❌ [register] Registration error: ${e.message}`)
     }
   })
 
@@ -465,16 +473,17 @@ function connect() {
     try { handleMsg(JSON.parse(data.toString())) } catch {}
   })
 
-  ws.on('close', code => {
+  ws.on('close', (code, reason) => {
     clearTimers()
     if (running) {
-      log('warn', `Disconnected (${code}) — reconnecting...`)
+      const why = reason?.toString() || `code=${code}`
+      log('warn', `📴 [ws] Disconnected — ${why} — reconnecting in ${(reconnectDelay / 1000).toFixed(0)}s`)
       scheduleReconnect()
     }
   })
 
   ws.on('error', err => {
-    log('error', `Socket error: ${err.message}`)
+    log('error', `🔴 [ws] Socket error: ${err.message}`)
   })
 }
 
@@ -483,7 +492,7 @@ function handleMsg(msg) {
 
     case 'server:registered':
       deviceId = msg.payload?.deviceId
-      log('info', `✅ Registered — Device ID: ${deviceId?.slice(0, 12)}...`)
+      log('info', `✅ [server] Registered — Device ID: ${deviceId}`)
       break
 
     case 'server:command':

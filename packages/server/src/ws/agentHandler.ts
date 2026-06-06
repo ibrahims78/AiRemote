@@ -31,16 +31,36 @@ const pendingFsChunks = new Map<string, {
 const heartbeatCount = new Map<string, number>()
 const SAVE_EVERY_N = 3
 
+// ── Per-session FPS tracker ───────────────────────────────────────────────
+const sessionFrameTimes = new Map<string, number[]>()   // sessionId → recent frame timestamps
+const FPS_WINDOW        = 30                             // rolling window size
+
+function recordSessionFrame(sessionId: string): { count: number; fps: string } {
+  const now   = Date.now()
+  let times   = sessionFrameTimes.get(sessionId) || []
+  times.push(now)
+  if (times.length > FPS_WINDOW) times = times.slice(-FPS_WINDOW)
+  sessionFrameTimes.set(sessionId, times)
+  const elapsed = times.length >= 2 ? (times[times.length - 1] - times[0]) / 1000 : 0
+  const fps     = elapsed > 0 ? ((times.length - 1) / elapsed).toFixed(1) : '?'
+  return { count: times.length, fps }
+}
+
+function ts(): string {
+  const now = new Date()
+  return now.toISOString().replace('T', ' ').slice(0, 19) + '.' + String(now.getMilliseconds()).padStart(3, '0')
+}
+
 // ── Binary screen frame handler (v3.1+ agents) ────────────────────────────
 // Packet layout (from agent): [0x01][sessionId:36B][width:4B][height:4B][seq:4B][flags:1B][JPEG...]
 // Forwarded to dashboard as:  [width:4B][height:4B][seq:4B][flags:1B][JPEG...]
 export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer, deviceId?: string): Promise<void> {
   if (buf.length < 50) {
-    console.warn(`📸 [bin] dropped: too short (${buf.length}B)`)
+    console.warn(`[${ts()}] 📸 [bin] dropped: too short (${buf.length}B)`)
     return
   }
   if (buf[0] !== 0x01) {
-    console.warn(`📸 [bin] dropped: unexpected type byte 0x${buf[0].toString(16)} (len=${buf.length})`)
+    console.warn(`[${ts()}] 📸 [bin] dropped: unexpected type byte 0x${buf[0].toString(16)} (len=${buf.length})`)
     return
   }
 
@@ -51,30 +71,28 @@ export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer, dev
   const flags      = buf[49]
   const jpegData   = buf.slice(50)
 
-  // Resolve the session: prefer the embedded ID, but if it no longer exists
-  // (e.g. agent restarted and is still using a stale session ID), fall back to
-  // whatever active session the device currently has.  This keeps v3.2.0 binary
-  // agents working across stream stop/restart cycles without a protocol change.
   let sessionId = embeddedId
   deviceRegistry.clearScreenConnectTimeout(sessionId)
   let session = deviceRegistry.getScreenSession(sessionId)
   if (!session && deviceId) {
     const activeId = deviceRegistry.getActiveScreenSessionForDevice(deviceId)
     if (activeId) {
-      console.warn(`📸 [bin] stale sessionId ${embeddedId.slice(0,8)} → remapping to active ${activeId.slice(0,8)} (device=${deviceId.slice(0,8)})`)
+      console.warn(`[${ts()}] 📸 [bin] stale sessionId ${embeddedId.slice(0,8)} → remapping to active ${activeId.slice(0,8)} (device=${deviceId?.slice(0,8)})`)
       sessionId = activeId
       session   = deviceRegistry.getScreenSession(sessionId)
     }
   }
   if (!session) {
-    console.warn(`📸 [bin] dropped: no session for ${embeddedId.slice(0, 8)} seq=${seq}`)
+    console.warn(`[${ts()}] 📸 [bin] dropped: no session for ${embeddedId.slice(0, 8)} seq=${seq}`)
     return
   }
 
-  const fc = ((session as Record<string, unknown>)._frameCount =
-    (((session as Record<string, unknown>)._frameCount as number) ?? 0) + 1) as number
-  if (fc === 1 || fc % 50 === 0) {
-    console.log(`📸 [bin] session=${sessionId.slice(0, 8)} viewers=${deviceRegistry.getScreenViewerCount(sessionId)} frames=${fc} size=${jpegData.length >> 10}KB seq=${seq}`)
+  const { count: fc, fps } = recordSessionFrame(sessionId)
+  const viewers = deviceRegistry.getScreenViewerCount(sessionId)
+  if (fc === 1) {
+    console.log(`[${ts()}] 📸 [bin] ▶ stream STARTED session=${sessionId.slice(0,8)} ${width}×${height} viewers=${viewers} device=${deviceId?.slice(0,8) ?? '?'}`)
+  } else if (fc % 50 === 0) {
+    console.log(`[${ts()}] 📸 [bin] session=${sessionId.slice(0,8)} frames=${fc} fps=${fps} size=${(jpegData.length/1024).toFixed(1)}KB ${width}×${height} viewers=${viewers}`)
   }
 
   try {
@@ -138,7 +156,7 @@ export async function handleAgentMessage(
       deviceRegistry.broadcastDeviceStatus(device.id, 'online', payload.tunnelLayer, caps, payload.info)
       fireDeviceOnlineAlert(device.id).catch(() => {})
 
-      console.log(`✅ Agent registered: ${device.name} (${device.id}) v${payload.info?.agentVersion || '?'} from ${clientIp}`)
+      console.log(`[${ts()}] ✅ [agent] Registered: "${device.name}" id=${device.id} v${payload.info?.agentVersion || '?'} from=${clientIp} pty=${caps.pty} screen=${caps.screenControl} docker=${caps.docker} monitors=${caps.monitors?.length ?? 0}`)
       return { deviceId: device.id }
     }
 
@@ -195,6 +213,8 @@ export async function handleAgentMessage(
         clearTimeout(pending.timeout)
         pending.resolve(payload)
         pendingCommands.delete(payload.commandId)
+        const preview = (payload.stdout || payload.stderr || '').trim().slice(0, 100)
+        console.log(`[${ts()}] ✔ [cmd] commandId=${payload.commandId.slice(0,8)} exit=${payload.exitCode} dur=${payload.duration}ms${preview ? ' → ' + preview : ''}`)
       }
       return null
     }
@@ -310,6 +330,7 @@ export async function handleAgentMessage(
           payload: { sessionId, message: 'Shell ready' }
         }))
       }
+      console.log(`[${ts()}] 🖥️ [pty] opened session=${sessionId.slice(0,8)}`)
       return null
     }
 
@@ -330,6 +351,7 @@ export async function handleAgentMessage(
         session.dashboardSocket.send(JSON.stringify({ type: 'pty:closed', payload: {} }))
       }
       deviceRegistry.removePtySession(sessionId)
+      console.log(`[${ts()}] 🖥️ [pty] closed session=${sessionId.slice(0,8)}`)
       return null
     }
 
@@ -341,6 +363,7 @@ export async function handleAgentMessage(
         session.dashboardSocket.send(JSON.stringify({ type: 'pty:error', payload: { message: errMsg } }))
       }
       deviceRegistry.removePtySession(sessionId)
+      console.error(`[${ts()}] 🖥️ [pty] error session=${sessionId.slice(0,8)}: ${errMsg}`)
       return null
     }
 
@@ -359,9 +382,12 @@ export async function handleAgentMessage(
       deviceRegistry.clearScreenConnectTimeout(p.sessionId)
       const session = deviceRegistry.getScreenSession(p.sessionId)
       if (session) {
-        const fc = ((session as any)._frameCount = ((session as any)._frameCount ?? 0) + 1) as number
-        if (fc === 1 || fc % 200 === 0) {
-          console.log(`📸 [screen] session=${p.sessionId.slice(0,8)} viewers=${session.dashboardSockets.size} frames=${fc} delta=${!!p.deltaRegion}`)
+        const { count: fc, fps } = recordSessionFrame(p.sessionId)
+        const viewers = session.dashboardSockets.size
+        if (fc === 1) {
+          console.log(`[${ts()}] 📸 [screen] ▶ stream STARTED session=${p.sessionId.slice(0,8)} ${p.width}×${p.height} viewers=${viewers} delta=${!!p.deltaRegion}`)
+        } else if (fc % 150 === 0) {
+          console.log(`[${ts()}] 📸 [screen] session=${p.sessionId.slice(0,8)} frames=${fc} fps=${fps} ${p.width}×${p.height} viewers=${viewers} delta=${!!p.deltaRegion}`)
         }
 
         try {
@@ -394,6 +420,8 @@ export async function handleAgentMessage(
       deviceRegistry.clearScreenConnectTimeout(sessionId)
       deviceRegistry.sendToScreenViewers(sessionId, JSON.stringify({ type: 'screen:closed', payload: {} }))
       deviceRegistry.removeScreenSession(sessionId)
+      sessionFrameTimes.delete(sessionId)
+      console.log(`[${ts()}] 🖥️ [screen] ⏹ stream ENDED session=${sessionId.slice(0,8)}`)
       return null
     }
 
@@ -403,6 +431,8 @@ export async function handleAgentMessage(
       deviceRegistry.sendToScreenViewers(sessionId, JSON.stringify({ type: 'screen:error', payload: { message: errMsg } }))
       deviceRegistry.closeAllScreenViewers(sessionId)
       deviceRegistry.removeScreenSession(sessionId)
+      sessionFrameTimes.delete(sessionId)
+      console.error(`[${ts()}] 🖥️ [screen] ✖ error session=${sessionId.slice(0,8)}: ${errMsg}`)
       return null
     }
 
@@ -592,11 +622,7 @@ export async function sendFsReadChunked(
  */
 export function cleanupDevice(deviceId: string): void {
   heartbeatCount.delete(deviceId)
-
-  // Cancel pending commands owned by this device.
-  // pendingCommands doesn't track deviceId, so we cancel ALL timed-out ones
-  // by letting their timeouts fire — nothing extra to do here.
-  // heartbeatCount is the only per-device Map we own.
+  console.log(`[${ts()}] 🗑️ [agent] cleanup deviceId=${deviceId.slice(0,8)}`)
   void deviceId
 }
 
