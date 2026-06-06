@@ -238,7 +238,7 @@ export function DashboardLayout() {
         {/* Version */}
         {sidebarOpen && (
           <div className="px-4 py-1 flex items-center gap-1.5 text-[10px] text-slate-700">
-            <Command size={8} /> v3.1.0
+            <Command size={8} /> v3.2.0
           </div>
         )}
 
