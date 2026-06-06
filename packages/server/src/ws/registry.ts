@@ -56,6 +56,16 @@ class DeviceRegistry {
   // ── Device management ────────────────────────────────────────────────────
 
   registerDevice(deviceId: string, socket: WebSocket, _stats?: DeviceStats, capabilities?: Partial<AgentCapabilities>): void {
+    // If another agent socket is already registered for this device, send it
+    // screen:stop so it halts its capture loop before we evict it.  Without
+    // this the old socket keeps streaming stale-session frames indefinitely.
+    const existing = this.devices.get(deviceId)
+    if (existing && existing.socket !== socket && existing.socket.readyState === 1) {
+      try {
+        existing.socket.send(JSON.stringify({ type: 'screen:stop', payload: {} }))
+      } catch {}
+    }
+
     this.devices.set(deviceId, {
       deviceId,
       socket,

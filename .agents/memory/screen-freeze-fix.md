@@ -3,50 +3,49 @@ name: Screen sharing freeze fix
 description: Root causes of "screen sharing connected but no real-time updates" bug and what was done to fix it
 ---
 
-## Root Causes
+## Root Causes (agent source v3.1.0)
 
-### 1 — Hash-based frame deduplication (affects all platforms)
-`computeFrameHash` sampled only 128 bytes out of the JPEG buffer starting at byte 300.
-JPEG at a fixed quality level produces very similar byte sequences at the sampled
-positions for similar frames → hash collision → frame dropped even when screen changed.
-`MAX_SKIP_MS=200ms` forced one frame per 200 ms (5 fps max) but felt "frozen".
+### 1 — Hash-based frame deduplication
+`computeFrameHash` sampled only 128 bytes — hash collisions caused frames to be dropped even when screen changed. `MAX_SKIP_MS=200ms` forced 5 fps max.
 
-**Fix:** Removed `computeFrameHash`, `prevHash`, `framesSinceKeyframe`, `idleFrames`,
-`MAX_SKIP_MS`, `KEYFRAME_EVERY` entirely from `handleScreenStart` in `agent.ts`.
-Every captured frame is now forwarded. Rate limiting relies on the FPS interval +
-server-side throttle only.
+**Fix:** Removed dedup entirely from `handleScreenStart` in `agent.ts`. Every captured frame forwarded.
 
 ### 2 — PowerShell spawned per frame on Windows
-Each frame called `execFileAsync('powershell.exe', ...)` which incurs 1-3 s startup
-(CLR init + assembly loading). At a 33 ms capture interval the concurrency guard
-(`if (capturing) return`) caused almost every tick to skip → effective FPS ≈ 0.2-0.5.
+Each frame called `execFileAsync('powershell.exe', ...)` — 1-3s startup per frame.
 
-**Fix:** Persistent PowerShell process in `screenCapture.ts`.
-- `PS_LOOP_SCRIPT`: PS script that loads .NET assemblies once then loops reading
-  stdin commands (`quality|maxWidth|monX|monY|monW|monH|outFile`) and writes
-  "OK" / "ERR:..." to stdout.
-- `ensurePsProcess()`: spawns once, reuses across frames, auto-restarts on death.
-- `captureWithPersistentPs()`: writes command, awaits stdout line, 6s safety timeout.
-- Falls back to `captureWithSingleShotPs()` if persistent process fails.
+**Fix:** Persistent PowerShell process in `screenCapture.ts` (`ensurePsProcess`, `captureWithPersistentPs`).
 
-### 3 — intervalMs could be 33 ms (too tight for slow capture tools)
-`intervalMs = Math.max(33, ...)` allowed 33 ms intervals. If any capture tool takes
-longer than 33 ms the concurrency guard fires continuously.
+### 3 — intervalMs too tight (33ms)
+**Fix:** Floor raised to `Math.max(100, ...)`.
 
-**Fix:** Floor raised to `Math.max(100, ...)` — gives capture tools breathing room
-while still allowing up to 10 fps from the interval itself (actual FPS is the
-minimum of interval FPS and capture tool speed).
+## Root Causes (v3.2.0 binary, server-side fixes applied)
 
-## Files Changed
-- `packages/agent/src/agent.ts` — `handleScreenStart` simplified (dedup removed)
-- `packages/agent/src/system/screenCapture.ts` — persistent PS process added
-- `releases/agent-script/agent-v3.0.0.js` — rebuilt with esbuild
-- `releases/agent-headless/AiRemote-Agent-v3.0.0-linux-x64` — rebuilt with pkg
-- `releases/agent-script/agent-script-v3.0.0.zip` — updated ZIP
+### 4 — drawId race condition in dashboard (0fps freeze)
+At 30fps, `createImageBitmap` (JPEG decode) takes longer than 33ms per frame. New frames kept incrementing `drawSeqRef` faster than decodes completed, so every decode's `drawId < drawSeqRef` check discarded the bitmap — including the `fpsCountRef.current++`. Screen froze at first frame, fps=0.
 
-**Why:** Dedup caused false "screen frozen" experience; persistent PS gives
-10-20× faster frame capture on Windows.
+**Fix:** Added `decodingRef = useRef(false)` — 1-in-flight decode guard in all three paths (binary onmessage, `drawFrame`, `drawDeltaFrame`). If a decode is running, skip the incoming frame entirely instead of starting a stacked decode. `drawId` always equals `drawSeqRef` when the promise resolves → every decoded frame draws.
 
-**How to apply:** Whenever touching agent screen capture, NEVER add hash-based
-dedup back without testing extensively on both platforms. Always rebuild releases
-after agent changes.
+### 5 — Agent embeds stale session ID in binary frames (0fps on stream restart)
+v3.2.0 binary agent stores the session ID from the FIRST `screen:start` it ever receives and never updates it on subsequent stop/start cycles. New viewer sessions get no frames because all frames carry the old session ID — dropped with "no session for X".
+
+**Fix (server `agentHandler.ts`):** Accept optional `deviceId` param. When embedded session ID has no matching session, fall back to `deviceRegistry.getActiveScreenSessionForDevice(deviceId)` and remap silently. Log the remap as a warning.
+**Fix (server `handler.ts`):** Pass `connectionId` (deviceId) to `handleAgentBinaryFrame`.
+
+### 6 — Duplicate agent instances send competing stale frames
+On reconnect a second agent socket registers for the same deviceId. The old socket is evicted from the registry but its capture loop keeps running — sending frames with its stale session ID indefinitely. Two instances × 0.5fps = 1fps combined; each stream restart creates more zombie capture loops.
+
+**Fix (server `registry.ts` → `registerDevice`):** Before overwriting the device entry, send `screen:stop` to the existing socket if it's still open. This tells the old agent instance to halt its capture loop cleanly.
+
+## Performance Notes
+- v3.2.0 binary on Windows captures at ~0.5fps per instance via PS persistent process
+- Two instances (duplicate reconnect) = ~1fps visible in dashboard
+- 658ms latency observed: Replit proxy + PS capture + JPEG decode
+- Bandwidth ~175KB/s at 1fps × ~176KB per 1920×1080 frame
+
+## Files Changed (dashboard/server)
+- `packages/dashboard/src/components/ScreenViewer.tsx` — decodingRef + stale watchdog
+- `packages/server/src/ws/agentHandler.ts` — session ID remapping + diagnostics
+- `packages/server/src/ws/handler.ts` — pass deviceId to binary frame handler
+- `packages/server/src/ws/registry.ts` — screen:stop old socket on re-register
+
+**Why:** Never add drawId stale-discard logic that also gates fps counting — count decodes, not draws. Always pass deviceId through to binary frame handlers for fallback routing.
