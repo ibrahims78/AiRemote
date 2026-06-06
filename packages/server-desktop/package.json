@@ -48,8 +48,7 @@
       "scripts/**/*",
       "renderer/**/*",
       "static/**/*",
-      "build/icon.ico",
-      "node_modules/**/*"
+      "build/icon.ico"
     ],
     "extraResources": [
       {

@@ -35,15 +35,19 @@ function download(url, dest, redirectCount = 0) {
       process.exit(1)
     }
 
-    const total  = parseInt(res.headers['content-length'] || '0', 10)
-    let received = 0
-    const file   = fs.createWriteStream(dest)
+    const total    = parseInt(res.headers['content-length'] || '0', 10)
+    let received   = 0
+    let lastPct    = -1
+    const file     = fs.createWriteStream(dest)
 
     res.on('data', (chunk) => {
       received += chunk.length
       if (total) {
         const pct = Math.floor(received / total * 100)
-        process.stdout.write(`\r   ${pct}% (${(received/1024/1024).toFixed(1)} MB)`)
+        if (pct >= lastPct + 10) {
+          lastPct = pct
+          console.log(`   ${pct}% (${(received/1024/1024).toFixed(1)} MB)`)
+        }
       }
     })
 
