@@ -559,27 +559,64 @@ process.on('exit', () => {
 //   PowerShell GDI+ (.NET System.Drawing JPEG encoder)  →  ~1 fps
 //   ffmpeg gdigrab  (native JPEG encoder)               →  15–30 fps
 //
-// User requirement: ffmpeg.exe must be on PATH.
+// ffmpeg detection order:
+//   1. PATH  (if ffmpeg.exe is already on the system PATH)
+//   2. Well-known install paths  (C:\ffmpeg\bin, C:\Program Files\ffmpeg\bin, …)
+// No PATH change required — just extract to C:\ffmpeg and restart the agent.
 //   Download: https://www.gyan.dev/ffmpeg/builds/ (ffmpeg-release-essentials.zip)
-//   Extract and add the bin\ folder to PATH, then restart the agent.
 
 let _ffmpegAvailable: boolean | null = null
+let _ffmpegPath = 'ffmpeg'   // resolved exe path (may be absolute)
 
-/** Detect whether ffmpeg is available on PATH (Windows only).  Result is cached. */
+/**
+ * Common Windows locations where ffmpeg may be installed without being on PATH.
+ * Checked in order; first hit wins.
+ */
+const FFMPEG_FALLBACK_PATHS = [
+  'C:\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\tools\\ffmpeg\\bin\\ffmpeg.exe',
+]
+
+/** Detect whether ffmpeg is available (Windows only).
+ *  Checks PATH first, then common install locations.
+ *  Result is cached; call `getFFmpegPath()` to get the resolved executable. */
 export async function isFfmpegAvailable(): Promise<boolean> {
   if (_ffmpegAvailable !== null) return _ffmpegAvailable
   if (PLATFORM !== 'win32') { _ffmpegAvailable = false; return false }
+
+  // 1. Try PATH
   try {
     await withTimeout(execAsync('ffmpeg -version'), 4000, 'ffmpeg-detect')
     _ffmpegAvailable = true
-    console.log('[screen] ✅ ffmpeg detected — switching to gdigrab capture (15–30 fps)')
-  } catch {
-    _ffmpegAvailable = false
-    console.log('[screen] ⚠️  ffmpeg not found on PATH — using PowerShell GDI+ capture (~1 fps)')
-    console.log('[screen]    Install ffmpeg for real-time streaming: https://www.gyan.dev/ffmpeg/builds/')
+    _ffmpegPath = 'ffmpeg'
+    console.log('[screen] ✅ ffmpeg found on PATH — switching to gdigrab capture (15–30 fps)')
+    return true
+  } catch { /* fall through */ }
+
+  // 2. Try well-known Windows install paths
+  for (const candidate of FFMPEG_FALLBACK_PATHS) {
+    try {
+      await withTimeout(execAsync(`"${candidate}" -version`), 4000, 'ffmpeg-detect')
+      _ffmpegAvailable = true
+      _ffmpegPath = candidate
+      console.log(`[screen] ✅ ffmpeg found at ${candidate} — switching to gdigrab capture (15–30 fps)`)
+      return true
+    } catch { /* try next */ }
   }
-  return _ffmpegAvailable
+
+  _ffmpegAvailable = false
+  console.log('[screen] ⚠️  ffmpeg not found — using PowerShell GDI+ capture (~1 fps)')
+  console.log('[screen]    To enable fast streaming (15–30 fps):')
+  console.log('[screen]      1. Download https://www.gyan.dev/ffmpeg/builds/')
+  console.log('[screen]      2. Extract to C:\\ffmpeg  (so C:\\ffmpeg\\bin\\ffmpeg.exe exists)')
+  console.log('[screen]      3. Restart the agent')
+  return false
 }
+
+/** Return the resolved ffmpeg executable path (may be absolute if not on PATH). */
+export function getFFmpegPath(): string { return _ffmpegPath }
 
 /** Map JPEG quality (0–100) to ffmpeg mjpeg -q:v scale (1=best, 31=worst) */
 function qualityToFfmpegQ(quality: number): number {
@@ -677,7 +714,7 @@ export function startFfmpegCaptureLoop(opts: FfmpegCaptureOpts): () => void {
     if (stopped) return
 
     const args  = buildArgs()
-    proc        = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    proc        = spawn(_ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     remainder   = Buffer.alloc(0)
 
     proc.stdout?.on('data', (chunk: Buffer) => {
