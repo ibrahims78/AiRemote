@@ -7,9 +7,10 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "bundle": "node scripts/bundle.js",
     "build:dashboard": "cd ../.. && pnpm --filter @airemote/shared build && pnpm --filter @airemote/ai-engine build && pnpm --filter @airemote/dashboard build && node packages/server-desktop/scripts/copy-dashboard.js",
-    "build:win": "npm run build:dashboard && node ../../scripts/download-cloudflared.js && electron-builder --win --x64",
-    "build:win:nodownload": "node scripts/copy-dashboard.js && electron-builder --win --x64",
+    "build:win": "npm run bundle && npm run build:dashboard && node ../../scripts/download-cloudflared.js && electron-builder --win --x64",
+    "build:win:nodownload": "node scripts/bundle.js && node scripts/copy-dashboard.js && electron-builder --win --x64",
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
@@ -35,26 +36,25 @@
     "appId": "io.airemote.server",
     "productName": "AiRemote Server",
     "copyright": "Copyright © 2025 AiRemote",
+    "npmRebuild": false,
     "directories": {
       "output": "../../releases/server-windows"
     },
     "files": [
       "main.js",
-      "server.js",
-      "tunnel.js",
-      "logger.js",
-      "backup.js",
+      "server.bundle.js",
+      "backup.bundle.js",
+      "tunnel.bundle.js",
+      "logger.bundle.js",
       "preload.js",
-      "scripts/**/*",
+      "scripts/copy-dashboard.js",
       "renderer/**/*",
       "static/**/*",
       "build/icon.ico",
-      "node_modules/**/*",
-      "!node_modules/.pnpm/electron@*/**/*",
-      "!node_modules/.pnpm/electron-builder@*/**/*",
-      "!node_modules/.pnpm/app-builder-lib@*/**/*",
-      "!node_modules/.pnpm/dmg-builder@*/**/*",
-      "!node_modules/.cache/**/*"
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "asarUnpack": [
+      "**/*.node"
     ],
     "extraResources": [
       {

@@ -10,10 +10,10 @@ const os    = require('os')
 const http  = require('http')
 const crypto = require('crypto')
 
-const server  = require('./server')
-const tunnel  = require('./tunnel')
-const logger  = require('./logger')
-const backup  = require('./backup')
+const server  = require('./server.bundle')
+const tunnel  = require('./tunnel.bundle')
+const logger  = require('./logger.bundle')
+const backup  = require('./backup.bundle')
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
