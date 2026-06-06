@@ -1,0 +1,189 @@
+سجل البناء
+فشل
+
+   96% (50.0 MB)
+
+   96% (50.0 MB)
+   96% (50.0 MB)
+   96% (50.0 MB)
+   96% (50.0 MB)
+   97% (50.1 MB)
+
+   97% (50.1 MB)
+   97% (50.1 MB)
+   97% (50.1 MB)
+   97% (50.1 MB)
+
+   97% (50.1 MB)
+
+   97% (50.2 MB)
+   97% (50.2 MB)
+   97% (50.2 MB)
+
+   97% (50.2 MB)
+   97% (50.2 MB)
+   97% (50.2 MB)
+   97% (50.2 MB)
+   97% (50.3 MB)
+
+   97% (50.3 MB)
+   97% (50.3 MB)
+   97% (50.3 MB)
+   97% (50.3 MB)
+
+   97% (50.3 MB)
+
+   97% (50.4 MB)
+   97% (50.4 MB)
+   97% (50.4 MB)
+
+   97% (50.4 MB)
+
+   97% (50.4 MB)
+   97% (50.4 MB)
+   97% (50.4 MB)
+
+   97% (50.5 MB)
+   97% (50.5 MB)
+   97% (50.5 MB)
+
+   97% (50.5 MB)
+   97% (50.5 MB)
+
+   97% (50.5 MB)
+   97% (50.6 MB)
+   97% (50.6 MB)
+   98% (50.6 MB)
+
+   98% (50.6 MB)
+
+   98% (50.6 MB)
+   98% (50.6 MB)
+   98% (50.6 MB)
+
+   98% (50.7 MB)
+
+   98% (50.7 MB)
+   98% (50.7 MB)
+   98% (50.7 MB)
+
+   98% (50.7 MB)
+
+   98% (50.7 MB)
+   98% (50.8 MB)
+   98% (50.8 MB)
+
+   98% (50.8 MB)
+
+   98% (50.8 MB)
+   98% (50.8 MB)
+   98% (50.8 MB)
+
+   98% (50.8 MB)
+
+   98% (50.9 MB)
+
+   98% (50.9 MB)
+   98% (50.9 MB)
+
+   98% (50.9 MB)
+
+   98% (50.9 MB)
+   98% (50.9 MB)
+   98% (51.0 MB)
+
+   98% (51.0 MB)
+
+   98% (51.0 MB)
+   98% (51.0 MB)
+   98% (51.0 MB)
+
+   98% (51.0 MB)
+
+   98% (51.1 MB)
+   98% (51.1 MB)
+
+   98% (51.1 MB)
+
+   99% (51.1 MB)
+
+   99% (51.1 MB)
+   99% (51.1 MB)
+   99% (51.1 MB)
+
+   99% (51.2 MB)
+
+   99% (51.2 MB)
+   99% (51.2 MB)
+
+   99% (51.2 MB)
+
+   99% (51.2 MB)
+   99% (51.2 MB)
+   99% (51.3 MB)
+   99% (51.3 MB)
+
+   99% (51.3 MB)
+
+   99% (51.3 MB)
+   99% (51.3 MB)
+   99% (51.3 MB)
+
+   99% (51.3 MB)
+   99% (51.4 MB)
+   99% (51.4 MB)
+   99% (51.4 MB)
+   99% (51.4 MB)
+
+   99% (51.4 MB)
+
+   99% (51.4 MB)
+   99% (51.5 MB)
+   99% (51.5 MB)
+
+   99% (51.5 MB)
+
+   99% (51.5 MB)
+   99% (51.5 MB)
+
+   99% (51.5 MB)
+
+   99% (51.5 MB)
+
+   99% (51.6 MB)
+
+   99% (51.6 MB)
+   99% (51.6 MB)
+
+   99% (51.6 MB)
+
+   100% (51.6 MB)
+✅ Downloaded cloudflared.exe (51.6 MB) → /home/runner/workspace/packages/server-desktop/bin/cloudflared.exe
+  • 
+electron-builder  version=24.13.3 os=6.17.5
+  • loaded configuration  file=package.json ("build" field)
+  ⨯ 
+Invalid configuration object. electron-builder 24.13.3 has been initialized using a configuration object that does not match the API schema.
+ - configuration has an unknown property 'nativeRebuilder'. These properties are valid:
+   object { afterAllArtifactBuild?, afterPack?, afterSign?, apk?, appId?, appImage?, appx?, appxManifestCreated?, artifactBuildCompleted?, artifactBuildStarted?, artifactName?, asar?, asarUnpack?, beforeBuild?, beforePack?, buildDependenciesFromSource?, buildNumber?, buildVersion?, compression?, copyright?, cscKeyPassword?, cscLink?, deb?, defaultArch?, detectUpdateChannel?, directories?, dmg?, downloadAlternateFFmpeg?, electronBranding?, electronCompile?, electronDist?, electronDownload?, electronLanguages?, electronUpdaterCompatibility?, electronVersion?, executableName?, extends?, extraFiles?, extraMetadata?, extraResources?, fileAssociations?, files?, flatpak?, forceCodeSigning?, framework?, freebsd?, generateUpdatesFilesForAllChannels?, icon?, includePdb?, includeSubNodeModules?, launchUiVersion?, linux?, mac?, mas?, masDev?, msi?, msiProjectCreated?, msiWrapped?, nodeGypRebuild?, nodeVersion?, npmArgs?, npmRebuild?, nsis?, nsisWeb?, onNodeModuleFile?, p5p?, pacman?, pkg?, portable?, productName?, protocols?, publish?, releaseInfo?, removePackageKeywords?, removePackageScripts?, rpm?, snap?, squirrelWindows?, target?, win?, $schema? }
+   -> Configuration Options
+     How to fix:
+     1. Open https://www.electron.build/configuration/configuration
+     2. Search the option name on the page (or type in into Search to find across the docs).
+       * Not found? The option was deprecated or not exists (check spelling).
+       * Found? Check that the option in the appropriate place. e.g. "title" only in the "dmg", not in the root.
+  failedTask=build stackTrace=ValidationError: Invalid configuration object. electron-builder 24.13.3 has been initialized using a configuration object that does not match the API schema.
+ - configuration has an unknown property 'nativeRebuilder'. These properties are valid:
+   object { afterAllArtifactBuild?, afterPack?, afterSign?, apk?, appId?, appImage?, appx?, appxManifestCreated?, artifactBuildCompleted?, artifactBuildStarted?, artifactName?, asar?, asarUnpack?, beforeBuild?, beforePack?, buildDependenciesFromSource?, buildNumber?, buildVersion?, compression?, copyright?, cscKeyPassword?, cscLink?, deb?, defaultArch?, detectUpdateChannel?, directories?, dmg?, downloadAlternateFFmpeg?, electronBranding?, electronCompile?, electronDist?, electronDownload?, electronLanguages?, electronUpdaterCompatibility?, electronVersion?, executableName?, extends?, extraFiles?, extraMetadata?, extraResources?, fileAssociations?, files?, flatpak?, forceCodeSigning?, framework?, freebsd?, generateUpdatesFilesForAllChannels?, icon?, includePdb?, includeSubNodeModules?, launchUiVersion?, linux?, mac?, mas?, masDev?, msi?, msiProjectCreated?, msiWrapped?, nodeGypRebuild?, nodeVersion?, npmArgs?, npmRebuild?, nsis?, nsisWeb?, onNodeModuleFile?, p5p?, pacman?, pkg?, portable?, productName?, protocols?, publish?, releaseInfo?, removePackageKeywords?, removePackageScripts?, rpm?, snap?, squirrelWindows?, target?, win?, $schema? }
+   -> Configuration Options
+     How to fix:
+     1. Open https://www.electron.build/configuration/configuration
+     2. Search the option name on the page (or type in into Search to find across the docs).
+       * Not found? The option was deprecated or not exists (check spelling).
+       * Found? Check that the option in the appropriate place. e.g. "title" only in the "dmg", not in the root.
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    at validate (/home/runner/workspace/node_modules/.pnpm/@develar+schema-utils@2.6.5/node_modules/@develar/schema-utils/dist/validate.js:86:11)
+    at validateConfig (/home/runner/workspace/node_modules/.pnpm/app-builder-lib@24.13.3_dmg-builder@24.13.3_electron-builder-squirrel-windows@24.13.3/node_modules/app-builder-lib/src/util/config.ts:240:3)
+    at Packager._build (/home/runner/workspace/node_modules/.pnpm/app-builder-lib@24.13.3_dmg-builder@24.13.3_electron-builder-squirrel-windows@24.13.3/node_modules/app-builder-lib/src/packager.ts:345:5)
+    at Packager.build (/home/runner/workspace/node_modules/.pnpm/app-builder-lib@24.13.3_dmg-builder@24.13.3_electron-builder-squirrel-windows@24.13.3/node_modules/app-builder-lib/src/packager.ts:340:12)
+    at executeFinally (/home/runner/workspace/node_modules/.pnpm/builder-util@24.13.1/node_modules/builder-util/src/promise.ts:12:14)
+❌ Build failed (exit 1)
