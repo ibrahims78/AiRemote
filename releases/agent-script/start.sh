@@ -23,4 +23,4 @@ if [ -z "$DEVICE_TOKEN" ]; then
   exit 1
 fi
 
-node agent-v3.0.0.js
+node agent-v3.2.0.js

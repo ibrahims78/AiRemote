@@ -6,7 +6,7 @@ import path from 'path'
 import { getDeviceInfo } from './system/info'
 import { getDeviceStats } from './system/stats'
 import { executeCommand } from './system/executor'
-import { captureScreen } from './system/screenCapture'
+import { captureScreen, isFfmpegAvailable, startFfmpegCaptureLoop } from './system/screenCapture'
 import {
   controlMouse, controlKeyboard,
   readClipboard, writeClipboard,
@@ -51,6 +51,7 @@ export class AgentService {
   private screenTimers     = new Map<string, NodeJS.Timeout>()
   private screenSeq        = new Map<string, number>()
   private screenMonitorId  = new Map<string, number>()
+  private ffmpegCleanups   = new Map<string, () => void>()
   private controlAvailable = false
   private cachedMonitors: MonitorInfo[] = []
   private privacyMode = false
@@ -759,6 +760,30 @@ export class AgentService {
       this.screenTimers.delete(sessionId)
       this.screenSeq.delete(sessionId)
     }
+    const stopFfmpeg = this.ffmpegCleanups.get(sessionId)
+    if (stopFfmpeg) {
+      stopFfmpeg()
+      this.ffmpegCleanups.delete(sessionId)
+    }
+  }
+
+  /**
+   * Send a raw binary frame directly over the WebSocket.
+   * Packet layout (matches server agentHandler.ts):
+   *   [0x01][sessionId:36B UTF-8][width:4B BE][height:4B BE][seq:4B BE][flags:1B][JPEG...]
+   * This avoids base64 encoding, saving ~33% bandwidth vs the JSON path.
+   */
+  private sendBinaryFrame(sessionId: string, jpeg: Buffer, width: number, height: number, seq: number, flags = 0): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return
+    const hdr = Buffer.allocUnsafe(50)
+    hdr[0]    = 0x01
+    const sid = Buffer.from(sessionId.slice(0, 36).padEnd(36, '\0'), 'utf8')
+    sid.copy(hdr, 1)
+    hdr.writeUInt32BE(width,  37)
+    hdr.writeUInt32BE(height, 41)
+    hdr.writeUInt32BE(seq,    45)
+    hdr[49]   = flags
+    try { this.ws.send(Buffer.concat([hdr, jpeg])) } catch { /* ws closed */ }
   }
 
   private handleScreenStart(p: { sessionId: string; fps: number; quality: number; maxWidth?: number; monitorId?: number }): void {
@@ -772,77 +797,109 @@ export class AgentService {
     if (mon) setScreenResolution(mon.width, mon.height)
 
     const clampedFps = Math.min(fps, 30)
-    // Never go below 100 ms interval — gives capture tools time to finish.
-    // The concurrency guard below prevents overlapping calls regardless.
-    const intervalMs = Math.max(100, Math.round(1000 / clampedFps))
-    let seq = 0
 
-    // Concurrency guard — prevents a slow capture from stacking up calls.
-    let capturing = false
+    // ── Fast path: ffmpeg gdigrab (15–30 fps) ─────────────────────────────────
+    // isFfmpegAvailable() caches its result after the first call (takes ~1 s),
+    // so subsequent screen-start / quality-change events are instant.
+    isFfmpegAvailable().then(ffmpegOk => {
+      // Guard: session may have been stopped while detection was in-flight
+      if (!this.screenTimers.has(sessionId) && !this.ffmpegCleanups.has(sessionId)) {
+        if (!ffmpegOk) {
+          // Still need to start if not yet started — fall through to PS path below
+        } else {
+          return // session was stopped, do nothing
+        }
+      }
 
-    const capture = async () => {
-      if (!this.screenTimers.has(sessionId)) return
-      if (this.ws?.readyState !== WebSocket.OPEN) return
-      if (capturing) return
-      capturing = true
-
-      const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId
-
-      try {
-        const frame = await captureScreen({
+      if (ffmpegOk) {
+        let seq = 0
+        const currentMon = this.cachedMonitors.find(m => m.id === (this.screenMonitorId.get(sessionId) ?? monitorId))
+        const stopFfmpeg = startFfmpegCaptureLoop({
+          fps:      clampedFps,
           quality,
           maxWidth,
-          monitorId: currentMonitorId,
-          monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : undefined
+          ...(currentMon ? { monitorX: currentMon.x, monitorY: currentMon.y, monitorW: currentMon.width, monitorH: currentMon.height } : {}),
+          onFrame: (jpeg, width, height) => {
+            if (!this.screenTimers.has(sessionId)) return  // session stopped
+            if (this.ws?.readyState !== WebSocket.OPEN)   return
+            this.sendBinaryFrame(sessionId, jpeg, width, height, seq++)
+          },
+          onError: (err) => console.error('[screen] ffmpeg error:', err.message),
         })
 
-        if (!frame) {
+        this.ffmpegCleanups.set(sessionId, stopFfmpeg)
+        // Sentinel timer so .has(sessionId) / .delete(sessionId) checks still work
+        const sentinel = setInterval(() => { /* intentionally empty */ }, 2_147_483_647)
+        this.screenTimers.set(sessionId, sentinel)
+        this.screenSeq.set(sessionId, 0)
+        console.log(`🖥️  Screen capture started (ffmpeg/binary): sessionId=${sessionId} fps=${clampedFps} quality=${quality} maxWidth=${maxWidth}`)
+        return
+      }
+
+      // ── Fallback: PowerShell persistent process (~1 fps) ──────────────────
+      const intervalMs = Math.max(100, Math.round(1000 / clampedFps))
+      let seq = 0
+      let capturing = false
+
+      const capture = async () => {
+        if (!this.screenTimers.has(sessionId)) return
+        if (this.ws?.readyState !== WebSocket.OPEN) return
+        if (capturing) return
+        capturing = true
+
+        const currentMonitorId = this.screenMonitorId.get(sessionId) ?? monitorId
+
+        try {
+          const frame = await captureScreen({
+            quality,
+            maxWidth,
+            monitorId: currentMonitorId,
+            monitors: this.cachedMonitors.length > 0 ? this.cachedMonitors : undefined
+          })
+
+          if (!frame) {
+            this.send({
+              type:    'agent:screen_unavailable',
+              payload: { sessionId, message: 'No screen capture tool available (Linux: install scrot or imagemagick; ensure DISPLAY is set)' },
+              timestamp: Date.now()
+            })
+            this.stopScreenCapture(sessionId)
+            return
+          }
+
           this.send({
-            type:    'agent:screen_unavailable',
-            payload: { sessionId, message: 'No screen capture tool available (Linux: install scrot or imagemagick; ensure DISPLAY is set)' },
+            type:    'agent:screen_frame',
+            payload: {
+              sessionId,
+              data:        frame.data.toString('base64'),
+              width:       frame.width,
+              height:      frame.height,
+              seq:         seq++,
+              keyframe:    !frame.deltaRegion,
+              quality,
+              deltaRegion: frame.deltaRegion
+            },
+            timestamp: Date.now()
+          })
+        } catch (err) {
+          console.error('[screen] Capture error:', (err as Error).message)
+          this.send({
+            type:    'agent:screen_error',
+            payload: { sessionId, message: (err as Error).message },
             timestamp: Date.now()
           })
           this.stopScreenCapture(sessionId)
-          return
+        } finally {
+          capturing = false
         }
-
-        // Send every captured frame — no hash-based dedup.
-        // Rate limiting is handled by the setInterval above (agent side) and
-        // the server-side frame throttle (server side), so dedup is redundant
-        // and was causing false "screen frozen" behaviour.
-        // deltaRegion is present for Windows delta frames (partial screen crop).
-        this.send({
-          type:    'agent:screen_frame',
-          payload: {
-            sessionId,
-            data:        frame.data.toString('base64'),
-            width:       frame.width,
-            height:      frame.height,
-            seq:         seq++,
-            keyframe:    !frame.deltaRegion,
-            quality,
-            deltaRegion: frame.deltaRegion
-          },
-          timestamp: Date.now()
-        })
-      } catch (err) {
-        console.error('[screen] Capture error:', (err as Error).message)
-        this.send({
-          type:    'agent:screen_error',
-          payload: { sessionId, message: (err as Error).message },
-          timestamp: Date.now()
-        })
-        this.stopScreenCapture(sessionId)
-      } finally {
-        capturing = false
       }
-    }
 
-    capture()
-    const timer = setInterval(capture, intervalMs)
-    this.screenTimers.set(sessionId, timer)
-    this.screenSeq.set(sessionId, 0)
-    console.log(`🖥️  Screen capture started: sessionId=${sessionId} fps=${clampedFps} quality=${quality} interval=${intervalMs}ms`)
+      capture()
+      const timer = setInterval(capture, intervalMs)
+      this.screenTimers.set(sessionId, timer)
+      this.screenSeq.set(sessionId, 0)
+      console.log(`🖥️  Screen capture started (PowerShell): sessionId=${sessionId} fps=${clampedFps} quality=${quality} interval=${intervalMs}ms`)
+    }).catch(err => console.error('[screen] handleScreenStart error:', err))
   }
 
   private stopScreenCapture(sessionId: string): void {

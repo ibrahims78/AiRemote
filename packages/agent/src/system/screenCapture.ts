@@ -221,7 +221,7 @@ while($true) {
                 $b64 = [Convert]::ToBase64String($ms.ToArray())
                 $ms.Dispose()
                 $isDelta = $true
-                Write-Output "DELTA:$newW,$newH,$dx,$dy,$dw,$dh`:$b64"
+                Write-Output "DELTA:$newW,$newH,$dx,$dy,$dw,$dh\`:$b64"
             }
         }
         if (-not $isDelta) {
@@ -549,3 +549,185 @@ process.on('exit', () => {
     psState = null
   }
 })
+
+// ── Windows: ffmpeg gdigrab capture loop (15–30 fps) ─────────────────────────
+//
+// Uses ffmpeg's gdigrab device (standard in every Windows ffmpeg build) to
+// capture the desktop at native speed and emit MJPEG frames on stdout.
+//
+// Performance comparison:
+//   PowerShell GDI+ (.NET System.Drawing JPEG encoder)  →  ~1 fps
+//   ffmpeg gdigrab  (native JPEG encoder)               →  15–30 fps
+//
+// User requirement: ffmpeg.exe must be on PATH.
+//   Download: https://www.gyan.dev/ffmpeg/builds/ (ffmpeg-release-essentials.zip)
+//   Extract and add the bin\ folder to PATH, then restart the agent.
+
+let _ffmpegAvailable: boolean | null = null
+
+/** Detect whether ffmpeg is available on PATH (Windows only).  Result is cached. */
+export async function isFfmpegAvailable(): Promise<boolean> {
+  if (_ffmpegAvailable !== null) return _ffmpegAvailable
+  if (PLATFORM !== 'win32') { _ffmpegAvailable = false; return false }
+  try {
+    await withTimeout(execAsync('ffmpeg -version'), 4000, 'ffmpeg-detect')
+    _ffmpegAvailable = true
+    console.log('[screen] ✅ ffmpeg detected — switching to gdigrab capture (15–30 fps)')
+  } catch {
+    _ffmpegAvailable = false
+    console.log('[screen] ⚠️  ffmpeg not found on PATH — using PowerShell GDI+ capture (~1 fps)')
+    console.log('[screen]    Install ffmpeg for real-time streaming: https://www.gyan.dev/ffmpeg/builds/')
+  }
+  return _ffmpegAvailable
+}
+
+/** Map JPEG quality (0–100) to ffmpeg mjpeg -q:v scale (1=best, 31=worst) */
+function qualityToFfmpegQ(quality: number): number {
+  // quality=85 → q=3, quality=75 → q=5, quality=65 → q=7, quality=40 → q=12
+  return Math.max(2, Math.min(15, Math.round((100 - quality) / 5)))
+}
+
+/**
+ * Split a Buffer of concatenated JPEG data (ffmpeg image2pipe MJPEG output)
+ * into individual JPEG frames.
+ *
+ * In JPEG, any 0xFF byte inside entropy-coded data is escaped as FF 00, so the
+ * sequence FF D9 (End-of-Image marker) is unambiguous — no false positives.
+ */
+function extractJpegFrames(buf: Buffer): { frames: Buffer[]; remainder: Buffer } {
+  const frames: Buffer[] = []
+  let frameStart = 0
+  let i = 0
+  while (i < buf.length - 1) {
+    if (buf[i] === 0xFF && buf[i + 1] === 0xD9) {
+      const frameEnd = i + 2
+      const frame    = buf.slice(frameStart, frameEnd)
+      // Only keep valid-looking JPEGs (start with FF D8)
+      if (frame.length >= 4 && frame[0] === 0xFF && frame[1] === 0xD8) {
+        frames.push(Buffer.from(frame))  // copy to avoid dangling slice refs
+      }
+      frameStart = frameEnd
+      i          = frameEnd
+    } else {
+      i++
+    }
+  }
+  return { frames, remainder: buf.slice(frameStart) }
+}
+
+export interface FfmpegCaptureOpts {
+  fps:       number
+  quality:   number
+  maxWidth:  number
+  monitorX?: number
+  monitorY?: number
+  monitorW?: number
+  monitorH?: number
+  onFrame:   (jpeg: Buffer, width: number, height: number) => void
+  onError?:  (err: Error) => void
+}
+
+/**
+ * Start a continuous ffmpeg gdigrab screen-capture loop on Windows.
+ *
+ * Frames are delivered via `opts.onFrame` as raw JPEG buffers at up to
+ * `opts.fps` frames per second — no disk I/O, no PowerShell overhead.
+ *
+ * Returns a stop() function.  Call it to kill ffmpeg and end the loop.
+ */
+export function startFfmpegCaptureLoop(opts: FfmpegCaptureOpts): () => void {
+  let stopped   = false
+  let proc:       ChildProcess | null = null
+  let remainder   = Buffer.alloc(0)
+  const q         = qualityToFfmpegQ(opts.quality)
+  const hasMonitor = !!(opts.monitorW && opts.monitorH)
+
+  function buildArgs(): string[] {
+    const args: string[] = ['-loglevel', 'error']
+
+    if (hasMonitor) {
+      args.push(
+        '-f',          'gdigrab',
+        '-framerate',  String(Math.min(opts.fps, 30)),
+        '-offset_x',   String(opts.monitorX ?? 0),
+        '-offset_y',   String(opts.monitorY ?? 0),
+        '-video_size', `${opts.monitorW}x${opts.monitorH}`,
+        '-i',          'desktop',
+      )
+    } else {
+      args.push(
+        '-f',         'gdigrab',
+        '-framerate', String(Math.min(opts.fps, 30)),
+        '-i',         'desktop',
+      )
+    }
+
+    args.push(
+      '-vf',            `scale=${opts.maxWidth}:-2:flags=bilinear`,
+      '-c:v',           'mjpeg',
+      '-q:v',           String(q),
+      '-f',             'image2pipe',
+      '-flush_packets', '1',
+      'pipe:1',
+    )
+    return args
+  }
+
+  function start(): void {
+    if (stopped) return
+
+    const args  = buildArgs()
+    proc        = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    remainder   = Buffer.alloc(0)
+
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      if (stopped) return
+      const combined                   = Buffer.concat([remainder, chunk])
+      const { frames, remainder: rem } = extractJpegFrames(combined)
+      remainder                        = rem
+      for (const jpeg of frames) {
+        const dims = parseJpegDimensions(jpeg)
+        opts.onFrame(jpeg, dims.width, dims.height)
+      }
+    })
+
+    // Forward ffmpeg warnings/errors to console (suppress routine "frame=..." lines)
+    let stderrBuf = ''
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderrBuf += chunk.toString()
+      const lines = stderrBuf.split('\n')
+      stderrBuf  = lines.pop() ?? ''
+      for (const line of lines) {
+        const t = line.trim()
+        if (t && !t.startsWith('frame=') && !t.startsWith('size=')) {
+          console.warn('[ffmpeg]', t)
+        }
+      }
+    })
+
+    proc.on('close', (code) => {
+      proc = null
+      if (!stopped) {
+        console.warn(`[screen] ffmpeg exited (code=${code ?? 'null'}), restarting in 2 s …`)
+        setTimeout(start, 2000)
+      }
+    })
+
+    proc.on('error', (err) => {
+      proc = null
+      if (!stopped) opts.onError?.(err)
+    })
+
+    console.log(`[screen] ffmpeg started: fps=${Math.min(opts.fps, 30)} q=${q} maxW=${opts.maxWidth}${hasMonitor ? ` mon=${opts.monitorX},${opts.monitorY} ${opts.monitorW}x${opts.monitorH}` : ''}`)
+  }
+
+  start()
+
+  return () => {
+    stopped = true
+    if (proc) {
+      try { proc.kill('SIGTERM') } catch {}
+      proc = null
+    }
+  }
+}
