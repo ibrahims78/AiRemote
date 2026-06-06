@@ -55,7 +55,7 @@ const RELEASE_DEFS: ReleaseDef[] = [
       cmd:  'sh',
       args: [
         '-c',
-        `node_modules/.bin/electron-builder --win --x64 --dir && python3 ../../scripts/zip-agent.py ../../releases/agent-windows/win-unpacked ../../releases/agent-windows/AiRemote-Agent-v${AGENT_VERSION}-Windows-x64.zip`,
+        `node_modules/.bin/electron-builder --win --x64 --dir && node ../../scripts/zip-agent.js ../../releases/agent-windows/win-unpacked ../../releases/agent-windows/AiRemote-Agent-v${AGENT_VERSION}-Windows-x64.zip`,
       ],
     },
   },
