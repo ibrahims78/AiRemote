@@ -35,8 +35,14 @@ const SAVE_EVERY_N = 3
 // Packet layout (from agent): [0x01][sessionId:36B][width:4B][height:4B][seq:4B][flags:1B][JPEG...]
 // Forwarded to dashboard as:  [width:4B][height:4B][seq:4B][flags:1B][JPEG...]
 export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Promise<void> {
-  if (buf.length < 50) return
-  if (buf[0] !== 0x01) return
+  if (buf.length < 50) {
+    console.warn(`📸 [bin] dropped: too short (${buf.length}B)`)
+    return
+  }
+  if (buf[0] !== 0x01) {
+    console.warn(`📸 [bin] dropped: unexpected type byte 0x${buf[0].toString(16)} (len=${buf.length})`)
+    return
+  }
 
   const sessionId = buf.slice(1, 37).toString('utf8').replace(/\0/g, '')
   const width     = buf.readUInt32BE(37)
@@ -47,12 +53,15 @@ export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Pr
 
   deviceRegistry.clearScreenConnectTimeout(sessionId)
   const session = deviceRegistry.getScreenSession(sessionId)
-  if (!session) return
+  if (!session) {
+    console.warn(`📸 [bin] dropped: no session for ${sessionId.slice(0, 8)} seq=${seq}`)
+    return
+  }
 
   const fc = ((session as Record<string, unknown>)._frameCount =
     (((session as Record<string, unknown>)._frameCount as number) ?? 0) + 1) as number
-  if (fc === 1 || fc % 200 === 0) {
-    console.log(`📸 [bin] session=${sessionId.slice(0, 8)} viewers=${deviceRegistry.getScreenViewerCount(sessionId)} frames=${fc} size=${jpegData.length >> 10}KB`)
+  if (fc === 1 || fc % 50 === 0) {
+    console.log(`📸 [bin] session=${sessionId.slice(0, 8)} viewers=${deviceRegistry.getScreenViewerCount(sessionId)} frames=${fc} size=${jpegData.length >> 10}KB seq=${seq}`)
   }
 
   try {

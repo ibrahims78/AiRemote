@@ -172,6 +172,8 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const drawSeqRef         = useRef(0)
   const reconnectCountRef  = useRef(0)
   const intentionalCloseRef = useRef(false)
+  const lastFrameAtRef     = useRef(0)
+  const staleTimerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Keep startedRef in sync so event handlers (visibilitychange) can read it
   useEffect(() => { startedRef.current = started }, [started])
@@ -205,6 +207,24 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       setBwDisplay(bwBytesRef.current)
       bwBytesRef.current = 0
     }, 1000)
+  }, [])
+
+  // ── Stale-frame watchdog ──────────────────────────────────────────────────
+  // If no frame arrives within 8 s while we think we're streaming, the agent
+  // has silently stopped sending (e.g. PS crash, proxy drop).  Reconnect.
+  const startStaleWatchdog = useCallback((myId: number) => {
+    if (staleTimerRef.current) clearInterval(staleTimerRef.current)
+    lastFrameAtRef.current = Date.now()
+    staleTimerRef.current = setInterval(() => {
+      if (intentionalCloseRef.current) return
+      if (connectIdRef.current !== myId) return
+      const elapsed = Date.now() - lastFrameAtRef.current
+      if (elapsed > 8_000) {
+        console.warn(`[screen] stale: no frame for ${Math.round(elapsed / 1000)}s — reconnecting`)
+        if (staleTimerRef.current) { clearInterval(staleTimerRef.current); staleTimerRef.current = null }
+        wsRef.current?.close()
+      }
+    }, 2_000)
   }, [])
 
   // ── Draw frame (createImageBitmap — faster decoding, no layout thrash) ───
@@ -312,6 +332,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         if (wsRef.current?.readyState === WebSocket.OPEN)
           wsRef.current.send(JSON.stringify({ type: 'screen:ping', payload: { ts: Date.now() } }))
       }, 3000)
+      startStaleWatchdog(myId)
     }
 
     ws.onmessage = (ev) => {
@@ -329,6 +350,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
         if (seq !== 0 && seq <= lastSeqRef.current) return
         lastSeqRef.current = seq
         if (reconnectCountRef.current > 0) reconnectCountRef.current = 0
+        lastFrameAtRef.current = Date.now()
         setStatus('streaming'); startFpsCounter(); startBwCounter()
         bwBytesRef.current += buf.byteLength - 13
         setFrameStats(prev => ({
@@ -360,6 +382,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           case 'screen:frame': {
             // JSON frame path: legacy agents + headless agent delta frames
             if (reconnectCountRef.current > 0) reconnectCountRef.current = 0
+            lastFrameAtRef.current = Date.now()
             setStatus('streaming'); startFpsCounter(); startBwCounter()
             const { data, width, height, seq, keyframe, deltaRegion } = msg.payload
             if (seq <= lastSeqRef.current && seq !== 0) break
@@ -436,9 +459,10 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     }
 
     ws.onclose = () => {
-      if (fpsTimerRef.current)  { clearInterval(fpsTimerRef.current);  fpsTimerRef.current  = null }
-      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
-      if (bwTimerRef.current)   { clearInterval(bwTimerRef.current);   bwTimerRef.current   = null }
+      if (fpsTimerRef.current)   { clearInterval(fpsTimerRef.current);   fpsTimerRef.current   = null }
+      if (pingTimerRef.current)  { clearInterval(pingTimerRef.current);  pingTimerRef.current  = null }
+      if (bwTimerRef.current)    { clearInterval(bwTimerRef.current);    bwTimerRef.current    = null }
+      if (staleTimerRef.current) { clearInterval(staleTimerRef.current); staleTimerRef.current = null }
       setFps(0); setLatency(-1); setBwDisplay(0)
 
       // If the close was intentional (component unmount / user stop) or due to a
@@ -464,7 +488,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       }
     }
     ws.onerror = () => { setStatus('error'); setErrorMsg('فشل الاتصال عبر WebSocket') }
-  }, [deviceId, token, drawFrame, startFpsCounter, startBwCounter, sendWs])
+  }, [deviceId, token, drawFrame, startFpsCounter, startBwCounter, sendWs, startStaleWatchdog])
 
   // ── Mount / unmount ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -482,6 +506,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
       if (idleTimerRef.current)       clearTimeout(idleTimerRef.current)
       if (permissionTimerRef.current) clearTimeout(permissionTimerRef.current)
       if (bwTimerRef.current)         clearInterval(bwTimerRef.current)
+      if (staleTimerRef.current)      clearInterval(staleTimerRef.current)
     }
   }, [started]) // eslint-disable-line react-hooks/exhaustive-deps
 
