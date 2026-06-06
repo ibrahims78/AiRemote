@@ -10,7 +10,7 @@
     "build:dashboard": "cd ../.. && pnpm --filter @airemote/shared build && pnpm --filter @airemote/ai-engine build && pnpm --filter @airemote/dashboard build && node packages/server-desktop/scripts/copy-dashboard.js",
     "build:win": "npm run build:dashboard && node ../../scripts/download-cloudflared.js && electron-builder --win --x64",
     "build:win:nodownload": "node scripts/copy-dashboard.js && electron-builder --win --x64",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
