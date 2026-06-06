@@ -6,8 +6,9 @@ import { requireAuth, requireAdmin } from '../middleware/auth'
 
 export const AGENT_VERSION = '3.2.0'
 
-// Root of the repo (two levels up from packages/server)
-const REPO_ROOT    = path.resolve(process.cwd(), '../..')
+// Root of the repo — always relative to this file's location, not process.cwd()
+// __dirname = packages/server/src/routes  →  4 levels up = workspace root
+const REPO_ROOT    = path.resolve(__dirname, '../../../..')
 const RELEASES_DIR = path.join(REPO_ROOT, 'releases')
 
 // ── Build-status store (in-memory, survives for the lifetime of the process) ──
