@@ -70,6 +70,11 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
   const viewerSessionId = uuidv4()
 
   // ── Register viewer — join existing agent capture if possible ─────────────
+  // Capture the previous session ID BEFORE addScreenSession overwrites the map.
+  // If a new session is being created we'll send screen_stop for the old one
+  // first so the agent halts any zombie capture loop still using the stale ID.
+  const prevAgentSessionId = deviceRegistry.getActiveScreenSessionForDevice(deviceId)
+
   const { agentSessionId, isNew } = deviceRegistry.addScreenSession(
     viewerSessionId, socket, deviceId, userId
   )
@@ -94,6 +99,18 @@ export function handleScreenWebSocket(socket: WebSocket, request: FastifyRequest
   broadcastViewerCount(agentSessionId)
 
   if (isNew) {
+    // ── Stop any previous capture loop before starting the new one ────────
+    // v3.2.0 agents never update their embedded session ID on stop/start
+    // cycles.  Sending screen_stop for the previous session ID tells the
+    // agent to halt that loop before we ask it to open a new one.
+    if (prevAgentSessionId && prevAgentSessionId !== agentSessionId) {
+      deviceRegistry.sendToDevice(deviceId, {
+        type:      'server:screen_stop',
+        payload:   { sessionId: prevAgentSessionId },
+        timestamp: Date.now()
+      })
+    }
+
     // ── New capture session: ask agent to start capturing ─────────────────
     const sent = deviceRegistry.sendToDevice(deviceId, {
       type:      'server:screen_start',
