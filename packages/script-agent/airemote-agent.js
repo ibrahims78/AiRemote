@@ -15,7 +15,7 @@ const CONFIG_FILE = path.join(__dirname, 'config.json')
 const HEARTBEAT_MS   = 10_000
 const RECONNECT_BASE = 2_000
 const RECONNECT_MAX  = 30_000
-const VERSION        = '3.1.0'
+const VERSION        = '3.2.0'
 
 let ws = null, deviceId = null, heartbeatTimer = null
 let reconnectTimer = null, reconnectDelay = RECONNECT_BASE
@@ -39,7 +39,7 @@ function loadConfig() {
 let config = loadConfig()
 
 function log(level, msg) {
-  const ts = new Date().toISOString().replace('T',' ').slice(0,19)
+  const ts = new Date().toISOString().replace('T',' ').replace(/Z$/,'')
   console.log(`[${ts}] ${level === 'error' ? '✖' : level === 'warn' ? '⚠' : '●'} ${msg}`)
 }
 
@@ -150,20 +150,23 @@ async function getStats() {
 function handleMsg(msg) {
   if (msg.type === 'server:registered') {
     deviceId = msg.payload?.deviceId
-    log('info', `✅ Registered — ${deviceId?.slice(0,12)}...`)
+    log('info', `[register] ✅ Registered deviceId=${deviceId?.slice(0,12)}...`)
   } else if (msg.type === 'server:command') {
     const { commandId, type, command } = msg.payload || {}
     if (type !== 'shell' || !command) return
-    log('info', `▶ exec: ${command}`)
+    log('info', `[cmd] ▶ exec commandId=${commandId?.slice(0,8)} cmd=${command.slice(0,80)}`)
     const t0 = Date.now()
     exec(command, {shell:'cmd.exe', timeout:30000, maxBuffer:10*1024*1024}, (err,stdout,stderr) => {
-      send({ type:'agent:command_result', payload:{ commandId, stdout:stdout||'', stderr:stderr||(err?.message||''), exitCode:err?.code??0, duration:Date.now()-t0 }, timestamp:Date.now() })
+      const dur = Date.now() - t0
+      const out = (stdout || stderr || err?.message || '').trim().slice(0, 100)
+      log('info', `[cmd] ✔ done commandId=${commandId?.slice(0,8)} exit=${err?.code??0} dur=${dur}ms${out ? ' → ' + out : ''}`)
+      send({ type:'agent:command_result', payload:{ commandId, stdout:stdout||'', stderr:stderr||(err?.message||''), exitCode:err?.code??0, duration:dur }, timestamp:Date.now() })
     })
   } else if (msg.type === 'server:ping') {
     send({ type:'agent:pong', payload:{}, timestamp:Date.now() })
   } else if (msg.type === 'server:screen_chat') {
     const { text, sender } = msg.payload || {}
-    if (text) log('info', `💬 [chat] ${sender || 'viewer'}: ${text}`)
+    if (text) log('info', `[chat] 💬 ${sender || 'viewer'}: ${text}`)
   }
 }
 
@@ -175,9 +178,10 @@ function connect() {
 
   ws.on('open', async () => {
     reconnectDelay = RECONNECT_BASE
-    log('info', '✅ Connected — registering...')
+    log('info', `[ws] ✅ Connected to ${config.serverUrl} — registering...`)
     const info = { hostname:os.hostname(), platform:'windows', arch:os.arch(), osVersion:`${os.type()} ${os.release()}`, ipLocal:getIpLocal(), ipPublic:'', agentVersion:VERSION }
     const stats = await getStats().catch(()=>({cpuPercent:0,ramPercent:0,ramUsedMb:0,ramTotalMb:0,diskPercent:0,diskUsedGb:0,diskTotalGb:0,networkUpKbps:0,networkDownKbps:0,uptime:0}))
+    log('info', `[register] host=${info.hostname} ip=${info.ipLocal} os=${info.osVersion} v=${VERSION}`)
     send({ type:'agent:register', payload:{ token:config.token.trim(), info, stats, tunnelLayer:'relay' }, timestamp:Date.now() })
     heartbeatTimer = setInterval(async () => {
       if (!ws || ws.readyState !== WebSocket.OPEN || !deviceId) return
@@ -186,8 +190,8 @@ function connect() {
     }, HEARTBEAT_MS)
   })
   ws.on('message', d => { try { handleMsg(JSON.parse(d.toString())) } catch {} })
-  ws.on('close', code => { clearTimers(); if(running){ log('warn',`Disconnected (${code}) — retrying...`); scheduleReconnect() } })
-  ws.on('error', e => log('error', e.message))
+  ws.on('close', code => { clearTimers(); if(running){ log('warn',`[ws] Disconnected (${code}) — retrying in ${reconnectDelay}ms...`); scheduleReconnect() } })
+  ws.on('error', e => log('error', `[ws] ${e.message}`))
 }
 
 function scheduleReconnect() {
@@ -202,7 +206,8 @@ function clearTimers() {
 }
 
 // Main
-console.log(`\n⚡ AiRemote Agent v${VERSION} — Script Mode`)
+console.log(`\n⚡ AiRemote Script Agent v${VERSION}`)
+console.log(`   Build: ${new Date().toISOString().slice(0,10)}`)
 console.log(`   Node.js: ${process.version} | Host: ${os.hostname()} | IP: ${getIpLocal()}`)
 console.log(`   Config:  ${CONFIG_FILE}\n`)
 

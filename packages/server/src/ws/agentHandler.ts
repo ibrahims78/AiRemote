@@ -225,8 +225,13 @@ export async function handleAgentMessage(
       if (pending) {
         clearTimeout(pending.timeout)
         pendingFsOps.delete(p.opId)
-        if (p.error) pending.reject(new Error(p.error))
-        else pending.resolve(p.data)
+        if (p.error) {
+          console.log(`[${ts()}] ✖ [fs] opId=${p.opId.slice(0,8)} error=${p.error}`)
+          pending.reject(new Error(p.error))
+        } else {
+          console.log(`[${ts()}] ✔ [fs] opId=${p.opId.slice(0,8)} ok`)
+          pending.resolve(p.data)
+        }
       }
       if (p.error) {
         const pc = pendingFsChunks.get(p.opId)
