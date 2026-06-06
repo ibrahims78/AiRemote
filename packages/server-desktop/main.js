@@ -84,7 +84,35 @@ async function startServer() {
       jwtSecret: config.jwtSecret,
       dbPath:    DB_PATH,
       logger,
-      _startedAt: Date.now(),
+      desktopCallbacks: {
+        getStatus:           getServerStatus,
+        stopServer:          stopServer,
+        restartServer:       async () => { await stopServer(); await startServer() },
+        startTunnel:         startTunnel,
+        stopTunnel:          () => { tunnel.stopTunnel(logger); tunnelUrl = null; broadcastStatus() },
+        getLogs:             (n) => logger.getRecent(n),
+        getDesktopSettings:  () => ({
+          port: config.port, mode: config.mode, autoStart: config.autoStart,
+          autoStartWin: config.autoStartWin, backupEnabled: config.backupEnabled,
+          backupInterval: config.backupIntervalHours, backupDir: config.backupDir, dataDir: DATA_DIR,
+        }),
+        setDesktopSettings:  async (data) => {
+          if (data.port        !== undefined) config.port         = Number(data.port)        || 3001
+          if (data.mode        !== undefined) config.mode         = data.mode
+          if (data.autoStart   !== undefined) config.autoStart    = !!data.autoStart
+          if (data.autoStartWin !== undefined) { config.autoStartWin = !!data.autoStartWin; setWindowsAutoStart(config.autoStartWin) }
+          if (data.backupEnabled  !== undefined) config.backupEnabled       = !!data.backupEnabled
+          if (data.backupInterval !== undefined) config.backupIntervalHours = Number(data.backupInterval) || 24
+          if (data.backupDir      !== undefined) config.backupDir           = data.backupDir
+          saveConfig()
+          if (data.mode === 'cloudflare' && serverRunning && !tunnelUrl) startTunnel()
+          if (data.mode === 'lan' && tunnelUrl) tunnel.stopTunnel(logger)
+        },
+        createBackup: async () => {
+          const dest = path.join(config.backupDir, `airemote-backup-${Date.now()}.zip`)
+          return backup.exportBackup(dest)
+        },
+      },
     })
     serverRunning = true
     startedAt     = Date.now()
@@ -94,6 +122,15 @@ async function startServer() {
     logger.info('main', `✅ Server started on port ${config.port}`)
     notify('AiRemote Server', `Server started on port ${config.port}`)
     updateTrayMenu()
+    // Load React Dashboard in the main window once server is ready
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      setTimeout(() => {
+        const dashUrl = `http://127.0.0.1:${config.port}`
+        mainWindow.loadURL(dashUrl).catch(() => {
+          // fallback: stay on splash screen
+        })
+      }, 600)
+    }
   } catch (e) {
     logger.error('main', 'Failed to start server: ' + e.message)
     serverRunning = false
@@ -222,9 +259,17 @@ function getLocalIp() {
 // ─────────────────────────────────────────────────────────────────────────────
 // IPC Handlers
 // ─────────────────────────────────────────────────────────────────────────────
-ipcMain.handle('server:start',  async () => { await startServer(); return getServerStatus() })
-ipcMain.handle('server:stop',   async () => { await stopServer();  return getServerStatus() })
-ipcMain.handle('server:status', async () => getServerStatus())
+ipcMain.handle('server:start',   async () => { await startServer(); return getServerStatus() })
+ipcMain.handle('server:stop',    async () => { await stopServer();  return getServerStatus() })
+ipcMain.handle('server:status',  async () => getServerStatus())
+ipcMain.handle('server:restart', async () => { await stopServer(); await startServer(); return getServerStatus() })
+ipcMain.handle('desktop:status', async () => ({
+  ...getServerStatus(),
+  isDesktop:    true,
+  tunnelRunning: tunnel.isRunning(),
+  tunnelUrl:    tunnel.getUrl() || tunnelUrl,
+  dataDir:      DATA_DIR,
+}))
 
 ipcMain.handle('server:openDashboard', () => {
   const url = `http://localhost:${config.port}`
