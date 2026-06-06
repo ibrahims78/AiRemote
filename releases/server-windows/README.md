@@ -18,7 +18,7 @@
 
 | الملف / File | الحجم / Size | الوصف / Description |
 |---|---|---|
-| `AiRemote-Server-v3.2.0-Windows-x64.zip` | ~119 MB | Full server app — extract and run |
+| `AiRemote-Server-v3.2.0-Windows-x64.zip` | 120 MB | Full server app — extract and run |
 | `win-unpacked/` | ~317 MB | Raw unpacked Electron build |
 
 ---

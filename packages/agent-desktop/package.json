@@ -21,7 +21,7 @@
     "appId": "io.airemote.agent",
     "productName": "AiRemote Agent",
     "copyright": "Copyright © 2025 AiRemote",
-    "artifactName": "AiRemote-Agent-v${version}-Windows-x64.exe",
+    "artifactName": "AiRemote-Agent-v${version}-Windows-x64.zip",
     "directories": {
       "output": "../../releases/agent-windows"
     },
@@ -29,14 +29,13 @@
       "main.js",
       "preload.js",
       "renderer/**/*",
-      "build/icon.ico",
-      "node_modules/**/*"
+      "build/icon.ico"
     ],
     "extraResources": [],
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "zip",
           "arch": [
             "x64"
           ]
@@ -46,10 +45,6 @@
       "requestedExecutionLevel": "asInvoker",
       "signAndEditExecutable": false,
       "signingHashAlgorithms": null
-    },
-    "portable": {
-      "requestExecutionLevel": "user",
-      "unpackDirName": "airemote-agent"
     },
     "publish": null
   }

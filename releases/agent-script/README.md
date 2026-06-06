@@ -16,14 +16,14 @@
 
 | الملف | الحجم | الوصف |
 |-------|-------|-------|
-| `agent-v3.2.0.js` | ~87 KB | السكريبت المُجمَّع الحالي (bundle كامل) |
-| `agent-v3.0.0.js` | ~97 KB | الإصدار السابق |
+| `agent-v3.2.0.js` | 87 KB | السكريبت المُجمَّع الحالي (bundle كامل) |
+| `agent-script-v3.2.0.zip` | 23 KB | حزمة كاملة (script + start.bat + start.sh + package.json) |
+| `agent-v3.0.0.js` | 97 KB | الإصدار السابق |
 | `start.bat` | — | سكريبت تشغيل Windows |
 | `start.sh` | — | سكريبت تشغيل Linux / macOS |
 | `package.json` | — | تعريف الحزمة والمتطلبات |
 
-> **`agent-v3.2.0.js`** جاهز للاستخدام مباشرة.
-> **`agent-script-v3.2.0.zip`** يُبنى عند الطلب من لوحة التحكم (**Admin → Downloads**).
+> **`agent-v3.2.0.js`** و **`agent-script-v3.2.0.zip`** جاهزان للتنزيل مباشرة.
 
 ---
 

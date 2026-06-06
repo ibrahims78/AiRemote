@@ -18,15 +18,16 @@
 
 | النسخة | الملف | الحجم | المنصة | الوصف |
 |--------|-------|-------|--------|-------|
-| 🪟 **Windows Desktop** | `server-windows/AiRemote-Server-v3.2.0-Windows-x64.zip` | ~119 MB | Windows x64 | خادم AiRemote كتطبيق سطح مكتب مع Cloudflare Tunnel |
+| 🪟 **Windows Desktop** | `server-windows/AiRemote-Server-v3.2.0-Windows-x64.zip` | 120 MB | Windows x64 | خادم AiRemote كتطبيق سطح مكتب مع Cloudflare Tunnel |
 
 ### 🤖 الـ Agent / Agent
 
 | النسخة | الملف | الحجم | المنصة | الوصف |
 |--------|-------|-------|--------|-------|
-| 🪟 **Windows GUI** | `agent-windows/AiRemote-Agent-v3.0.0-Windows-x64.zip` | ~103 MB | Windows x64 | تطبيق سطح مكتب + System Tray — فُك الضغط وشغّل |
-| 🖥️ **Linux Binary** | `agent-headless/AiRemote-Agent-v3.0.0-linux-x64` | ~45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
-| 📜 **Node.js Script** | `agent-script/agent-v3.2.0.js` | ~87 KB | أي نظام | يتطلب Node.js 18+ |
+| 🪟 **Windows GUI** | `agent-windows/AiRemote-Agent-v3.2.0-Windows-x64.zip` | 100 MB | Windows x64 | تطبيق سطح مكتب + System Tray — فُك الضغط وشغّل |
+| 🐧 **Linux Binary** | `agent-headless/AiRemote-Agent-v3.0.0-linux-x64` | 45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
+| 📜 **Node.js Script** | `agent-script/agent-v3.2.0.js` | 87 KB | أي نظام | يتطلب Node.js 18+ |
+| 📦 **Script ZIP** | `agent-script/agent-script-v3.2.0.zip` | 23 KB | أي نظام | Script + start.bat + start.sh + package.json |
 
 > 💡 **للمبتدئين على Windows:** نسخة Server Desktop — فُك الضغط وشغّل مباشرة.
 > 💡 **للخوادم Linux/Docker:** استخدم Docker Compose في مجلد `docker/`.

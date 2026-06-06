@@ -18,7 +18,7 @@
 
 | الملف / File | الحجم / Size | الوصف / Description |
 |---|---|---|
-| `AiRemote-Agent-v3.0.0-Windows-x64.zip` | ~103 MB | Full desktop app — extract ZIP and run |
+| `AiRemote-Agent-v3.2.0-Windows-x64.zip` | 100 MB | Full desktop app — extract ZIP and run |
 | `win-unpacked/` | — | Raw unpacked Electron build |
 
 ---
@@ -26,14 +26,14 @@
 ## 🚀 التشغيل السريع / Quick Start
 
 **العربية:**
-1. حمّل `AiRemote-Agent-v3.0.0-Windows-x64.zip`
+1. حمّل `AiRemote-Agent-v3.2.0-Windows-x64.zip`
 2. فُك الضغط إلى أي مجلد (مثل `C:\AiRemote\`)
 3. شغّل `AiRemote Agent.exe`
 4. أدخل **عنوان الخادم** (WebSocket) و **Device Token** من الـ Dashboard
 5. اضغط **تشغيل** — يتصل الـ Agent ويظهر في شريط المهام (System Tray)
 
 **English:**
-1. Download `AiRemote-Agent-v3.0.0-Windows-x64.zip`
+1. Download `AiRemote-Agent-v3.2.0-Windows-x64.zip`
 2. Extract to any folder (e.g. `C:\AiRemote\`)
 3. Run `AiRemote Agent.exe`
 4. Enter your **Server URL** (WebSocket) and **Device Token** from the dashboard
@@ -100,7 +100,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --dir
 # ثم:
 python3 ../../scripts/zip-agent.py \
   ../../releases/agent-windows/win-unpacked \
-  ../../releases/agent-windows/AiRemote-Agent-v3.0.0-Windows-x64.zip
+  ../../releases/agent-windows/AiRemote-Agent-v3.2.0-Windows-x64.zip
 ```
 
 أو من لوحة التحكم (Admin): **Downloads → Windows Agent (GUI) → Build Now**
@@ -127,6 +127,7 @@ python3 ../../scripts/zip-agent.py \
 | Windows | Server Desktop | `../server-windows/AiRemote-Server-v3.2.0-Windows-x64.zip` |
 | Windows | Agent CLI Headless | `../agent-headless/AiRemote-Agent-v3.0.0-win-x64.exe` |
 | Linux | Agent Binary | `../agent-headless/AiRemote-Agent-v3.0.0-linux-x64` |
+| أي نظام | Script ZIP | `../agent-script/agent-script-v3.2.0.zip` |
 | Any | Node.js Script | `../agent-script/agent-v3.2.0.js` |
 
 راجع [releases/README.md](../README.md) للمصفوفة الكاملة للإصدارات.
