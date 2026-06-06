@@ -174,6 +174,10 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   const intentionalCloseRef = useRef(false)
   const lastFrameAtRef     = useRef(0)
   const staleTimerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
+  // 1-in-flight decode guard: skip incoming frames while a decode is running.
+  // This prevents the drawId race where 30fps arrivals stack up faster than
+  // createImageBitmap resolves, causing every frame to be discarded as stale.
+  const decodingRef        = useRef(false)
 
   // Keep startedRef in sync so event handlers (visibilitychange) can read it
   useEffect(() => { startedRef.current = started }, [started])
@@ -231,25 +235,26 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
   // Each call gets a unique drawId; the .then() callback discards its result if
   // a newer frame has already started decoding (prevents out-of-order redraws).
   const drawFrame = useCallback((base64: string, width: number, height: number) => {
+    if (decodingRef.current) return  // skip — previous frame still decoding
     const canvas = canvasRef.current; if (!canvas) return
     const ctx    = canvas.getContext('2d'); if (!ctx) return
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width; canvas.height = height
       setResolution({ w: width, h: height })
     }
-    const drawId = ++drawSeqRef.current
     const byteStr = atob(base64)
     const bytes   = new Uint8Array(byteStr.length)
     for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i)
     const blob = new Blob([bytes], { type: 'image/jpeg' })
+    decodingRef.current = true
     createImageBitmap(blob).then(bmp => {
-      if (drawId < drawSeqRef.current) { bmp.close(); return }
+      decodingRef.current = false
       ctx.drawImage(bmp, 0, 0)
       bmp.close()
       fpsCountRef.current++
       setFrameCount(c => c + 1)
     }).catch(() => {
-      if (drawId < drawSeqRef.current) return
+      decodingRef.current = false
       const img = imgRef.current
       img.onload = () => { ctx.drawImage(img, 0, 0); fpsCountRef.current++; setFrameCount(c => c + 1) }
       img.src = `data:image/jpeg;base64,${base64}`
@@ -263,21 +268,22 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
     base64: string,
     delta:  { x: number; y: number; w: number; h: number }
   ) => {
+    if (decodingRef.current) return  // skip — previous frame still decoding
     const canvas = canvasRef.current; if (!canvas) return
     const ctx    = canvas.getContext('2d'); if (!ctx) return
-    const drawId = ++drawSeqRef.current
     const byteStr = atob(base64)
     const bytes   = new Uint8Array(byteStr.length)
     for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i)
     const blob = new Blob([bytes], { type: 'image/jpeg' })
+    decodingRef.current = true
     createImageBitmap(blob).then(bmp => {
-      if (drawId < drawSeqRef.current) { bmp.close(); return }
+      decodingRef.current = false
       // Stamp the cropped region at its origin in full-screen coordinates
       ctx.drawImage(bmp, delta.x, delta.y)
       bmp.close()
       fpsCountRef.current++
       setFrameCount(c => c + 1)
-    }).catch(() => {})
+    }).catch(() => { decodingRef.current = false })
   }, [])
 
   // ── Send WS ───────────────────────────────────────────────────────────────
@@ -357,10 +363,11 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           total:     prev.total + 1,
           keyframes: flags & 1 ? prev.keyframes + 1 : prev.keyframes
         }))
-        const jpeg   = new Blob([buf.slice(13)], { type: 'image/jpeg' })
-        const drawId = ++drawSeqRef.current
+        if (decodingRef.current) return   // skip — previous frame still decoding
+        const jpeg = new Blob([buf.slice(13)], { type: 'image/jpeg' })
+        decodingRef.current = true
         createImageBitmap(jpeg).then(bmp => {
-          if (drawId < drawSeqRef.current) { bmp.close(); return }
+          decodingRef.current = false
           const canvas = canvasRef.current; if (!canvas) { bmp.close(); return }
           const ctx    = canvas.getContext('2d'); if (!ctx) { bmp.close(); return }
           if (canvas.width !== width || canvas.height !== height) {
@@ -371,7 +378,7 @@ export function ScreenViewer({ deviceId, deviceName }: Props) {
           bmp.close()
           fpsCountRef.current++
           setFrameCount(c => c + 1)
-        }).catch(() => { /* ignore decode errors */ })
+        }).catch(() => { decodingRef.current = false })
         return
       }
 
