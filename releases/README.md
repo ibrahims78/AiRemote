@@ -1,8 +1,8 @@
-# AiRemote Agent — Releases
+# AiRemote — Releases
 
 <div align="center">
 
-![AiRemote](https://img.shields.io/badge/AiRemote-v1.5.0-blue?style=for-the-badge)
+![AiRemote](https://img.shields.io/badge/AiRemote-v3.2.0-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=for-the-badge)
 
@@ -12,61 +12,67 @@
 
 ---
 
-## 📦 الإصدارات المتاحة — v1.5.0
+## 📦 الإصدارات المتاحة — v3.2.0
+
+### 🖥️ الخادم / Server
 
 | النسخة | الملف | الحجم | المنصة | الوصف |
 |--------|-------|-------|--------|-------|
-| 🪟 **Windows GUI** | `agent-windows/AiRemote-Agent-v1.5.0-Windows-x64.zip` | ~103 MB | Windows x64 | تطبيق سطح مكتب + System Tray — فُك الضغط وشغّل |
-| 🖥️ **Windows CLI** | `agent-headless/AiRemote-Agent-v1.5.0-win-x64.exe` | ~36 MB | Windows x64 | ملف تنفيذي مستقل — سطر أوامر، لا يحتاج Node.js |
-| 🐧 **Linux Binary** | `agent-headless/AiRemote-Agent-v1.5.0-linux-x64` | ~45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
-| 📜 **Node.js Script** | `agent-script/agent-v1.5.0.js` | ~31 KB | أي نظام | يتطلب Node.js 18+ |
-| 📦 **Script ZIP** | `agent-script/agent-script-v1.5.0.zip` | ~9 KB | أي نظام | Script + start.bat + start.sh |
+| 🪟 **Windows Desktop** | `server-windows/AiRemote-Server-v3.2.0-Windows-x64.zip` | ~119 MB | Windows x64 | خادم AiRemote كتطبيق سطح مكتب مع Cloudflare Tunnel |
 
-> 💡 **للمبتدئين على Windows:** نسخة GUI (واجهة رسومية) — فُك الضغط وشغّل مباشرة.
-> 💡 **للخوادم وسطر الأوامر:** نسخة CLI لـ Windows أو Binary لـ Linux.
+### 🤖 الـ Agent / Agent
+
+| النسخة | الملف | الحجم | المنصة | الوصف |
+|--------|-------|-------|--------|-------|
+| 🪟 **Windows GUI** | `agent-windows/AiRemote-Agent-v3.0.0-Windows-x64.zip` | ~103 MB | Windows x64 | تطبيق سطح مكتب + System Tray — فُك الضغط وشغّل |
+| 🖥️ **Linux Binary** | `agent-headless/AiRemote-Agent-v3.0.0-linux-x64` | ~45 MB | Linux x64 | ملف تنفيذي مستقل — لا يحتاج Node.js |
+| 📜 **Node.js Script** | `agent-script/agent-v3.2.0.js` | ~87 KB | أي نظام | يتطلب Node.js 18+ |
+
+> 💡 **للمبتدئين على Windows:** نسخة Server Desktop — فُك الضغط وشغّل مباشرة.
+> 💡 **للخوادم Linux/Docker:** استخدم Docker Compose في مجلد `docker/`.
+> 💡 **للأجهزة البعيدة (Windows):** Agent GUI أو Agent CLI.
+> 💡 **للأجهزة البعيدة (Linux/macOS):** Agent Binary أو Node.js Script.
 
 ---
 
 ## 🚀 التشغيل السريع
 
-### 🪟 Windows GUI (تطبيق سطح المكتب)
+### 🪟 Windows Server Desktop
 ```
-1. فُك الضغط عن AiRemote-Agent-v1.5.0-Windows-x64.zip
+1. فُك الضغط عن AiRemote-Server-v3.2.0-Windows-x64.zip
+2. شغّل "AiRemote Server.exe"
+3. أنشئ حسابك من لوحة التحكم
+4. أضف الأجهزة وحمّل الـ Agent عليها
+```
+
+### 🪟 Windows Agent GUI
+```
+1. فُك الضغط عن AiRemote-Agent-v3.0.0-Windows-x64.zip
 2. شغّل "AiRemote Agent.exe"
-3. أدخل عنوان الخادم والـ Token من واجهة التطبيق
+3. أدخل عنوان الخادم والـ Token من لوحة التحكم
 4. اضغط "تشغيل" — يظهر الـ Agent في System Tray
 ```
 
-### 🖥️ Windows CLI (سطر الأوامر)
-```cmd
-:: 1. انسخ عنوان الخادم من لوحة التحكم > الإعدادات
-:: 2. شغّل الأمر:
-set SERVER_URL=wss://your-server.replit.app/ws
-set DEVICE_TOKEN=توكن-جهازك-من-لوحة-التحكم
-AiRemote-Agent-v1.5.0-win-x64.exe
-```
-
-### Linux / macOS (Binary)
+### 🐧 Linux Binary (Agent)
 ```bash
-# 1. أعط صلاحية التنفيذ
-chmod +x AiRemote-Agent-v1.5.0-linux-x64
+chmod +x AiRemote-Agent-v3.0.0-linux-x64
 
-# 2. شغّل مع متغيرات البيئة
-SERVER_URL=wss://your-server.replit.app/ws \
+SERVER_URL=wss://your-server/ws \
 DEVICE_TOKEN=توكن-جهازك \
-./AiRemote-Agent-v1.5.0-linux-x64
+./AiRemote-Agent-v3.0.0-linux-x64
 ```
 
-### Node.js Script (أي نظام)
+### 📜 Node.js Script (Agent — أي نظام)
 ```bash
 # يتطلب Node.js 18+
-npm install  # المرة الأولى فقط
-DEVICE_TOKEN=توكن-جهازك node agent-v1.5.0.js
+SERVER_URL=wss://your-server/ws \
+DEVICE_TOKEN=توكن-جهازك \
+node agent-v3.2.0.js
 ```
 
 ---
 
-## ⚙️ متغيرات البيئة
+## ⚙️ متغيرات البيئة (Agent)
 
 | المتغير | مطلوب | الوصف | المثال |
 |---------|-------|-------|--------|
@@ -88,17 +94,16 @@ DEVICE_TOKEN=توكن-جهازك node agent-v1.5.0.js
 
 ## 🛡️ التشغيل كـ Service (تلقائي عند بدء الجهاز)
 
-### Windows — NSSM
+### Windows — NSSM (Agent CLI)
 ```cmd
-:: تحميل NSSM من https://nssm.cc
-nssm install AiRemote "C:\path\to\AiRemote-Agent-v1.5.0-win-x64.exe"
+nssm install AiRemote "C:\path\to\AiRemote-Agent-v3.0.0-win-x64.exe"
 nssm set AiRemote AppEnvironmentExtra ^
-  "SERVER_URL=wss://your-server.replit.app/ws" ^
+  "SERVER_URL=wss://your-server/ws" ^
   "DEVICE_TOKEN=توكن-جهازك"
 nssm start AiRemote
 ```
 
-### Linux — systemd
+### Linux — systemd (Agent Binary)
 ```ini
 # /etc/systemd/system/airemote-agent.service
 [Unit]
@@ -106,8 +111,8 @@ Description=AiRemote Agent
 After=network.target
 
 [Service]
-ExecStart=/opt/airemote/AiRemote-Agent-v1.5.0-linux-x64
-Environment="SERVER_URL=wss://your-server.replit.app/ws"
+ExecStart=/opt/airemote/AiRemote-Agent-v3.0.0-linux-x64
+Environment="SERVER_URL=wss://your-server/ws"
 Environment="DEVICE_TOKEN=توكن-جهازك"
 Restart=always
 RestartSec=10
@@ -123,62 +128,46 @@ sudo systemctl status airemote-agent
 
 ---
 
-## 🔨 بناء من المصدر
+## 🐳 Docker (Server)
 
-### بناء الـ Portable Binaries (Windows EXE + Linux Binary)
 ```bash
-# من مجلد المشروع الرئيسي
-pnpm install
-cd packages/agent
-node_modules/.bin/pkg ../../releases/agent-script/agent-v1.5.0.js \
-  --targets node18-win-x64,node18-linux-x64 \
-  --output ../../releases/agent-headless/AiRemote-Agent-v1.5.0 \
-  --compress GZip
-```
-
-### بناء Agent Script (JavaScript Bundle)
-```bash
-cd packages/agent
-pnpm build:script   # ينتج: releases/agent-script/agent-v1.5.0.js
+cd docker/
+docker compose up -d
 ```
 
 ---
 
 ## 📋 تاريخ الإصدارات
 
-### v1.5.0 — 2026-06 *(الحالي)*
+### v3.2.0 — يونيو 2026 *(الحالي)*
 **ميزات جديدة:**
-- ✅ **إحصائيات الشبكة (Windows GUI)** — قراءة Upload/Download عبر `netstat -e` + WMI fallback
-- ✅ **Terminal PTY محسّن (Windows GUI)** — Software PTY: echo تلقائي، backspace يعمل، prompt يُحدَّث مع `cd`
-- ✅ **Shell wrapper (PowerShell)** — يقرأ الأوامر سطرًا سطرًا ويُظهر `PS C:\path> ` بعد كل أمر
+- ✅ **Server Windows Desktop** — خادم AiRemote كتطبيق Electron مستقل لـ Windows
+- ✅ **بث الشاشة ffmpeg** — دعم gdigrab لبث 15-30 FPS على Windows
+- ✅ **WoL — Wake on LAN** — إيقاظ الأجهزة البعيدة عبر الشبكة المحلية
+- ✅ **Multi-viewer** — عدة مستخدمين يشاهدون نفس الشاشة في آنٍ واحد
+- ✅ **Delta Frames** — إرسال الفرق فقط بين إطارات الشاشة (توفير الباندويدث)
+- ✅ **Zombie Sweeper** — كشف وتنظيف الاتصالات الميتة تلقائياً
+- ✅ **TOTP / 2FA** — مصادقة ثنائية لجميع المستخدمين
+- ✅ **سجل المراجعة** — تسجيل شامل لجميع الأحداث
+- ✅ **Cloudflare Tunnel مدمج** — وصول خارجي بدون فتح منافذ Router
 
-**إصلاحات:**
-- ✅ Windows GUI: `networkUpKbps` / `networkDownKbps` كانت غائبة تمامًا — تمت الإضافة
-- ✅ Windows GUI: نص الـ Terminal كان يتراكب بسبب عدم وجود echo — تم الإصلاح
-- ✅ Windows GUI: `cd` لم يغيّر الـ prompt — تم الإصلاح عبر wrapper script
-
-### v1.4.0 — 2026-05
+### v3.0.0 — 2026
 **ميزات جديدة:**
-- ✅ **تصفح الملفات** — تصفح / رفع / تنزيل / حذف بدون SSH
-- ✅ **دعم Windows الكامل** — يعرض الأقراص (C: D: ...) عند المسار `/`
-- ✅ **Terminal PTY** — نفق نصي مستقر بدون `node-pty`
-- ✅ **تنزيل مباشر** — أزرار تنزيل في لوحة التحكم (الإعدادات)
+- ✅ بث الشاشة 30 FPS — MJPEG-over-WebSocket مع جودة تكيّفية
+- ✅ تحكم كامل — فأرة + لوحة + حافظة + تعدد شاشات
+- ✅ Privacy Mode — إخفاء الشاشة أثناء الجلسة
+- ✅ تسجيل الجلسات — JPEG frames → ZIP
+- ✅ Consent Flow — طلب إذن المستخدم قبل التحكم
+- ✅ In-session Chat — دردشة نصية مدمجة
+- ✅ Adaptive Quality — ضبط FPS بناءً على RTT
 
-**إصلاحات:**
-- ✅ إحصائيات الشبكة — قراءة صحيحة لـ `/proc/net/dev` على جميع توزيعات Linux
-- ✅ SSH Terminal — ترميز Unicode / عربي صحيح؛ لا تراكم لـ listeners
-- ✅ تبويب الملفات — `lstat` + `Promise.allSettled` لمنع التجمّد مع symlinks
+### v2.0.0 — 2026
+- ✅ AI Agent مدمج — تنفيذ أوامر Shell بالذكاء الاصطناعي
+- ✅ SSH Terminal محسّن
+- ✅ تصفح الملفات المتقدم
 
-### v1.3.0 — 2026-05
-- مؤشر اتصال احترافي
-- SSH banner قابل للتخصيص
-- شريط تفاصيل الجلسة المحسّن
-
-### v1.1.0 — 2025
-- قسم مفتاح SSH
-- IP العام التلقائي
-- سجل مرن
-- قابلية الطي في الواجهة
+### v1.x — 2025
+- الإصدارات الأولى — اتصال أساسي + إحصائيات النظام
 
 ---
 

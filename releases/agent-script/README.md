@@ -1,10 +1,10 @@
-# AiRemote Agent — Script Edition (Node.js) v3.0.0
+# AiRemote Agent — Script Edition (Node.js) v3.2.0
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-v3.0.0-blue)
-![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+![Version](https://img.shields.io/badge/Version-v3.2.0-blue?style=for-the-badge)
+![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=nodedotjs)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=for-the-badge)
 
 **سكريبت JavaScript مُجمَّع — يعمل على أي نظام يدعم Node.js**
 
@@ -14,15 +14,16 @@
 
 ## 📥 الملفات
 
-| الملف | الوصف |
-|-------|-------|
-| `agent-v3.0.0.js` | السكريبت المُجمَّع (bundle كامل) |
-| `agent-script-v3.0.0.zip` | حزمة كاملة (script + start.bat + start.sh) |
-| `start.bat` | سكريبت تشغيل Windows |
-| `start.sh` | سكريبت تشغيل Linux / macOS |
-| `package.json` | تعريف الحزمة والمتطلبات |
+| الملف | الحجم | الوصف |
+|-------|-------|-------|
+| `agent-v3.2.0.js` | ~87 KB | السكريبت المُجمَّع الحالي (bundle كامل) |
+| `agent-v3.0.0.js` | ~97 KB | الإصدار السابق |
+| `start.bat` | — | سكريبت تشغيل Windows |
+| `start.sh` | — | سكريبت تشغيل Linux / macOS |
+| `package.json` | — | تعريف الحزمة والمتطلبات |
 
-> **`agent-v3.0.0.js`** جاهز للتنزيل. **`agent-script-v3.0.0.zip`** يُبنى عند الطلب من لوحة التحكم.
+> **`agent-v3.2.0.js`** جاهز للاستخدام مباشرة.
+> **`agent-script-v3.2.0.zip`** يُبنى عند الطلب من لوحة التحكم (**Admin → Downloads**).
 
 ---
 
@@ -32,7 +33,7 @@
 ```cmd
 set SERVER_URL=wss://your-server/ws
 set DEVICE_TOKEN=YOUR-DEVICE-TOKEN
-node agent-v3.0.0.js
+node agent-v3.2.0.js
 ```
 
 أو استخدم سكريبت التشغيل المُرفق:
@@ -45,7 +46,7 @@ start.bat
 ```bash
 SERVER_URL=wss://your-server/ws \
 DEVICE_TOKEN=YOUR-DEVICE-TOKEN \
-node agent-v3.0.0.js
+node agent-v3.2.0.js
 ```
 
 أو استخدم سكريبت التشغيل المُرفق:
@@ -61,7 +62,7 @@ DEVICE_TOKEN=YOUR-DEVICE-TOKEN
 ```
 ثم شغّل:
 ```bash
-node agent-v3.0.0.js
+node agent-v3.2.0.js
 ```
 
 ---
@@ -97,12 +98,12 @@ sudo nano /etc/systemd/system/airemote-agent.service
 ```
 ```ini
 [Unit]
-Description=AiRemote Agent (Script)
+Description=AiRemote Agent (Script) v3.2.0
 After=network.target
 
 [Service]
 WorkingDirectory=/opt/airemote
-ExecStart=/usr/bin/node /opt/airemote/agent-v3.0.0.js
+ExecStart=/usr/bin/node /opt/airemote/agent-v3.2.0.js
 Environment="SERVER_URL=wss://your-server/ws"
 Environment="DEVICE_TOKEN=YOUR-DEVICE-TOKEN"
 Restart=always
@@ -119,7 +120,7 @@ sudo systemctl enable --now airemote-agent
 ### Windows — PM2
 ```cmd
 npm install -g pm2
-pm2 start agent-v3.0.0.js --name airemote-agent
+pm2 start agent-v3.2.0.js --name airemote-agent
 pm2 startup
 pm2 save
 ```
@@ -141,18 +142,34 @@ pm2 save
 | 💻 **Terminal PTY** | طرفية تفاعلية كاملة |
 | 🔐 **SSH Tunnel** | نفق SSH من خلال الخادم |
 | ⚡ **أوامر AI** | تنفيذ أوامر الذكاء الاصطناعي |
+| 🌐 **Wake on LAN** | إيقاظ الجهاز عن بُعد |
 
 ---
 
-## ما الجديد في v3.0.0
+## 📋 ما الجديد في v3.2.0
 
 | الميزة | الوصف |
 |--------|-------|
-| بث الشاشة 30 FPS | MJPEG-over-WebSocket مع إزالة التكرار وجودة تكيّفية |
-| تحكم كامل عن بُعد | فأرة + لوحة + حافظة + تعدد شاشات |
-| Privacy Mode | إخفاء الشاشة أثناء الجلسة |
-| تسجيل الجلسات | JPEG frames → ZIP من جانب الخادم |
-| Consent Flow | طلب إذن المستخدم قبل التحكم |
-| In-session Chat | دردشة نصية مدمجة بين المشاهد والجهاز |
+| WoL | إيقاظ الجهاز عبر Magic Packet |
+| Multi-viewer | عدة مشاهدين على نفس الشاشة في آنٍ واحد |
+| Delta Frames | إرسال الفرق فقط بين الإطارات لتوفير الباندويدث |
 | Adaptive Quality | خفض FPS تلقائياً عند ارتفاع RTT > 350ms |
 | Drag & Drop Upload | رفع الملفات بالسحب والإفلات على نافذة الشاشة |
+
+---
+
+## 🔗 الإصدارات الأخرى
+
+| المنصة | النوع | الملف |
+|---------|-------|-------|
+| Windows | Server Desktop | `../server-windows/AiRemote-Server-v3.2.0-Windows-x64.zip` |
+| Windows | Agent GUI | `../agent-windows/AiRemote-Agent-v3.0.0-Windows-x64.zip` |
+| Windows / Linux | Agent Binary | `../agent-headless/` |
+
+راجع [releases/README.md](../README.md) للمصفوفة الكاملة للإصدارات.
+
+---
+
+## 📄 الترخيص
+
+MIT License — مفتوح المصدر بالكامل.

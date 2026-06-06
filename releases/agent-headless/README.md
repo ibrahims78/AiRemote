@@ -1,10 +1,10 @@
-# AiRemote Agent — Headless (Portable Binary) v3.0.0
+# AiRemote Agent — Headless (Portable Binary) v3.2.0
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-v3.0.0-blue)
-![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)
-![Linux](https://img.shields.io/badge/Linux-x64-FCC624?logo=linux&logoColor=black)
+![Version](https://img.shields.io/badge/Version-v3.2.0-blue?style=for-the-badge)
+![Windows](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows)
+![Linux](https://img.shields.io/badge/Linux-x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)
 
 **ملف تنفيذي مستقل — لا يحتاج Node.js مثبتًا**
 
@@ -19,7 +19,8 @@
 | `AiRemote-Agent-v3.0.0-linux-x64` | Linux 64-bit | ~45 MB |
 | `AiRemote-Agent-v3.0.0-win-x64.exe` | Windows 64-bit | ~36 MB |
 
-> **Linux:** جاهز للتنزيل مباشرةً. **Windows:** يُبنى عند الطلب من لوحة التحكم (Admin → Downloads → Build Now).
+> **Linux:** جاهز للتنزيل مباشرةً.
+> **Windows:** يُبنى عند الطلب من لوحة التحكم (**Admin → Downloads → Build Now**).
 
 ---
 
@@ -75,7 +76,7 @@ sudo nano /etc/systemd/system/airemote-agent.service
 
 ```ini
 [Unit]
-Description=AiRemote Agent v3.0.0
+Description=AiRemote Agent v3.2.0
 After=network.target
 
 [Service]
@@ -114,18 +115,35 @@ sudo journalctl -u airemote-agent -f
 | 💻 **Terminal PTY** | طرفية تفاعلية كاملة |
 | 🔐 **SSH Tunnel** | نفق SSH من خلال الخادم |
 | ⚡ **أوامر AI** | تنفيذ أوامر الذكاء الاصطناعي |
+| ⚡ **ffmpeg** | بث 15-30 FPS عبر gdigrab (Windows) |
+| 🌐 **Wake on LAN** | إيقاظ الجهاز عن بُعد |
 
 ---
 
-## ما الجديد في v3.0.0
+## 📋 ما الجديد في v3.2.0
 
 | الميزة | الوصف |
 |--------|-------|
-| بث الشاشة 30 FPS | MJPEG-over-WebSocket مع إزالة التكرار وجودة تكيّفية |
-| تحكم كامل عن بُعد | فأرة + لوحة + حافظة + تعدد شاشات |
-| Privacy Mode | إخفاء الشاشة أثناء الجلسة عبر xrandr/WMI |
-| تسجيل الجلسات | JPEG frames → ZIP من جانب الخادم |
-| Consent Flow | طلب إذن المستخدم قبل التحكم |
-| In-session Chat | دردشة نصية مدمجة |
+| بث ffmpeg | دعم gdigrab على Windows للبث بـ 15-30 FPS (vs 1 FPS بدونه) |
+| WoL | إيقاظ الجهاز عبر Magic Packet |
+| Multi-viewer | عدة مشاهدين على نفس الشاشة في آنٍ واحد |
+| Delta Frames | إرسال الفرق فقط بين الإطارات لتوفير الباندويدث |
 | Adaptive Quality | خفض FPS تلقائياً عند ارتفاع RTT > 350ms |
-| Drag & Drop Upload | رفع الملفات بالسحب والإفلات على نافذة الشاشة |
+
+---
+
+## 🔗 الإصدارات الأخرى
+
+| المنصة | النوع | الملف |
+|---------|-------|-------|
+| Windows | Server Desktop | `../server-windows/AiRemote-Server-v3.2.0-Windows-x64.zip` |
+| Windows | Agent GUI | `../agent-windows/AiRemote-Agent-v3.0.0-Windows-x64.zip` |
+| أي نظام | Node.js Script | `../agent-script/agent-v3.2.0.js` |
+
+راجع [releases/README.md](../README.md) للمصفوفة الكاملة للإصدارات.
+
+---
+
+## 📄 الترخيص
+
+MIT License — مفتوح المصدر بالكامل.

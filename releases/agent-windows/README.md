@@ -1,8 +1,16 @@
-# AiRemote Agent — Windows Desktop (GUI) v3.0.0
+# AiRemote Agent — Windows Desktop (GUI) v3.2.0
 
-تطبيق سطح مكتب Windows كامل مع System Tray. مبني بـ Electron — لا يحتاج Node.js.
+<div align="center">
 
-A full **Windows GUI desktop application** with System Tray integration. Built with Electron — no Node.js required.
+![Version](https://img.shields.io/badge/Version-v3.2.0-blue?style=for-the-badge)
+![Windows](https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows)
+![Electron](https://img.shields.io/badge/Electron-28-47848F?style=for-the-badge&logo=electron)
+
+**تطبيق سطح مكتب Windows كامل مع System Tray — مبني بـ Electron، لا يحتاج Node.js**
+
+*Full Windows GUI desktop application with System Tray — Built with Electron, no Node.js required*
+
+</div>
 
 ---
 
@@ -37,19 +45,25 @@ A full **Windows GUI desktop application** with System Tray integration. Built w
 
 | الميزة | Description |
 |--------|-------------|
-| **System Tray** | يعمل في الخلفية — انقر بالزر الأيمن لفتح/إغلاق |
-| **Auto-Start** | إعادة الاتصال تلقائياً عند فتح البرنامج |
-| **Screen Streaming** | بث الشاشة حتى 30 FPS مع ضغط تكيّفي |
-| **Mouse & Keyboard** | تحكم كامل بالفأرة واللوحة عبر Win32 API |
-| **Clipboard Sync** | مزامنة الحافظة في كلا الاتجاهين |
-| **Multi-Monitor** | تبديل بين الشاشات في الوقت الفعلي |
-| **PTY Terminal** | PowerShell / CMD كامل من الـ Dashboard |
-| **File Browser** | تصفح ورفع وتنزيل الملفات |
-| **SSH Access** | إعدادات SSH للاتصال من الخادم |
-| **Device Stats** | CPU / RAM / Disk / Network في الوقت الفعلي |
-| **Arabic / English** | واجهة ثنائية اللغة مع RTL |
-| **Dark / Light Theme** | تبديل من شريط العنوان |
-| **2FA Support** | دعم المصادقة الثنائية TOTP |
+| **🔲 System Tray** | يعمل في الخلفية — انقر بالزر الأيمن لفتح/إغلاق |
+| **🔄 Auto-Reconnect** | إعادة الاتصال تلقائياً عند الانقطاع |
+| **🖥️ Screen Streaming** | بث الشاشة حتى 30 FPS مع ضغط تكيّفي |
+| **⚡ ffmpeg Support** | دعم gdigrab لبث 15-30 FPS عبر ffmpeg (Windows) |
+| **🖱️ Mouse & Keyboard** | تحكم كامل بالفأرة واللوحة عبر Win32 API |
+| **📋 Clipboard Sync** | مزامنة الحافظة في كلا الاتجاهين |
+| **🖥️ Multi-Monitor** | تبديل بين الشاشات في الوقت الفعلي |
+| **💬 In-session Chat** | دردشة نصية مدمجة أثناء الجلسة |
+| **💻 PTY Terminal** | PowerShell / CMD كامل من الـ Dashboard |
+| **📁 File Browser** | تصفح ورفع وتنزيل الملفات |
+| **🔐 SSH Access** | إعدادات SSH للاتصال من الخادم |
+| **📊 Device Stats** | CPU / RAM / Disk / Network في الوقت الفعلي |
+| **🌐 Wake on LAN** | إيقاظ الجهاز عن بُعد |
+| **🌍 Arabic / English** | واجهة ثنائية اللغة مع RTL |
+| **🌗 Dark / Light Theme** | تبديل من شريط العنوان |
+| **🔐 2FA Support** | دعم المصادقة الثنائية TOTP |
+| **🔒 Privacy Mode** | إخفاء الشاشة أثناء الجلسة |
+| **📹 Session Recording** | تسجيل الجلسات كـ JPEG frames |
+| **✅ Consent Flow** | طلب إذن المستخدم قبل التحكم |
 
 ---
 
@@ -69,6 +83,14 @@ Value: "C:\AiRemote\AiRemote Agent.exe"
 
 ---
 
+## 📋 المتطلبات / Requirements
+
+- **Windows 10 / 11** (64-bit)
+- لا يحتاج Node.js — Electron مدمج / No additional runtime — Electron is bundled
+- اتصال شبكة بخادم AiRemote / Network access to your AiRemote server
+
+---
+
 ## 🔨 بناء من المصدر / Build from Source
 
 ```bash
@@ -85,28 +107,16 @@ python3 ../../scripts/zip-agent.py \
 
 ---
 
-## 📋 المتطلبات / Requirements
-
-- Windows 10 / 11 (64-bit)
-- لا يحتاج Node.js — Electron مدمج / No additional runtime — Electron is bundled
-- اتصال شبكة بخادم AiRemote / Network access to your AiRemote server
-
----
-
-## ما الجديد في v3.0.0
+## 📋 ما الجديد في v3.2.0
 
 | الميزة | الوصف |
 |--------|-------|
-| بث الشاشة 30 FPS | MJPEG-over-WebSocket مع تقليل مكيّف |
-| تحكم الفأرة واللوحة | Win32 API عبر PowerShell دائم — لا تأخير |
-| مزامنة الحافظة | قراءة/كتابة الحافظة ثنائية الاتجاه |
-| تعدد الشاشات | اكتشاف تلقائي للشاشات والتبديل بينها |
-| Privacy Mode | إخفاء الشاشة أثناء الجلسة |
-| تسجيل الجلسات | تسجيل JPEG frames → ZIP من جانب الخادم |
-| نظام المصادقة | تذاكر WebSocket أحادية الاستخدام (30 ثانية) |
-| Consent Flow | طلب إذن المستخدم قبل التحكم عن بُعد |
-| In-session Chat | دردشة نصية مدمجة بين المشاهد والجهاز |
-| Adaptive Quality | ضبط FPS تلقائياً بناءً على زمن الاستجابة (RTT) |
+| **ffmpeg بث 15-30 FPS** | gdigrab على Windows — أسرع بـ 15-30x من PowerShell |
+| **WoL — Wake on LAN** | إيقاظ الجهاز عن بُعد عبر Magic Packet |
+| **Multi-viewer** | عدة مستخدمين يشاهدون نفس الشاشة في آنٍ واحد |
+| **Delta Frames** | إرسال الفرق فقط بين إطارات الشاشة |
+| **Adaptive Quality** | ضبط FPS تلقائياً بناءً على زمن الاستجابة (RTT) |
+| **Drag & Drop Upload** | رفع الملفات بالسحب والإفلات على نافذة الشاشة |
 
 ---
 
@@ -114,9 +124,15 @@ python3 ../../scripts/zip-agent.py \
 
 | Platform | Type | File |
 |----------|------|------|
-| Windows | CLI Headless | `../agent-headless/AiRemote-Agent-v3.0.0-win-x64.exe` |
-| Linux | CLI Headless | `../agent-headless/AiRemote-Agent-v3.0.0-linux-x64` |
-| Any | Node.js Script | `../agent-script/agent-v3.0.0.js` |
-| Any | Script ZIP | `../agent-script/agent-script-v3.0.0.zip` |
+| Windows | Server Desktop | `../server-windows/AiRemote-Server-v3.2.0-Windows-x64.zip` |
+| Windows | Agent CLI Headless | `../agent-headless/AiRemote-Agent-v3.0.0-win-x64.exe` |
+| Linux | Agent Binary | `../agent-headless/AiRemote-Agent-v3.0.0-linux-x64` |
+| Any | Node.js Script | `../agent-script/agent-v3.2.0.js` |
 
-See [releases/README.md](../README.md) for the full release matrix.
+راجع [releases/README.md](../README.md) للمصفوفة الكاملة للإصدارات.
+
+---
+
+## 📄 الترخيص / License
+
+MIT License — مفتوح المصدر بالكامل / Fully open source.
