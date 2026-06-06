@@ -48,7 +48,13 @@
       "scripts/**/*",
       "renderer/**/*",
       "static/**/*",
-      "build/icon.ico"
+      "build/icon.ico",
+      "node_modules/**/*",
+      "!node_modules/.pnpm/electron@*/**/*",
+      "!node_modules/.pnpm/electron-builder@*/**/*",
+      "!node_modules/.pnpm/app-builder-lib@*/**/*",
+      "!node_modules/.pnpm/dmg-builder@*/**/*",
+      "!node_modules/.cache/**/*"
     ],
     "extraResources": [
       {
