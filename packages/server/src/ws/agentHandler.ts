@@ -34,7 +34,7 @@ const SAVE_EVERY_N = 3
 // ── Binary screen frame handler (v3.1+ agents) ────────────────────────────
 // Packet layout (from agent): [0x01][sessionId:36B][width:4B][height:4B][seq:4B][flags:1B][JPEG...]
 // Forwarded to dashboard as:  [width:4B][height:4B][seq:4B][flags:1B][JPEG...]
-export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Promise<void> {
+export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer, deviceId?: string): Promise<void> {
   if (buf.length < 50) {
     console.warn(`📸 [bin] dropped: too short (${buf.length}B)`)
     return
@@ -44,17 +44,30 @@ export async function handleAgentBinaryFrame(socket: WebSocket, buf: Buffer): Pr
     return
   }
 
-  const sessionId = buf.slice(1, 37).toString('utf8').replace(/\0/g, '')
-  const width     = buf.readUInt32BE(37)
-  const height    = buf.readUInt32BE(41)
-  const seq       = buf.readUInt32BE(45)
-  const flags     = buf[49]
-  const jpegData  = buf.slice(50)
+  const embeddedId = buf.slice(1, 37).toString('utf8').replace(/\0/g, '')
+  const width      = buf.readUInt32BE(37)
+  const height     = buf.readUInt32BE(41)
+  const seq        = buf.readUInt32BE(45)
+  const flags      = buf[49]
+  const jpegData   = buf.slice(50)
 
+  // Resolve the session: prefer the embedded ID, but if it no longer exists
+  // (e.g. agent restarted and is still using a stale session ID), fall back to
+  // whatever active session the device currently has.  This keeps v3.2.0 binary
+  // agents working across stream stop/restart cycles without a protocol change.
+  let sessionId = embeddedId
   deviceRegistry.clearScreenConnectTimeout(sessionId)
-  const session = deviceRegistry.getScreenSession(sessionId)
+  let session = deviceRegistry.getScreenSession(sessionId)
+  if (!session && deviceId) {
+    const activeId = deviceRegistry.getActiveScreenSessionForDevice(deviceId)
+    if (activeId) {
+      console.warn(`📸 [bin] stale sessionId ${embeddedId.slice(0,8)} → remapping to active ${activeId.slice(0,8)} (device=${deviceId.slice(0,8)})`)
+      sessionId = activeId
+      session   = deviceRegistry.getScreenSession(sessionId)
+    }
+  }
   if (!session) {
-    console.warn(`📸 [bin] dropped: no session for ${sessionId.slice(0, 8)} seq=${seq}`)
+    console.warn(`📸 [bin] dropped: no session for ${embeddedId.slice(0, 8)} seq=${seq}`)
     return
   }
 

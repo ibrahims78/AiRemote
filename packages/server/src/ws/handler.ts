@@ -87,7 +87,7 @@ export function wsHandler(socket: WebSocket, request: FastifyRequest) {
       if (connectionType === 'unknown') connectionType = 'agent'
       clearPongTimer()
       schedulePing()
-      handleAgentBinaryFrame(socket, raw).catch(err => console.error('Binary frame error:', err))
+      handleAgentBinaryFrame(socket, raw, connectionId).catch(err => console.error('Binary frame error:', err))
       return
     }
 
